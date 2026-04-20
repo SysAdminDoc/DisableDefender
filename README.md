@@ -5,6 +5,10 @@
 [![Platform](https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-0078D6.svg)](https://www.microsoft.com/windows)
 [![PowerShell](https://img.shields.io/badge/powershell-5.1%2B-012456.svg)](https://learn.microsoft.com/powershell)
 
+<img width="1168" height="754" alt="2026-04-20 14_23_00-DisableDefender" src="https://github.com/user-attachments/assets/975dd36c-e05f-461e-8a40-3b9c2b9136e9" />
+<br>
+
+
 **The ultimate Microsoft Defender Antivirus disabler / remover for Windows 10 and 11.**
 
 DisableDefender fully disables (and optionally removes) Microsoft Defender Antivirus while **explicitly preserving the Windows Firewall**. Firewall services (`mpssvc`, `BFE`, `SharedAccess`) and policy keys are on a refuse-list and verified intact before and after every operation.
