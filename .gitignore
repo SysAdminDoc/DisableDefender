@@ -29,3 +29,7 @@ out/
 CLAUDE.md
 CODEX_CHANGELOG.md
 .claude/
+
+# Markdown files local-only (except README)
+*.md
+!README.md
