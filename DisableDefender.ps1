@@ -753,6 +753,29 @@ function Restore-DefenderServices {
 }
 
 # ---------------------------------------------------------------------------
+# SafeBoot BCD watchdog — auto-reverts safeboot flag if the tool crashes
+# before cleanup, preventing the system from being trapped in Safe Mode.
+# ---------------------------------------------------------------------------
+function Register-SafeBootWatchdog {
+    $taskName = "${script:AppName}_SafeBootWatchdog"
+    try {
+        $action = New-ScheduledTaskAction -Execute 'bcdedit.exe' -Argument '/deletevalue {current} safeboot'
+        $trigger = New-ScheduledTaskTrigger -AtStartup
+        $principal = New-ScheduledTaskPrincipal -UserId 'S-1-5-18' -RunLevel Highest
+        $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable
+        Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Force -ErrorAction Stop | Out-Null
+        Write-Log "SafeBoot watchdog registered (auto-reverts on next boot)." DEBUG
+    } catch {
+        Write-Log "Could not register SafeBoot watchdog: $_" WARN
+    }
+}
+
+function Unregister-SafeBootWatchdog {
+    $taskName = "${script:AppName}_SafeBootWatchdog"
+    Unregister-ScheduledTask -TaskName $taskName -Confirm:$false -ErrorAction SilentlyContinue
+}
+
+# ---------------------------------------------------------------------------
 # Phase: SafeBoot trap (Remove mode only)
 # Removing SafeBoot\WinDefend prevents the service from loading even in Safe Mode.
 # ---------------------------------------------------------------------------
@@ -840,9 +863,57 @@ function Remove-DefenderPlatformPackages {
 }
 
 # ---------------------------------------------------------------------------
+# Phase: Context menu cleanup (Remove mode only)
+# ---------------------------------------------------------------------------
+function Remove-DefenderContextMenu {
+    Write-Log "Removing Defender context menu entries..." INFO
+    $shellPaths = @(
+        'HKLM:\SOFTWARE\Classes\*\shellex\ContextMenuHandlers\EPP',
+        'HKLM:\SOFTWARE\Classes\Directory\shellex\ContextMenuHandlers\EPP',
+        'HKLM:\SOFTWARE\Classes\Drive\shellex\ContextMenuHandlers\EPP',
+        'HKCR:\*\shellex\ContextMenuHandlers\EPP',
+        'HKCR:\Directory\shellex\ContextMenuHandlers\EPP',
+        'HKCR:\Drive\shellex\ContextMenuHandlers\EPP'
+    )
+    foreach ($p in $shellPaths) {
+        if (Test-Path -LiteralPath $p) {
+            Remove-Item -LiteralPath $p -Force -ErrorAction SilentlyContinue
+            Write-Log "Removed context menu: $p" DEBUG
+        }
+    }
+    Write-Log "Context menu entries removed." OK
+}
+
+function Restore-DefenderContextMenu {
+    Write-Log "Restoring Defender context menu entries..." INFO
+    $eppGuid = '{09A47860-11B0-4DA5-AFA5-26D86198A780}'
+    $shellPaths = @(
+        'HKLM:\SOFTWARE\Classes\*\shellex\ContextMenuHandlers\EPP',
+        'HKLM:\SOFTWARE\Classes\Directory\shellex\ContextMenuHandlers\EPP',
+        'HKLM:\SOFTWARE\Classes\Drive\shellex\ContextMenuHandlers\EPP'
+    )
+    foreach ($p in $shellPaths) {
+        if (-not (Test-Path -LiteralPath $p)) {
+            New-Item -Path $p -Force -ErrorAction SilentlyContinue | Out-Null
+        }
+        New-ItemProperty -LiteralPath $p -Name '(Default)' -Value $eppGuid -Force -ErrorAction SilentlyContinue | Out-Null
+    }
+    Write-Log "Context menu entries restored." OK
+}
+
+# ---------------------------------------------------------------------------
 # Pre-flight + status
 # ---------------------------------------------------------------------------
 function Confirm-Prereqs {
+    try {
+        $os = Get-CimInstance Win32_OperatingSystem -ErrorAction Stop
+        Write-Log "Windows: $($os.Caption) build $($os.Version)" INFO
+    } catch {}
+    try {
+        $mpVer = (Get-MpComputerStatus -ErrorAction Stop).AMProductVersion
+        if ($mpVer) { Write-Log "Defender platform: $mpVer" INFO }
+    } catch {}
+
     $tp = Test-TamperProtection
     if ($tp -eq $true) {
         Write-Log "Tamper Protection is ON. Disable it first in Windows Security UI." ERROR
@@ -891,9 +962,15 @@ function Get-DefenderStatus {
         $o.BehaviorMonitor           = $s.BehaviorMonitorEnabled
         $o.IoavProtection            = $s.IoavProtectionEnabled
         $o.AntispywareEnabled        = $s.AntispywareEnabled
+        if ($s.AMProductVersion)     { $o.PlatformVersion = $s.AMProductVersion }
+        if ($s.AMRunningMode)        { $o.RunningMode = $s.AMRunningMode }
     } catch {
         $o.AMQuery = "Get-MpComputerStatus failed: $($_.Exception.Message)"
     }
+    try {
+        $os = Get-CimInstance Win32_OperatingSystem -ErrorAction Stop
+        $o.WindowsBuild = "$($os.Caption) $($os.Version)"
+    } catch {}
     foreach ($s in ($script:DefenderServices + $script:MDEServices)) {
         $sv = Get-Service -Name $s -ErrorAction SilentlyContinue
         if ($sv) { $o["svc_$s"] = "$($sv.Status) / $($sv.StartType)" } else { $o["svc_$s"] = 'not present' }
@@ -975,6 +1052,7 @@ function Invoke-RemoveMode {
     Remove-SafeBootWinDefend
     Remove-SecHealthUI
     Remove-DefenderPlatformPackages
+    Remove-DefenderContextMenu
     Assert-FirewallSafety -Stage post
     Write-Log "Remove complete. Reboot required." OK
 }
@@ -987,6 +1065,7 @@ function Invoke-RestoreMode {
     Restore-DefenderServices
     Restore-RegKeyACLs
     Restore-SecHealthUI
+    Restore-DefenderContextMenu
     Assert-FirewallSafety -Stage post
     Write-Log "Restore complete. Reboot recommended. If Defender does not come back: sfc /scannow then DISM /Online /Cleanup-Image /RestoreHealth." OK
 }
