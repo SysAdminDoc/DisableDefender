@@ -27,13 +27,24 @@ param(
     [switch]$NoReboot,
     [switch]$Force,
     [switch]$IncludeMDE,
-    [string]$LogPath = "$env:APPDATA\DisableDefender\DisableDefender.log"
+    [string]$LogPath = "$env:ProgramData\DisableDefender\DisableDefender.log"
 )
 
-$script:Version = '0.0.4'
+$script:Version = '0.0.5'
 $script:AppName = 'DisableDefender'
-$script:AppDir  = Join-Path $env:APPDATA $script:AppName
-if (-not (Test-Path $script:AppDir)) { New-Item -ItemType Directory -Path $script:AppDir -Force | Out-Null }
+$script:AppDir  = Join-Path $env:ProgramData $script:AppName
+if (-not (Test-Path $script:AppDir)) {
+    New-Item -ItemType Directory -Path $script:AppDir -Force | Out-Null
+    $dirAcl = Get-Acl -LiteralPath $script:AppDir
+    $dirAcl.SetAccessRuleProtection($true, $false)
+    $adminRule = New-Object System.Security.AccessControl.FileSystemAccessRule(
+        'BUILTIN\Administrators', 'FullControl', 'ContainerInherit,ObjectInherit', 'None', 'Allow')
+    $systemRule = New-Object System.Security.AccessControl.FileSystemAccessRule(
+        'NT AUTHORITY\SYSTEM', 'FullControl', 'ContainerInherit,ObjectInherit', 'None', 'Allow')
+    $dirAcl.AddAccessRule($adminRule)
+    $dirAcl.AddAccessRule($systemRule)
+    try { Set-Acl -LiteralPath $script:AppDir -AclObject $dirAcl } catch {}
+}
 
 # ---------------------------------------------------------------------------
 # Firewall preservation
@@ -420,6 +431,17 @@ function Set-RegValue {
 function Set-DefenderPolicy {
     Write-Log "Applying Defender policy keys..." INFO
 
+    # DisableAntiSpyware is a no-op on platform >= 4.18.2007.8 (Aug 2020) but kept for LTSC 2019/Server 2016
+    try {
+        $mpStatus = Get-MpComputerStatus -ErrorAction Stop
+        if ($mpStatus.AMProductVersion) {
+            $ver = [version]$mpStatus.AMProductVersion
+            if ($ver -ge [version]'4.18.2007.8') {
+                Write-Log "DisableAntiSpyware is a no-op on platform $($mpStatus.AMProductVersion) — kept for legacy compatibility only." WARN
+            }
+        }
+    } catch {}
+
     # Root kill switches
     Set-RegValue $script:PolicyRoot 'DisableAntiSpyware'            1
     Set-RegValue $script:PolicyRoot 'DisableAntiVirus'              1
@@ -489,6 +511,15 @@ function Set-DefenderPolicy {
     # Legacy Microsoft Antimalware (for older Windows)
     Set-RegValue $script:MsAntimalware 'ServiceKeepAlive' 0
 
+    # WMI Autologger — Defender telemetry continues even after services are disabled
+    $loggerRoot = 'HKLM:\SYSTEM\CurrentControlSet\Control\WMI\Autologger'
+    foreach ($logger in @('DefenderApiLogger','DefenderAuditLogger')) {
+        $lPath = Join-Path $loggerRoot $logger
+        if (Test-Path -LiteralPath $lPath) {
+            Set-RegValue $lPath 'Start' 0
+        }
+    }
+
     Write-Log "Policy keys written." OK
 }
 
@@ -509,6 +540,14 @@ function Clear-DefenderPolicy {
     if (Test-Path -LiteralPath $script:SmartScreen) {
         Remove-ItemProperty -LiteralPath $script:SmartScreen -Name 'EnableSmartScreen' -ErrorAction SilentlyContinue
     }
+    # Restore WMI Autologger entries
+    $loggerRoot = 'HKLM:\SYSTEM\CurrentControlSet\Control\WMI\Autologger'
+    foreach ($logger in @('DefenderApiLogger','DefenderAuditLogger')) {
+        $lPath = Join-Path $loggerRoot $logger
+        if (Test-Path -LiteralPath $lPath) {
+            New-ItemProperty -LiteralPath $lPath -Name 'Start' -Value 1 -PropertyType DWord -Force -ErrorAction SilentlyContinue | Out-Null
+        }
+    }
     Write-Log "Policy keys cleared." OK
 }
 
@@ -522,7 +561,14 @@ function Set-MpRuntimePrefs {
         'DisableIOAVProtection','DisableScriptScanning','DisableArchiveScanning',
         'DisableIntrusionPreventionSystem','DisableRemovableDriveScanning',
         'DisableScanningMappedNetworkDrivesForFullScan','DisableScanningNetworkFiles',
-        'SignatureDisableUpdateOnStartupWithoutEngine'
+        'SignatureDisableUpdateOnStartupWithoutEngine',
+        'DisableCoreServiceECSIntegration',
+        'DisableCoreServiceTelemetry',
+        'DisableSshParsing',
+        'DisableRdpParsing',
+        'DisableDnsOverTcpParsing',
+        'DisableInboundConnectionFiltering',
+        'DisableNetworkProtectionPerfTelemetry'
     )
     foreach ($p in $boolPrefs) {
         $splat = @{ $p = $true; ErrorAction = 'SilentlyContinue' }
@@ -814,6 +860,22 @@ function Confirm-Prereqs {
         $script:InSafeMode = $true
     } else {
         $script:InSafeMode = $false
+    }
+
+    # Managed device detection — warn about compliance/SIEM risks
+    $managed = @()
+    try {
+        $dsreg = dsregcmd.exe /status 2>&1 | Out-String
+        if ($dsreg -match 'MDMUrl\s*:\s*https://') { $managed += 'Intune/MDM enrolled' }
+    } catch {}
+    if (Test-Path 'HKLM:\SOFTWARE\Microsoft\CCM') { $managed += 'SCCM managed' }
+    $senseSvc = Get-Service -Name 'Sense' -ErrorAction SilentlyContinue
+    if ($senseSvc -and $senseSvc.Status -eq 'Running') { $managed += 'MDE onboarded (Sense running)' }
+    if ($managed.Count -gt 0) {
+        Write-Log "Managed device detected: $($managed -join '; '). Disabling Defender may trigger compliance violations, conditional access revocation, and SIEM alerts." WARN
+        if (-not $Force) {
+            throw "This device is managed ($($managed -join '; ')). Use -Force to proceed anyway."
+        }
     }
 }
 
