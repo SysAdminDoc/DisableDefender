@@ -26,6 +26,7 @@ param(
     [switch]$NoRestorePoint,
     [switch]$NoReboot,
     [switch]$Force,
+    [switch]$IncludeMDE,
     [string]$LogPath = "$env:APPDATA\DisableDefender\DisableDefender.log"
 )
 
@@ -69,7 +70,6 @@ $script:DefenderServices = @(
     'WdBoot',                   # Early launch AM driver
     'WdNisDrv',                 # Network inspection driver
     'WdNisSvc',                 # Network inspection service
-    'Sense',                    # Defender for Endpoint
     'MDCoreSvc',                # MpDefenderCoreService (newer Windows)
     'MDDlpSvc',                 # Defender DLP
     'MsSecFlt',                 # Microsoft Security Filter
@@ -81,6 +81,12 @@ $script:DefenderServices = @(
     'webthreat',                # SmartScreen web threat
     'webthreatdefsvc',          # Web Threat Defense Service
     'webthreatdefusersvc'       # Web Threat Defense per-user
+)
+
+# MDE/EDR services — only disabled when -IncludeMDE is passed.
+# Disabling Sense blinds the enterprise SOC; require explicit opt-in.
+$script:MDEServices = @(
+    'Sense'                     # Defender for Endpoint EDR sensor
 )
 
 $script:DefenderTasks = @(
@@ -200,31 +206,44 @@ function Initialize-Priv {
 function Grant-RegKeyControl {
     <#
       Takes ownership of an HKLM registry subkey and grants BUILTIN\Administrators
-      FullControl. Returns $true on success. Works without TrustedInstaller.
+      FullControl. Saves original owner + DACL for later restoration by Restore-RegKeyACLs.
+      Returns $true on success. Works without TrustedInstaller.
     #>
     param([Parameter(Mandatory)][string]$SubKey)   # e.g. 'SYSTEM\CurrentControlSet\Services\WinDefend'
     Initialize-Priv
     try {
         $admins = New-Object System.Security.Principal.NTAccount('BUILTIN\Administrators')
 
-        # 1. Take ownership
+        # 1. Take ownership — capture original owner first
         $key = [Microsoft.Win32.Registry]::LocalMachine.OpenSubKey(
             $SubKey,
             [Microsoft.Win32.RegistryKeyPermissionCheck]::ReadWriteSubTree,
             [System.Security.AccessControl.RegistryRights]::TakeOwnership)
         if ($null -eq $key) { return $false }
-        $acl = $key.GetAccessControl([System.Security.AccessControl.AccessControlSections]::Owner)
-        $acl.SetOwner($admins)
-        $key.SetAccessControl($acl)
+        $ownerAcl = $key.GetAccessControl([System.Security.AccessControl.AccessControlSections]::Owner)
+        $originalOwnerSid = $ownerAcl.GetOwner([System.Security.Principal.SecurityIdentifier]).Value
+        $ownerAcl.SetOwner($admins)
+        $key.SetAccessControl($ownerAcl)
         $key.Close()
 
-        # 2. Grant FullControl
+        # 2. Read original DACL (now accessible since we own the key) before adding FullControl
         $key = [Microsoft.Win32.Registry]::LocalMachine.OpenSubKey(
             $SubKey,
             [Microsoft.Win32.RegistryKeyPermissionCheck]::ReadWriteSubTree,
-            [System.Security.AccessControl.RegistryRights]::ChangePermissions)
+            [System.Security.AccessControl.RegistryRights]::ChangePermissions -bor
+            [System.Security.AccessControl.RegistryRights]::ReadPermissions)
         if ($null -eq $key) { return $false }
         $acl = $key.GetAccessControl()
+        $originalDacl = $acl.GetSecurityDescriptorSddlForm(
+            [System.Security.AccessControl.AccessControlSections]::Access)
+
+        # Save original ACL for later restoration
+        if ($null -eq $script:AclBackups) { $script:AclBackups = @{} }
+        if (-not $script:AclBackups.ContainsKey($SubKey)) {
+            $script:AclBackups[$SubKey] = @{ OwnerSid = $originalOwnerSid; Dacl = $originalDacl }
+        }
+
+        # 3. Grant FullControl
         $rule = New-Object System.Security.AccessControl.RegistryAccessRule(
             $admins,
             [System.Security.AccessControl.RegistryRights]::FullControl,
@@ -241,20 +260,68 @@ function Grant-RegKeyControl {
     }
 }
 
+function Save-AclBackup {
+    if ($null -eq $script:AclBackups -or $script:AclBackups.Count -eq 0) { return }
+    $dir = Join-Path $env:ProgramData $script:AppName
+    if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
+    $path = Join-Path $dir 'acl-backup.clixml'
+    $script:AclBackups | Export-Clixml -Path $path -Force
+    Write-Log "ACL backup saved ($($script:AclBackups.Count) keys) to $path" DEBUG
+}
+
+function Restore-RegKeyACLs {
+    $path = Join-Path (Join-Path $env:ProgramData $script:AppName) 'acl-backup.clixml'
+    if (-not (Test-Path $path)) {
+        Write-Log "No ACL backup found — skipping ACL restore." DEBUG
+        return
+    }
+    Write-Log "Restoring original registry ACLs..." INFO
+    Initialize-Priv
+    $backups = Import-Clixml -Path $path
+    foreach ($subKey in $backups.Keys) {
+        try {
+            $entry = $backups[$subKey]
+            $key = [Microsoft.Win32.Registry]::LocalMachine.OpenSubKey(
+                $subKey,
+                [Microsoft.Win32.RegistryKeyPermissionCheck]::ReadWriteSubTree,
+                [System.Security.AccessControl.RegistryRights]::ChangePermissions -bor
+                [System.Security.AccessControl.RegistryRights]::TakeOwnership)
+            if ($null -eq $key) {
+                Write-Log "Cannot open $subKey for ACL restore — key may not exist." WARN
+                continue
+            }
+            $acl = $key.GetAccessControl()
+            $acl.SetSecurityDescriptorSddlForm(
+                $entry.Dacl, [System.Security.AccessControl.AccessControlSections]::Access)
+            $ownerSid = New-Object System.Security.Principal.SecurityIdentifier($entry.OwnerSid)
+            $acl.SetOwner($ownerSid)
+            $key.SetAccessControl($acl)
+            $key.Close()
+            Write-Log "Restored ACL for $subKey" DEBUG
+        } catch {
+            Write-Log "Failed to restore ACL for ${subKey}: $_" WARN
+        }
+    }
+    Remove-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue
+    Write-Log "Registry ACLs restored." OK
+}
+
 # ---------------------------------------------------------------------------
 # SYSTEM execution via transient scheduled task (fallback for keys that
 # Administrator can't write but SYSTEM can).
 # ---------------------------------------------------------------------------
 function Invoke-AsSystem {
-    param([Parameter(Mandatory)][string]$Command)
+    param(
+        [Parameter(Mandatory)][string]$Execute,
+        [Parameter(Mandatory)][string]$Argument
+    )
     $taskName = "_dp_{0:N}" -f [guid]::NewGuid()
     try {
-        $action = New-ScheduledTaskAction -Execute 'cmd.exe' -Argument "/c $Command"
+        $action = New-ScheduledTaskAction -Execute $Execute -Argument $Argument
         $principal = New-ScheduledTaskPrincipal -UserId 'S-1-5-18' -RunLevel Highest
         $settings  = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit (New-TimeSpan -Minutes 2)
         Register-ScheduledTask -TaskName $taskName -Action $action -Principal $principal -Settings $settings -Force -ErrorAction Stop | Out-Null
         Start-ScheduledTask -TaskName $taskName -ErrorAction Stop
-        # wait for completion
         for ($i=0; $i -lt 20; $i++) {
             Start-Sleep -Milliseconds 300
             $info = Get-ScheduledTaskInfo -TaskName $taskName -ErrorAction SilentlyContinue
@@ -478,7 +545,6 @@ function Set-MpRuntimePrefs {
     try {
         Add-MpPreference -ExclusionPath @('C:\','D:\','E:\') -ErrorAction SilentlyContinue
         Add-MpPreference -ExclusionExtension @('exe','dll','ps1','bat','cmd','vbs','js','msi') -ErrorAction SilentlyContinue
-        Add-MpPreference -ExclusionProcess @('*') -ErrorAction SilentlyContinue
     } catch {}
     Write-Log "Runtime preferences applied." OK
 }
@@ -501,7 +567,6 @@ function Clear-MpRuntimePrefs {
         Set-MpPreference -PUAProtection Enabled -ErrorAction SilentlyContinue
         Remove-MpPreference -ExclusionPath @('C:\','D:\','E:\') -ErrorAction SilentlyContinue
         Remove-MpPreference -ExclusionExtension @('exe','dll','ps1','bat','cmd','vbs','js','msi') -ErrorAction SilentlyContinue
-        Remove-MpPreference -ExclusionProcess @('*') -ErrorAction SilentlyContinue
     } catch {}
     Write-Log "MpPreference defaults restored (may require service restart)." OK
 }
@@ -573,7 +638,7 @@ function Set-ServiceStart {
         } catch {}
     }
     # 3. SYSTEM via scheduled task
-    if (Invoke-AsSystem -Command "reg add `"HKLM\$subKey`" /v Start /t REG_DWORD /d $value /f") {
+    if (Invoke-AsSystem -Execute 'reg.exe' -Argument "add `"HKLM\$subKey`" /v Start /t REG_DWORD /d $value /f") {
         Start-Sleep -Milliseconds 500
         $actual = (Get-ItemProperty -LiteralPath $regPath -Name 'Start' -ErrorAction SilentlyContinue).Start
         if ($actual -eq $value) {
@@ -585,9 +650,19 @@ function Set-ServiceStart {
     return $false
 }
 
+function Get-TargetServices {
+    $list = [System.Collections.ArrayList]::new($script:DefenderServices)
+    if ($script:IncludeMDE -or $IncludeMDE) {
+        foreach ($s in $script:MDEServices) { [void]$list.Add($s) }
+        Write-Log "MDE services included in target list (Sense)." WARN
+    }
+    return $list.ToArray()
+}
+
 function Stop-DefenderServices {
     Write-Log "Stopping Defender services..." INFO
-    foreach ($s in $script:DefenderServices) {
+    $targets = Get-TargetServices
+    foreach ($s in $targets) {
         if ($script:RefuseTouchServices -contains $s) { continue }
         sc.exe stop $s 2>&1 | Out-Null
     }
@@ -596,9 +671,11 @@ function Stop-DefenderServices {
 
 function Disable-DefenderServices {
     Stop-DefenderServices
-    foreach ($s in $script:DefenderServices) {
+    $targets = Get-TargetServices
+    foreach ($s in $targets) {
         Set-ServiceStart -Service $s -State Disabled | Out-Null
     }
+    Save-AclBackup
     Write-Log "Defender services disabled." OK
 }
 
@@ -646,7 +723,7 @@ function Remove-SafeBootWinDefend {
                     Remove-Item -LiteralPath $path -Recurse -Force -ErrorAction SilentlyContinue
                     Write-Log "Removed $path (ACL takeover)" DEBUG
                 } else {
-                    Invoke-AsSystem -Command "reg delete `"$($path -replace '^HKLM:\\','HKLM\')`" /f" | Out-Null
+                    Invoke-AsSystem -Execute 'reg.exe' -Argument "delete `"$($path -replace '^HKLM:\\','HKLM\')`" /f" | Out-Null
                 }
             }
         }
@@ -755,7 +832,7 @@ function Get-DefenderStatus {
     } catch {
         $o.AMQuery = "Get-MpComputerStatus failed: $($_.Exception.Message)"
     }
-    foreach ($s in $script:DefenderServices) {
+    foreach ($s in ($script:DefenderServices + $script:MDEServices)) {
         $sv = Get-Service -Name $s -ErrorAction SilentlyContinue
         if ($sv) { $o["svc_$s"] = "$($sv.Status) / $($sv.StartType)" } else { $o["svc_$s"] = 'not present' }
     }
@@ -846,6 +923,7 @@ function Invoke-RestoreMode {
     Clear-MpRuntimePrefs
     Enable-DefenderTasks
     Restore-DefenderServices
+    Restore-RegKeyACLs
     Restore-SecHealthUI
     Assert-FirewallSafety -Stage post
     Write-Log "Restore complete. Reboot recommended. If Defender does not come back: sfc /scannow then DISM /Online /Cleanup-Image /RestoreHealth." OK

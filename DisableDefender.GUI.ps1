@@ -723,10 +723,11 @@ function Update-StatusTiles {
         }
 
         # Services disabled count
-        $total = $script:DefenderServices.Count
+        $allSvcs = $script:DefenderServices + $script:MDEServices
+        $total = $allSvcs.Count
         $disabled = 0
         $present = 0
-        foreach ($s in $script:DefenderServices) {
+        foreach ($s in $allSvcs) {
             $sv = Get-Service -Name $s -ErrorAction SilentlyContinue
             if ($sv) {
                 $present++
