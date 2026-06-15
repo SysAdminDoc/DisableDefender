@@ -651,7 +651,7 @@ function Show-Confirm {
     $ui.confirmOverlay.Visibility = 'Visible'
 }
 
-function Append-LogEntry {
+function Add-LogEntry {
     param($Entry)
     $para = $ui.logPara
     $run = New-Object System.Windows.Documents.Run
@@ -857,7 +857,7 @@ $drainTimer.Add_Tick({
     # Drain log queue
     while ($script:UIState.LogQueue.Count -gt 0) {
         $entry = $script:UIState.LogQueue.Dequeue()
-        Append-LogEntry $entry
+        Add-LogEntry $entry
     }
     # Check async completion
     if ($script:AsyncResult -and $script:AsyncResult.IsCompleted) {
@@ -967,7 +967,7 @@ Update-StatusTiles
 
 # Drain any pre-window log messages
 while ($script:UIState.LogQueue.Count -gt 0) {
-    Append-LogEntry ($script:UIState.LogQueue.Dequeue())
+    Add-LogEntry ($script:UIState.LogQueue.Dequeue())
 }
 
 # ---------------------------------------------------------------------------
