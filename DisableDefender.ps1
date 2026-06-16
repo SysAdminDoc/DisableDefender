@@ -27,6 +27,7 @@ param(
     [switch]$NoReboot,
     [switch]$Force,
     [switch]$IncludeMDE,
+    [switch]$Json,
     [string]$LogPath = "$env:ProgramData\DisableDefender\DisableDefender.log"
 )
 
@@ -1014,8 +1015,12 @@ function Get-DefenderStatus {
 }
 
 function Show-Status {
-    Write-Banner
     $s = Get-DefenderStatus
+    if ($Json) {
+        [PSCustomObject]$s | ConvertTo-Json -Depth 3
+        return
+    }
+    Write-Banner
     foreach ($k in $s.Keys) {
         $v = $s[$k]
         $c = 'Gray'
@@ -1133,13 +1138,20 @@ try {
         }
     }
 } catch {
-    Write-Log "FATAL: $_" ERROR
+    $msg = $_.Exception.Message
+    Write-Log "FATAL: $msg" ERROR
+    # Exit codes: 0=success, 1=partial/general, 2=Tamper-blocked, 3=needs Safe Mode, 4=firewall guard, 5=managed device
+    $exitCode = 1
+    if ($msg -match 'Tamper Protection') { $exitCode = 2 }
+    elseif ($msg -match 'Safe Mode')     { $exitCode = 3 }
+    elseif ($msg -match 'Firewall')      { $exitCode = 4 }
+    elseif ($msg -match 'managed')       { $exitCode = 5 }
     if (-not $Silent) {
         Add-Type -AssemblyName PresentationFramework
-        [System.Windows.MessageBox]::Show($_.Exception.Message, "$script:AppName error", 'OK', 'Error') | Out-Null
+        [System.Windows.MessageBox]::Show($msg, "$script:AppName error", 'OK', 'Error') | Out-Null
     }
     try { Stop-Transcript | Out-Null } catch {}
-    exit 1
+    exit $exitCode
 }
 
 try { Stop-Transcript | Out-Null } catch {}
