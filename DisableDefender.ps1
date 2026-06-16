@@ -401,6 +401,7 @@ function Test-TamperProtection {
 
 function New-SafetyRestorePoint {
     if ($NoRestorePoint) { return }
+    if ($WhatIfPreference) { Write-Log "WhatIf: would create System Restore point" INFO; return }
     try {
         Enable-ComputerRestore -Drive $env:SystemDrive -ErrorAction SilentlyContinue
         Checkpoint-Computer -Description "$script:AppName v$script:Version pre-op" -RestorePointType 'MODIFY_SETTINGS' -ErrorAction Stop
@@ -840,7 +841,9 @@ function Remove-SecHealthUI {
         $prov = Get-AppxProvisionedPackage -Online -ErrorAction SilentlyContinue | Where-Object { $_.DisplayName -eq 'Microsoft.SecHealthUI' }
         foreach ($pp in $prov) {
             try {
-                & dism.exe /Online /Set-NonRemovableAppPolicy /PackageFamily:$($pp.PackageName) /NonRemovable:0 2>&1 | Out-Null
+                if (-not $WhatIfPreference) {
+                    & dism.exe /Online /Set-NonRemovableAppPolicy /PackageFamily:$($pp.PackageName) /NonRemovable:0 2>&1 | Out-Null
+                }
             } catch {}
             Remove-AppxProvisionedPackage -Online -PackageName $pp.PackageName -AllUsers -ErrorAction SilentlyContinue | Out-Null
             Write-Log "Deprovisioned $($pp.PackageName)" DEBUG
