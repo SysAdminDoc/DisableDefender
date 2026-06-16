@@ -157,6 +157,28 @@ Describe 'Get-DefenderStatus' {
     }
 }
 
+Describe 'WhatIf behavior' {
+    It 'Grant-RegKeyControl returns true without modifying registry under WhatIf' {
+        $WhatIfPreference = $true
+        try {
+            $result = Grant-RegKeyControl -SubKey 'SYSTEM\CurrentControlSet\Services\WinDefend'
+            $result | Should -Be $true
+        } finally {
+            $WhatIfPreference = $false
+        }
+    }
+
+    It 'Invoke-AsSystem returns true without creating a task under WhatIf' {
+        $WhatIfPreference = $true
+        try {
+            $result = Invoke-AsSystem -Execute 'reg.exe' -Argument 'query HKLM /ve'
+            $result | Should -Be $true
+        } finally {
+            $WhatIfPreference = $false
+        }
+    }
+}
+
 Describe 'DefenderServices configuration' {
     It 'Does not contain any firewall services' {
         foreach ($s in $script:DefenderServices) {

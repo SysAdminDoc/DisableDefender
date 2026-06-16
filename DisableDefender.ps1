@@ -1,7 +1,7 @@
 #Requires -Version 5.1
 #Requires -RunAsAdministrator
 <#
-    DisableDefender v0.0.4
+    DisableDefender v0.0.5
     The ultimate Microsoft Defender Antivirus disabler / remover for Windows 10/11.
 
     DOES NOT touch the Windows Firewall. Firewall services (mpssvc, BFE) and the
@@ -616,7 +616,10 @@ function Clear-MpRuntimePrefs {
         'DisableRealtimeMonitoring','DisableBehaviorMonitoring','DisableBlockAtFirstSeen',
         'DisableIOAVProtection','DisableScriptScanning','DisableArchiveScanning',
         'DisableIntrusionPreventionSystem','DisableRemovableDriveScanning',
-        'DisableScanningMappedNetworkDrivesForFullScan','DisableScanningNetworkFiles'
+        'DisableScanningMappedNetworkDrivesForFullScan','DisableScanningNetworkFiles',
+        'DisableCoreServiceECSIntegration','DisableCoreServiceTelemetry',
+        'DisableSshParsing','DisableRdpParsing','DisableDnsOverTcpParsing',
+        'DisableInboundConnectionFiltering','DisableNetworkProtectionPerfTelemetry'
     )
     foreach ($p in $prefs) {
         $splat = @{ $p = $false; ErrorAction = 'SilentlyContinue' }
@@ -734,8 +737,14 @@ function Stop-DefenderServices {
 }
 
 function Disable-DefenderServices {
-    Stop-DefenderServices
     $targets = Get-TargetServices
+    Write-Log "Stopping Defender services..." INFO
+    foreach ($s in $targets) {
+        if ($script:RefuseTouchServices -contains $s) { continue }
+        if ($WhatIfPreference) { Write-Log "WhatIf: would stop service $s" INFO; continue }
+        sc.exe stop $s 2>&1 | Out-Null
+    }
+    Write-Log "Stop signals sent." OK
     foreach ($s in $targets) {
         Set-ServiceStart -Service $s -State Disabled | Out-Null
     }
@@ -889,10 +898,7 @@ function Remove-DefenderContextMenu {
     $shellPaths = @(
         'HKLM:\SOFTWARE\Classes\*\shellex\ContextMenuHandlers\EPP',
         'HKLM:\SOFTWARE\Classes\Directory\shellex\ContextMenuHandlers\EPP',
-        'HKLM:\SOFTWARE\Classes\Drive\shellex\ContextMenuHandlers\EPP',
-        'HKCR:\*\shellex\ContextMenuHandlers\EPP',
-        'HKCR:\Directory\shellex\ContextMenuHandlers\EPP',
-        'HKCR:\Drive\shellex\ContextMenuHandlers\EPP'
+        'HKLM:\SOFTWARE\Classes\Drive\shellex\ContextMenuHandlers\EPP'
     )
     foreach ($p in $shellPaths) {
         if (Test-Path -LiteralPath $p) {

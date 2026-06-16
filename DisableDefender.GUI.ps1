@@ -1,6 +1,6 @@
 #Requires -Version 5.1
 <#
-    DisableDefender GUI v0.0.4
+    DisableDefender GUI v0.0.5
     Premium WPF dark interface for DisableDefender.ps1
 
     Features:
@@ -304,7 +304,7 @@ function Write-Log {
                             <TextBlock Text="D" Foreground="White" FontWeight="Bold" FontSize="14" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                         </Border>
                         <TextBlock Text="DisableDefender" Foreground="{StaticResource Text}" FontSize="14" FontWeight="SemiBold" Margin="10,0,0,0" VerticalAlignment="Center"/>
-                        <TextBlock x:Name="versionText" Text="v0.0.4" Foreground="{StaticResource Overlay0}" FontSize="11" Margin="8,2,0,0" VerticalAlignment="Center"/>
+                        <TextBlock x:Name="versionText" Text="v0.0.5" Foreground="{StaticResource Overlay0}" FontSize="11" Margin="8,2,0,0" VerticalAlignment="Center"/>
                     </StackPanel>
                     <StackPanel Grid.Column="2" Orientation="Horizontal">
                         <Button x:Name="btnMin" Style="{StaticResource ChromeButton}" Content="&#xE921;" FontFamily="Segoe MDL2 Assets" Foreground="{StaticResource Text}" ToolTip="Minimize"/>
@@ -552,7 +552,7 @@ function Write-Log {
             </Border>
 
             <!-- ============ CONFIRMATION OVERLAY ============ -->
-            <Grid x:Name="confirmOverlay" Grid.Row="2" Background="#BB000000" Visibility="Collapsed">
+            <Grid x:Name="confirmOverlay" Grid.Row="0" Grid.RowSpan="4" Background="#BB000000" Visibility="Collapsed">
                 <Border Background="{StaticResource Base}" BorderBrush="{StaticResource Surface1}" BorderThickness="1" CornerRadius="12"
                         Padding="28" MaxWidth="520" HorizontalAlignment="Center" VerticalAlignment="Center">
                     <StackPanel>
@@ -901,6 +901,14 @@ $ui.btnClose.Add_Click({ $window.Close() })
 
 # Confirmation modal buttons - registered once
 $ui.btnConfirmCancel.Add_Click({ $ui.confirmOverlay.Visibility = 'Collapsed'; $script:ConfirmAction = $null })
+$window.Add_KeyDown({
+    param($s, $e)
+    if ($e.Key -eq 'Escape' -and $ui.confirmOverlay.Visibility -eq 'Visible') {
+        $ui.confirmOverlay.Visibility = 'Collapsed'
+        $script:ConfirmAction = $null
+        $e.Handled = $true
+    }
+})
 $ui.btnConfirmOk.Add_Click({
     $ui.confirmOverlay.Visibility = 'Collapsed'
     if ($script:ConfirmAction) {
@@ -962,6 +970,7 @@ $ui.btnClearLog.Add_Click({
 # ---------------------------------------------------------------------------
 # Initial render
 # ---------------------------------------------------------------------------
+$ui.versionText.Text = "v$script:Version"
 Write-Log "=== $script:AppName GUI v$script:Version ready ==="
 Update-StatusTiles
 
