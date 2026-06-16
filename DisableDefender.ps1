@@ -17,7 +17,7 @@
       Tamper Protection must be off. No scripted bypass exists on 24H2+.
 #>
 
-[CmdletBinding()]
+[CmdletBinding(SupportsShouldProcess)]
 param(
     [ValidateSet('Disable','Remove','Restore','Status')]
     [string]$Mode,
@@ -221,6 +221,10 @@ function Grant-RegKeyControl {
       Returns $true on success. Works without TrustedInstaller.
     #>
     param([Parameter(Mandatory)][string]$SubKey)   # e.g. 'SYSTEM\CurrentControlSet\Services\WinDefend'
+    if ($WhatIfPreference) {
+        Write-Log "WhatIf: would take ownership + grant FullControl on HKLM:\$SubKey" INFO
+        return $true
+    }
     Initialize-Priv
     try {
         $admins = New-Object System.Security.Principal.NTAccount('BUILTIN\Administrators')
@@ -326,6 +330,10 @@ function Invoke-AsSystem {
         [Parameter(Mandatory)][string]$Execute,
         [Parameter(Mandatory)][string]$Argument
     )
+    if ($WhatIfPreference) {
+        Write-Log "WhatIf: would run as SYSTEM: $Execute $Argument" INFO
+        return $true
+    }
     $taskName = "_dp_{0:N}" -f [guid]::NewGuid()
     try {
         $action = New-ScheduledTaskAction -Execute $Execute -Argument $Argument
@@ -520,6 +528,12 @@ function Set-DefenderPolicy {
         }
     }
 
+    # BruteForceProtection / RemoteEncryptionProtection (CSP-only features, registry equivalents)
+    $bfpRoot = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender\Features\BehavioralNetworkBlocks\BruteForceProtection'
+    $repRoot = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender\Features\BehavioralNetworkBlocks\RemoteEncryptionProtection'
+    Set-RegValue $bfpRoot 'BruteForceProtectionConfiguredState' 4   # 4 = Off
+    Set-RegValue $repRoot 'RemoteEncryptionProtectionConfiguredState' 4
+
     Write-Log "Policy keys written." OK
 }
 
@@ -623,6 +637,7 @@ function Clear-MpRuntimePrefs {
 function Disable-DefenderTasks {
     Write-Log "Disabling Defender scheduled tasks..." INFO
     foreach ($t in $script:DefenderTasks) {
+        if ($WhatIfPreference) { Write-Log "WhatIf: would disable task $t" INFO; continue }
         $tn = Split-Path $t -Leaf
         $tp = Split-Path $t -Parent
         try {
@@ -638,6 +653,7 @@ function Disable-DefenderTasks {
 function Enable-DefenderTasks {
     Write-Log "Enabling Defender scheduled tasks..." INFO
     foreach ($t in $script:DefenderTasks) {
+        if ($WhatIfPreference) { Write-Log "WhatIf: would enable task $t" INFO; continue }
         $tn = Split-Path $t -Leaf
         $tp = Split-Path $t -Parent
         try {
@@ -710,6 +726,7 @@ function Stop-DefenderServices {
     $targets = Get-TargetServices
     foreach ($s in $targets) {
         if ($script:RefuseTouchServices -contains $s) { continue }
+        if ($WhatIfPreference) { Write-Log "WhatIf: would stop service $s" INFO; continue }
         sc.exe stop $s 2>&1 | Out-Null
     }
     Write-Log "Stop signals sent." OK
@@ -856,6 +873,7 @@ function Remove-DefenderPlatformPackages {
     } catch {}
     foreach ($p in $pkgs) {
         if ([string]::IsNullOrWhiteSpace($p)) { continue }
+        if ($WhatIfPreference) { Write-Log "WhatIf: would DISM remove $p" INFO; continue }
         Write-Log "DISM remove: $p" DEBUG
         dism.exe /Online /Remove-Package /PackageName:$p /Quiet /NoRestart 2>&1 | Out-Null
     }
@@ -971,6 +989,15 @@ function Get-DefenderStatus {
         $os = Get-CimInstance Win32_OperatingSystem -ErrorAction Stop
         $o.WindowsBuild = "$($os.Caption) $($os.Version)"
     } catch {}
+    # VBS / HVCI / Credential Guard (read-only reporting — never modified)
+    try {
+        $dg = Get-CimInstance -ClassName Win32_DeviceGuard -Namespace 'root\Microsoft\Windows\DeviceGuard' -ErrorAction Stop
+        $o.VBS_Enabled = ($dg.VirtualizationBasedSecurityStatus -eq 2)
+        $o.HVCI_Enabled = ($dg.SecurityServicesRunning -contains 1)
+        $o.CredentialGuard_Enabled = ($dg.SecurityServicesRunning -contains 2)
+    } catch {
+        $o.VBS_Query = 'DeviceGuard WMI not available'
+    }
     foreach ($s in ($script:DefenderServices + $script:MDEServices)) {
         $sv = Get-Service -Name $s -ErrorAction SilentlyContinue
         if ($sv) { $o["svc_$s"] = "$($sv.Status) / $($sv.StartType)" } else { $o["svc_$s"] = 'not present' }
@@ -1096,7 +1123,7 @@ try {
         'Status'  { Show-Status; exit 0 }
     }
     Show-Status
-    if (-not $NoReboot -and ($Mode -eq 'Disable' -or $Mode -eq 'Remove')) {
+    if (-not $NoReboot -and -not $WhatIfPreference -and ($Mode -eq 'Disable' -or $Mode -eq 'Remove')) {
         if ($Silent) {
             Write-Log "Rebooting in 15 seconds..." WARN
             shutdown.exe /r /t 15 /c "$script:AppName reboot" | Out-Null
