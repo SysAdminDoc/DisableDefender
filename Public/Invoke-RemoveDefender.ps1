@@ -58,6 +58,7 @@ function Invoke-RemoveDefender {
                     throw 'Remove mode requires Safe Mode or -Force.'
                 }
             }
+            New-DefenderPhase -Name 'Known-bad override gate' -Key 'KnownBadGate' -Action { Confirm-RemoveKnownBadOverrides }
             New-DefenderPhase -Name 'Restore point' -Key 'RestorePoint' -Action { New-SafetyRestorePoint }
             New-DefenderPhase -Name 'Policy keys' -Key 'Policies' -Action { Set-DefenderPolicy }
             New-DefenderPhase -Name 'MpPreference' -Key 'MpPreference' -Action { Set-MpRuntimePrefs }

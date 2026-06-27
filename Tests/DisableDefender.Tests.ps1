@@ -248,6 +248,48 @@ InModuleScope DisableDefender {
         }
     }
 
+    Describe 'Remove known-bad safety gate' {
+        BeforeEach {
+            $script:AppDir = $TestDrive
+            $script:ForceMode = $false
+            Mock Write-Log {}
+            Remove-Item -LiteralPath (Join-Path $TestDrive 'tripwire.jsonl') -Force -ErrorAction SilentlyContinue
+        }
+
+        It 'refuses Remove on a domain-joined machine and writes a blocked tripwire' {
+            Mock Get-CimInstance {
+                [PSCustomObject]@{
+                    PartOfDomain = $true
+                    Domain       = 'corp.example'
+                }
+            } -ParameterFilter { $ClassName -eq 'Win32_ComputerSystem' }
+
+            { Confirm-RemoveKnownBadOverrides } | Should -Throw -ExpectedMessage '*DomainJoined*'
+
+            $tripwire = Get-Content -LiteralPath (Join-Path $TestDrive 'tripwire.jsonl') | Select-Object -Last 1 | ConvertFrom-Json
+            $tripwire.Name | Should -Be 'DomainJoined'
+            $tripwire.Mode | Should -Be 'Remove'
+            $tripwire.Blocked | Should -Be $true
+            $tripwire.Details.Domain | Should -Be 'corp.example'
+        }
+
+        It 'allows Force override while logging an unblocked tripwire' {
+            $script:ForceMode = $true
+            Mock Get-CimInstance {
+                [PSCustomObject]@{
+                    PartOfDomain = $true
+                    Domain       = 'corp.example'
+                }
+            } -ParameterFilter { $ClassName -eq 'Win32_ComputerSystem' }
+
+            { Confirm-RemoveKnownBadOverrides } | Should -Not -Throw
+
+            $tripwire = Get-Content -LiteralPath (Join-Path $TestDrive 'tripwire.jsonl') | Select-Object -Last 1 | ConvertFrom-Json
+            $tripwire.Blocked | Should -Be $false
+            $tripwire.Force | Should -Be $true
+        }
+    }
+
     Describe 'DefenderServices configuration' {
         It 'does not contain any firewall services' {
             foreach ($s in $script:DefenderServices) {

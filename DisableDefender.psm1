@@ -25,6 +25,7 @@ if (-not (Test-Path $script:AppDir)) {
 # Dot-source all private functions (order matters: Variables first, Write-Log second)
 . "$moduleRoot\Private\Variables.ps1"
 . "$moduleRoot\Private\Write-Log.ps1"
+. "$moduleRoot\Private\Tripwire.ps1"
 . "$moduleRoot\Private\ReplayManifest.ps1"
 . "$moduleRoot\Private\PhaseRunner.ps1"
 . "$moduleRoot\Private\Initialize-Priv.ps1"
