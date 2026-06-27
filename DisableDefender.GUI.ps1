@@ -1,11 +1,12 @@
 #Requires -Version 5.1
 <#
-    DisableDefender GUI v0.0.16
+    DisableDefender GUI v0.0.17
     Premium WPF dark interface for the DisableDefender module
 
     Features:
       - Catppuccin Mocha dark palette, custom chrome, glassmorphic panels
       - Live status tiles plus per-component lockdown/PPL dashboard
+      - Live policy edit stream with direct, ACL, and SYSTEM method icons
       - Async worker runspace so the UI never blocks
       - Streaming log pane with level colors + auto-scroll
       - Confirmation modal for destructive ops
@@ -310,7 +311,7 @@ function Write-Log {
                             <TextBlock Text="D" Foreground="White" FontWeight="Bold" FontSize="14" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                         </Border>
                         <TextBlock Text="DisableDefender" Foreground="{StaticResource Text}" FontSize="14" FontWeight="SemiBold" Margin="10,0,0,0" VerticalAlignment="Center"/>
-                        <TextBlock x:Name="versionText" Text="v0.0.16" Foreground="{StaticResource Overlay0}" FontSize="11" Margin="8,2,0,0" VerticalAlignment="Center"/>
+                        <TextBlock x:Name="versionText" Text="v0.0.17" Foreground="{StaticResource Overlay0}" FontSize="11" Margin="8,2,0,0" VerticalAlignment="Center"/>
                     </StackPanel>
                     <StackPanel Grid.Column="2" Orientation="Horizontal">
                         <Button x:Name="btnMin" Style="{StaticResource ChromeButton}" Content="&#xE921;" FontFamily="Segoe MDL2 Assets" Foreground="{StaticResource Text}" ToolTip="Minimize"/>
@@ -508,14 +509,32 @@ function Write-Log {
                     <!-- Component dashboard -->
                     <Border Grid.Row="1" Margin="20,4,20,8" Padding="12" CornerRadius="10" Background="{StaticResource Mantle}" BorderBrush="{StaticResource Surface0}" BorderThickness="1">
                         <Grid>
-                            <Grid.RowDefinitions>
-                                <RowDefinition Height="Auto"/>
-                                <RowDefinition Height="Auto"/>
-                            </Grid.RowDefinitions>
-                            <TextBlock Grid.Row="0" Text="COMPONENT LOCKDOWN" Foreground="{StaticResource Subtext0}" FontSize="11" FontWeight="SemiBold" Margin="0,0,0,10"/>
-                            <ScrollViewer Grid.Row="1" MaxHeight="176" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-                                <WrapPanel x:Name="componentTilePanel"/>
-                            </ScrollViewer>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="2*"/>
+                                <ColumnDefinition Width="12"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <Grid Grid.Column="0">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                </Grid.RowDefinitions>
+                                <TextBlock Grid.Row="0" Text="COMPONENT LOCKDOWN" Foreground="{StaticResource Subtext0}" FontSize="11" FontWeight="SemiBold" Margin="0,0,0,10"/>
+                                <ScrollViewer Grid.Row="1" MaxHeight="176" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                                    <WrapPanel x:Name="componentTilePanel"/>
+                                </ScrollViewer>
+                            </Grid>
+                            <Border Grid.Column="1" Width="1" Margin="5,0" Background="{StaticResource Surface0}"/>
+                            <Grid Grid.Column="2">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                </Grid.RowDefinitions>
+                                <TextBlock Grid.Row="0" Text="POLICY EDIT STREAM" Foreground="{StaticResource Subtext0}" FontSize="11" FontWeight="SemiBold" Margin="0,0,0,10"/>
+                                <ScrollViewer Grid.Row="1" MaxHeight="176" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                                    <StackPanel x:Name="policyStreamPanel"/>
+                                </ScrollViewer>
+                            </Grid>
                         </Grid>
                     </Border>
 
@@ -732,6 +751,121 @@ function Update-ComponentTiles {
     }
 }
 
+function Get-PolicyStreamEvent {
+    param([Parameter(Mandatory)]$Entry)
+
+    $message = [string]$Entry.Message
+    $streamEvent = [ordered]@{
+        Method = $null
+        Icon   = $null
+        Title  = $null
+        Detail = $message
+        Color  = 'Subtext1'
+    }
+
+    if ($message -match '^Set (?<Path>HKLM:\\.+)\\(?<Name>[^\\]+) = (?<Value>.+) \((?<Type>[^)]+)\)$') {
+        $streamEvent.Method = 'Direct'
+        $streamEvent.Icon = [char]0xE105
+        $streamEvent.Title = "$($Matches.Name) = $($Matches.Value)"
+        $streamEvent.Detail = $Matches.Path
+        $streamEvent.Color = 'Green'
+    } elseif ($message -match '^Removed (?<Path>HKLM:\\.+?)(?: \(ACL takeover\))?$') {
+        $streamEvent.Method = if ($message -like '*(ACL takeover)*') { 'ACL' } else { 'Direct' }
+        $streamEvent.Icon = if ($streamEvent.Method -eq 'ACL') { [char]0xE72E } else { [char]0xE107 }
+        $streamEvent.Title = 'Removed registry key'
+        $streamEvent.Detail = $Matches.Path
+        $streamEvent.Color = if ($streamEvent.Method -eq 'ACL') { 'Yellow' } else { 'Green' }
+    } elseif ($message -match '^Service (?<Name>\S+) Start=(?<State>\S+) \((?<Method>direct|ACL takeover|SYSTEM task)\)\.$') {
+        $streamEvent.Method = switch ($Matches.Method) {
+            'direct' { 'Direct' }
+            'ACL takeover' { 'ACL' }
+            default { 'SYSTEM' }
+        }
+        $streamEvent.Icon = switch ($streamEvent.Method) {
+            'Direct' { [char]0xE105 }
+            'ACL' { [char]0xE72E }
+            default { [char]0xE713 }
+        }
+        $streamEvent.Title = "$($Matches.Name) Start=$($Matches.State)"
+        $streamEvent.Detail = "$($streamEvent.Method) registry write"
+        $streamEvent.Color = switch ($streamEvent.Method) {
+            'Direct' { 'Green' }
+            'ACL' { 'Yellow' }
+            default { 'Peach' }
+        }
+    } elseif ($message -match '^WhatIf: would take ownership \+ grant FullControl on HKLM:\\(?<Path>.+)$') {
+        $streamEvent.Method = 'ACL'
+        $streamEvent.Icon = [char]0xE72E
+        $streamEvent.Title = 'Would grant registry ACL'
+        $streamEvent.Detail = "HKLM:\$($Matches.Path)"
+        $streamEvent.Color = 'Yellow'
+    } elseif ($message -match '^WhatIf: would run as SYSTEM: (?<Command>.+)$' -or $message -match '^Invoke-AsSystem failed: (?<Command>.+)$') {
+        $streamEvent.Method = 'SYSTEM'
+        $streamEvent.Icon = [char]0xE713
+        $streamEvent.Title = 'SYSTEM task method'
+        $streamEvent.Detail = $Matches.Command
+        $streamEvent.Color = if ($Entry.Level -eq 'ERROR') { 'Red' } else { 'Peach' }
+    } elseif ($message -match '^ACL backup saved|^Restored ACL for |^Registry ACLs restored') {
+        $streamEvent.Method = 'ACL'
+        $streamEvent.Icon = [char]0xE72E
+        $streamEvent.Title = 'Registry ACL state'
+        $streamEvent.Color = 'Yellow'
+    } else {
+        return $null
+    }
+
+    return [PSCustomObject]$streamEvent
+}
+
+function Add-PolicyStreamEntry {
+    param([Parameter(Mandatory)]$Entry)
+
+    if (-not $ui.policyStreamPanel) { return }
+    $streamEvent = Get-PolicyStreamEvent -Entry $Entry
+    if (-not $streamEvent) { return }
+
+    $row = [System.Windows.Controls.Border]::new()
+    $row.Margin = [System.Windows.Thickness]::new(0, 0, 0, 7)
+    $row.Padding = [System.Windows.Thickness]::new(8)
+    $row.CornerRadius = [System.Windows.CornerRadius]::new(7)
+    $row.Background = $window.Resources['Base']
+    $row.BorderBrush = $window.Resources['Surface0']
+    $row.BorderThickness = [System.Windows.Thickness]::new(1)
+    $row.ToolTip = $streamEvent.Detail
+
+    $grid = [System.Windows.Controls.Grid]::new()
+    $iconColumn = [System.Windows.Controls.ColumnDefinition]::new()
+    $iconColumn.Width = [System.Windows.GridLength]::new(26)
+    $textColumn = [System.Windows.Controls.ColumnDefinition]::new()
+    $textColumn.Width = [System.Windows.GridLength]::new(1, [System.Windows.GridUnitType]::Star)
+    $grid.ColumnDefinitions.Add($iconColumn) | Out-Null
+    $grid.ColumnDefinitions.Add($textColumn) | Out-Null
+
+    $icon = [System.Windows.Controls.TextBlock]::new()
+    $icon.Text = $streamEvent.Icon
+    $icon.FontFamily = 'Segoe MDL2 Assets'
+    $icon.FontSize = 14
+    $icon.Foreground = $window.Resources[$streamEvent.Color]
+    $icon.VerticalAlignment = 'Center'
+    [System.Windows.Controls.Grid]::SetColumn($icon, 0)
+
+    $textPanel = [System.Windows.Controls.StackPanel]::new()
+    $title = New-ComponentText -Text $streamEvent.Title -FontSize 11 -Resource 'Text' -Bold
+    $detail = New-ComponentText -Text "$($streamEvent.Method) - $($streamEvent.Detail)" -FontSize 10 -Resource 'Subtext0'
+    $textPanel.Children.Add($title) | Out-Null
+    $textPanel.Children.Add($detail) | Out-Null
+    [System.Windows.Controls.Grid]::SetColumn($textPanel, 1)
+
+    $grid.Children.Add($icon) | Out-Null
+    $grid.Children.Add($textPanel) | Out-Null
+    $row.Child = $grid
+
+    $ui.policyStreamPanel.Children.Insert(0, $row)
+    while ($ui.policyStreamPanel.Children.Count -gt 24) {
+        $ui.policyStreamPanel.Children.RemoveAt($ui.policyStreamPanel.Children.Count - 1)
+    }
+}
+
 function Show-Toast {
     param([string]$Message, [ValidateSet('info','ok','warn','error')][string]$Kind = 'info')
     $ui.toastText.Text = $Message
@@ -820,6 +954,7 @@ function Add-LogEntry {
     }
     $para.Inlines.Add($run)
     $ui.logBox.ScrollToEnd()
+    Add-PolicyStreamEntry -Entry $Entry
 }
 
 function Set-Busy {
@@ -1108,6 +1243,7 @@ $ui.btnExportLog.Add_Click({
 
 $ui.btnClearLog.Add_Click({
     $ui.logPara.Inlines.Clear()
+    if ($ui.policyStreamPanel) { $ui.policyStreamPanel.Children.Clear() }
     Show-Toast 'Log cleared.' info
 })
 
