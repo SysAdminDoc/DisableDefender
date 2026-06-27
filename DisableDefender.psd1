@@ -1,6 +1,6 @@
 @{
     RootModule        = 'DisableDefender.psm1'
-    ModuleVersion     = '0.0.15'
+    ModuleVersion     = '0.0.16'
     GUID              = 'a7e3f8d1-4b2c-4e9a-b5d6-1c8f2a3e4d5b'
     Author            = 'SysAdminDoc'
     CompanyName       = 'SysAdminDoc'
@@ -12,6 +12,7 @@
     FunctionsToExport = @(
         'Get-DefenderStatus'
         'Get-DefenderHealth'
+        'Get-DefenderComponentStatus'
         'Show-DefenderStatus'
         'Invoke-DisableDefender'
         'Invoke-RemoveDefender'
@@ -27,7 +28,7 @@
             Tags         = @('Defender', 'Security', 'Windows', 'Disable', 'Remove', 'Restore', 'Firewall')
             LicenseUri   = 'https://github.com/SysAdminDoc/DisableDefender/blob/main/LICENSE'
             ProjectUri   = 'https://github.com/SysAdminDoc/DisableDefender'
-            ReleaseNotes = 'v0.0.15: Added Disable-target diff view in the GUI confirmation modal.'
+            ReleaseNotes = 'v0.0.16: Added per-component GUI dashboard status tiles with PPL/driver protection state.'
         }
     }
 }

@@ -15,6 +15,7 @@ Describe 'Module manifest' {
 
     It 'exports only public commands' {
         $expected = @(
+            'Get-DefenderComponentStatus'
             'Get-DefenderHealth'
             'Get-DefenderStatus'
             'Invoke-DisableDefender'
@@ -223,6 +224,49 @@ InModuleScope DisableDefender {
 
             $parsed.Target | Should -Be 'Remove'
             $parsed.Summary.Total | Should -BeGreaterThan 0
+        }
+    }
+
+    Describe 'Get-DefenderComponentStatus' {
+        It 'includes the core process and driver protection components' {
+            Mock Get-Service {
+                [PSCustomObject]@{
+                    Name      = $Name
+                    Status    = 'Stopped'
+                    StartType = 'Disabled'
+                }
+            }
+            Mock Test-Path { $true }
+            Mock Get-ItemProperty {
+                if ($Name -eq 'LaunchProtected') {
+                    return [PSCustomObject]@{ LaunchProtected = 3 }
+                }
+                [PSCustomObject]@{ Start = 4 }
+            }
+            Mock Get-CimInstance {
+                [PSCustomObject]@{ State = 'Stopped'; StartMode = 'Disabled' }
+            } -ParameterFilter { $ClassName -eq 'Win32_SystemDriver' }
+
+            $result = @(Get-DefenderComponentStatus)
+
+            $result.Name | Should -Contain 'MsMpEng'
+            $result.Name | Should -Contain 'WdFilter'
+            $result.Name | Should -Contain 'WdBoot'
+            $result.Name | Should -Contain 'WdNisDrv'
+            ($result | Where-Object { $_.Name -eq 'MsMpEng' }).PPLStatus | Should -Be 'AntimalwareLight'
+            ($result | Where-Object { $_.Name -eq 'WdFilter' }).DriverRuntime | Should -Be 'Stopped / Disabled'
+        }
+
+        It 'emits JSON component output' {
+            Mock Get-Service { $null }
+            Mock Test-Path { $false }
+            Mock Get-CimInstance { $null } -ParameterFilter { $ClassName -eq 'Win32_SystemDriver' }
+
+            $json = Get-DefenderComponentStatus -Json
+            $parsed = $json | ConvertFrom-Json
+
+            $parsed.Name | Should -Contain 'MsMpEng'
+            ($parsed | Where-Object { $_.Name -eq 'Sense' }).ExpectedStart | Should -Be 'Manual'
         }
     }
 

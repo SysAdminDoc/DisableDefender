@@ -1,11 +1,11 @@
 #Requires -Version 5.1
 <#
-    DisableDefender GUI v0.0.15
+    DisableDefender GUI v0.0.16
     Premium WPF dark interface for the DisableDefender module
 
     Features:
       - Catppuccin Mocha dark palette, custom chrome, glassmorphic panels
-      - Live status tiles (AV, Real-time, Behavior, Tamper, Firewall, Safe Mode)
+      - Live status tiles plus per-component lockdown/PPL dashboard
       - Async worker runspace so the UI never blocks
       - Streaming log pane with level colors + auto-scroll
       - Confirmation modal for destructive ops
@@ -310,7 +310,7 @@ function Write-Log {
                             <TextBlock Text="D" Foreground="White" FontWeight="Bold" FontSize="14" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                         </Border>
                         <TextBlock Text="DisableDefender" Foreground="{StaticResource Text}" FontSize="14" FontWeight="SemiBold" Margin="10,0,0,0" VerticalAlignment="Center"/>
-                        <TextBlock x:Name="versionText" Text="v0.0.15" Foreground="{StaticResource Overlay0}" FontSize="11" Margin="8,2,0,0" VerticalAlignment="Center"/>
+                        <TextBlock x:Name="versionText" Text="v0.0.16" Foreground="{StaticResource Overlay0}" FontSize="11" Margin="8,2,0,0" VerticalAlignment="Center"/>
                     </StackPanel>
                     <StackPanel Grid.Column="2" Orientation="Horizontal">
                         <Button x:Name="btnMin" Style="{StaticResource ChromeButton}" Content="&#xE921;" FontFamily="Segoe MDL2 Assets" Foreground="{StaticResource Text}" ToolTip="Minimize"/>
@@ -416,6 +416,7 @@ function Write-Log {
                 <Grid Grid.Column="1">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>   <!-- tiles -->
+                        <RowDefinition Height="Auto"/>   <!-- component dashboard -->
                         <RowDefinition Height="*"/>      <!-- log -->
                     </Grid.RowDefinitions>
 
@@ -504,8 +505,22 @@ function Write-Log {
                         </Border>
                     </Grid>
 
+                    <!-- Component dashboard -->
+                    <Border Grid.Row="1" Margin="20,4,20,8" Padding="12" CornerRadius="10" Background="{StaticResource Mantle}" BorderBrush="{StaticResource Surface0}" BorderThickness="1">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+                            <TextBlock Grid.Row="0" Text="COMPONENT LOCKDOWN" Foreground="{StaticResource Subtext0}" FontSize="11" FontWeight="SemiBold" Margin="0,0,0,10"/>
+                            <ScrollViewer Grid.Row="1" MaxHeight="176" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                                <WrapPanel x:Name="componentTilePanel"/>
+                            </ScrollViewer>
+                        </Grid>
+                    </Border>
+
                     <!-- Log panel -->
-                    <Border Grid.Row="1" Margin="20,6,20,10" CornerRadius="10" Background="{StaticResource Mantle}" BorderBrush="{StaticResource Surface0}" BorderThickness="1">
+                    <Border Grid.Row="2" Margin="20,0,20,10" CornerRadius="10" Background="{StaticResource Mantle}" BorderBrush="{StaticResource Surface0}" BorderThickness="1">
                         <Grid>
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="Auto"/>
@@ -629,6 +644,92 @@ function Set-TileState {
         $dot.Fill = if ($InvertColor) { $window.Resources['Green'] } else { $window.Resources['Overlay0'] }
     }
     if ($SubText) { $sub.Text = $SubText }
+}
+
+function New-ComponentText {
+    param(
+        [string]$Text,
+        [int]$FontSize = 11,
+        [string]$Resource = 'Text',
+        [switch]$Bold
+    )
+
+    $block = [System.Windows.Controls.TextBlock]::new()
+    $block.Text = $Text
+    $block.FontSize = $FontSize
+    $block.Foreground = $window.Resources[$Resource]
+    $block.TextTrimming = [System.Windows.TextTrimming]::CharacterEllipsis
+    if ($Bold) { $block.FontWeight = 'SemiBold' }
+    return $block
+}
+
+function Add-ComponentTile {
+    param([Parameter(Mandatory)]$Component)
+
+    $border = [System.Windows.Controls.Border]::new()
+    $border.Width = 146
+    $border.Height = 76
+    $border.Margin = [System.Windows.Thickness]::new(0, 0, 8, 8)
+    $border.Padding = [System.Windows.Thickness]::new(10)
+    $border.CornerRadius = [System.Windows.CornerRadius]::new(8)
+    $border.Background = $window.Resources['Base']
+    $border.BorderThickness = [System.Windows.Thickness]::new(1)
+
+    switch ($Component.DisableTargetDrift) {
+        'OK' {
+            $dotBrush = $window.Resources['Green']
+            $border.BorderBrush = $window.Resources['Green']
+            $stateText = 'LOCKED'
+        }
+        'Drift' {
+            $dotBrush = $window.Resources['Yellow']
+            $border.BorderBrush = $window.Resources['Surface1']
+            $stateText = $Component.CurrentStart
+        }
+        default {
+            $dotBrush = $window.Resources['Overlay0']
+            $border.BorderBrush = $window.Resources['Surface0']
+            $stateText = 'UNKNOWN'
+        }
+    }
+
+    $panel = [System.Windows.Controls.StackPanel]::new()
+
+    $header = [System.Windows.Controls.DockPanel]::new()
+    $dot = [System.Windows.Shapes.Ellipse]::new()
+    $dot.Width = 8
+    $dot.Height = 8
+    $dot.Fill = $dotBrush
+    $dot.Margin = [System.Windows.Thickness]::new(0, 3, 7, 0)
+    [System.Windows.Controls.DockPanel]::SetDock($dot, [System.Windows.Controls.Dock]::Left)
+    $header.Children.Add($dot) | Out-Null
+    $header.Children.Add((New-ComponentText -Text $Component.Name -FontSize 12 -Bold)) | Out-Null
+
+    $runtime = $Component.RuntimeStatus
+    if ($Component.DriverRuntime) { $runtime = $Component.DriverRuntime }
+    $protection = if ($Component.PPLStatus -and $Component.PPLStatus -ne 'N/A') { "PPL $($Component.PPLStatus)" } else { $Component.Kind }
+
+    $panel.Children.Add($header) | Out-Null
+    $panel.Children.Add((New-ComponentText -Text $stateText -FontSize 11 -Resource 'Subtext1')) | Out-Null
+    $panel.Children.Add((New-ComponentText -Text $protection -FontSize 10 -Resource 'Subtext0')) | Out-Null
+    $panel.Children.Add((New-ComponentText -Text $runtime -FontSize 10 -Resource 'Overlay0')) | Out-Null
+
+    $border.ToolTip = ("{0}`nService: {1}`nExpected Disable start: {2}`nCurrent start: {3}`nRuntime: {4}`nProtection: {5}`n{6}" -f $Component.Name, $Component.Service, $Component.ExpectedStart, $Component.CurrentStart, $runtime, $Component.PPLStatus, $Component.Detail)
+    $border.Child = $panel
+    $ui.componentTilePanel.Children.Add($border) | Out-Null
+}
+
+function Update-ComponentTiles {
+    if (-not $ui.componentTilePanel) { return }
+    $ui.componentTilePanel.Children.Clear()
+    try {
+        foreach ($component in @(Get-DefenderComponentStatus)) {
+            Add-ComponentTile -Component $component
+        }
+    } catch {
+        $block = New-ComponentText -Text "Component dashboard unavailable: $($_.Exception.Message)" -FontSize 11 -Resource 'Yellow'
+        $ui.componentTilePanel.Children.Add($block) | Out-Null
+    }
 }
 
 function Show-Toast {
@@ -827,6 +928,7 @@ function Update-StatusTiles {
             $ui.sysTamperText.Text = if ($mp.IsTamperProtected) { 'ON' } else { 'Off' }
             $ui.sysTamperText.Foreground = if ($mp.IsTamperProtected) { $window.Resources['Red'] } else { $window.Resources['Green'] }
         }
+        Update-ComponentTiles
     } catch {
         Write-Log "Status refresh error: $_" WARN
     }
