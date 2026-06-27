@@ -217,4 +217,67 @@ InModuleScope DisableDefender {
             $script:MDEServices | Should -Contain 'Sense'
         }
     }
+
+    Describe 'Restore replay manifest' {
+        BeforeEach {
+            $script:RestoreManifestPath = Join-Path $TestDrive 'restore-manifest.jsonl'
+            $script:AppDir = $TestDrive
+            $script:RestoreManifestActive = $false
+            $script:RestoreManifestReplayMode = $false
+            $script:RestoreManifestRunId = $null
+            $script:RestoreManifestSequence = 0
+            $script:RestoreManifestMode = $null
+        }
+
+        It 'writes JSONL undo entries with sequence numbers' {
+            Start-RestoreManifest -Mode Disable
+            Write-RestoreManifestEntry -Phase 'Services' -Action 'SetServiceStart' -Target 'WinDefend' -Data ([ordered]@{
+                Service = 'WinDefend'
+                State   = 'Automatic'
+            })
+            Stop-RestoreManifest
+
+            $entries = @(Read-RestoreManifestEntries)
+            $entries.Count | Should -Be 1
+            $entries[0].Sequence | Should -Be 1
+            $entries[0].Action | Should -Be 'SetServiceStart'
+            $entries[0].Data.Service | Should -Be 'WinDefend'
+        }
+
+        It 'replays entries in reverse order and archives the manifest' {
+            Start-RestoreManifest -Mode Disable
+            Write-RestoreManifestEntry -Phase 'Services' -Action 'SetServiceStart' -Target 'FirstService' -Data ([ordered]@{
+                Service = 'FirstService'
+                State   = 'Manual'
+            })
+            Write-RestoreManifestEntry -Phase 'Services' -Action 'SetServiceStart' -Target 'SecondService' -Data ([ordered]@{
+                Service = 'SecondService'
+                State   = 'Automatic'
+            })
+            Stop-RestoreManifest
+
+            $script:ReplayOrder = @()
+            Mock Set-ServiceStart {
+                param($Service, $State)
+                $script:ReplayOrder += "$Service=$State"
+                return $true
+            }
+
+            Invoke-RestoreManifest | Should -Be $true
+            $script:ReplayOrder | Should -Be @('SecondService=Automatic','FirstService=Manual')
+            Test-Path -LiteralPath $script:RestoreManifestPath | Should -Be $false
+            Get-ChildItem -Path $TestDrive -Filter 'restore-manifest.restored.*.jsonl' | Should -Not -BeNullOrEmpty
+        }
+
+        It 'records absent registry values as remove-value undo entries' {
+            Start-RestoreManifest -Mode Disable
+            Register-RegistryValueUndo -Path 'HKCU:\Software\DisableDefenderMissingTestKey' -Name 'MissingValue' -Phase 'Policies'
+            Stop-RestoreManifest
+
+            $entries = @(Read-RestoreManifestEntries)
+            $entries.Count | Should -Be 1
+            $entries[0].Action | Should -Be 'RemoveRegistryValue'
+            $entries[0].Data.Name | Should -Be 'MissingValue'
+        }
+    }
 }

@@ -17,7 +17,17 @@ function Set-MpRuntimePrefs {
         'DisableInboundConnectionFiltering',
         'DisableNetworkProtectionPerfTelemetry'
     )
+    $currentPrefs = $null
+    if (Test-RestoreManifestRecording) {
+        try { $currentPrefs = Get-MpPreference -ErrorAction Stop } catch {}
+    }
     foreach ($p in $boolPrefs) {
+        if ($currentPrefs -and ($currentPrefs.PSObject.Properties.Name -contains $p)) {
+            Write-RestoreManifestEntry -Phase 'MpPreference' -Action 'SetMpPreference' -Target $p -Data ([ordered]@{
+                Name  = $p
+                Value = $currentPrefs.$p
+            })
+        }
         $splat = @{ $p = $true; ErrorAction = 'SilentlyContinue' }
         try { Set-MpPreference @splat } catch {}
     }
@@ -32,10 +42,34 @@ function Set-MpRuntimePrefs {
         CloudBlockLevel              = 'Default'     # minimum
     }
     foreach ($k in $enumPrefs.Keys) {
+        if ($currentPrefs -and ($currentPrefs.PSObject.Properties.Name -contains $k)) {
+            Write-RestoreManifestEntry -Phase 'MpPreference' -Action 'SetMpPreference' -Target $k -Data ([ordered]@{
+                Name  = $k
+                Value = $currentPrefs.$k
+            })
+        }
         $splat = @{ $k = $enumPrefs[$k]; ErrorAction = 'SilentlyContinue' }
         try { Set-MpPreference @splat } catch {}
     }
     try {
+        if ($currentPrefs) {
+            foreach ($path in @('C:\','D:\','E:\')) {
+                if (@($currentPrefs.ExclusionPath) -notcontains $path) {
+                    Write-RestoreManifestEntry -Phase 'MpPreference' -Action 'RemoveMpPreferenceValue' -Target "ExclusionPath:$path" -Data ([ordered]@{
+                        Parameter = 'ExclusionPath'
+                        Value     = $path
+                    })
+                }
+            }
+            foreach ($extension in @('exe','dll','ps1','bat','cmd','vbs','js','msi')) {
+                if (@($currentPrefs.ExclusionExtension) -notcontains $extension) {
+                    Write-RestoreManifestEntry -Phase 'MpPreference' -Action 'RemoveMpPreferenceValue' -Target "ExclusionExtension:$extension" -Data ([ordered]@{
+                        Parameter = 'ExclusionExtension'
+                        Value     = $extension
+                    })
+                }
+            }
+        }
         Add-MpPreference -ExclusionPath @('C:\','D:\','E:\') -ErrorAction SilentlyContinue
         Add-MpPreference -ExclusionExtension @('exe','dll','ps1','bat','cmd','vbs','js','msi') -ErrorAction SilentlyContinue
     } catch {}

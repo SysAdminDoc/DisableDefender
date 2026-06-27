@@ -4,6 +4,16 @@
 function Remove-SecHealthUI {
     Write-Log "Removing Windows Security (SecHealthUI) app..." INFO
     try {
+        if (Test-RestoreManifestRecording) {
+            $allUser = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Appx\AppxAllUserStore\Deprovisioned\Microsoft.SecHealthUI_8wekyb3d8bbwe'
+            $installedPackages = @(Get-AppxPackage -AllUsers -Name 'Microsoft.SecHealthUI' -ErrorAction SilentlyContinue | ForEach-Object { $_.PackageFullName })
+            $provisionedPackages = @(Get-AppxProvisionedPackage -Online -ErrorAction SilentlyContinue | Where-Object { $_.DisplayName -eq 'Microsoft.SecHealthUI' } | ForEach-Object { $_.PackageName })
+            Write-RestoreManifestEntry -Phase 'Appx' -Action 'RestoreSecHealthUI' -Target 'Microsoft.SecHealthUI' -Data ([ordered]@{
+                InstalledPackages      = $installedPackages
+                ProvisionedPackages    = $provisionedPackages
+                DeprovisionMarkerExisted = (Test-Path -LiteralPath $allUser)
+            })
+        }
         $pkgs = Get-AppxPackage -AllUsers -Name 'Microsoft.SecHealthUI' -ErrorAction SilentlyContinue
         foreach ($p in $pkgs) {
             Remove-AppxPackage -Package $p.PackageFullName -AllUsers -ErrorAction SilentlyContinue

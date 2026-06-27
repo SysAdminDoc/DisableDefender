@@ -18,6 +18,25 @@ function Set-ServiceStart {
         Write-Log "Service $Service not present, skipping." DEBUG
         return $true
     }
+    if (Test-RestoreManifestRecording) {
+        try {
+            $startValue = (Get-ItemProperty -LiteralPath $regPath -Name 'Start' -ErrorAction Stop).Start
+            $stateMap = @{
+                '0' = 'Boot'
+                '1' = 'System'
+                '2' = 'Automatic'
+                '3' = 'Manual'
+                '4' = 'Disabled'
+            }
+            $startKey = [string][int]$startValue
+            if ($stateMap.ContainsKey($startKey)) {
+                Write-RestoreManifestEntry -Phase 'Services' -Action 'SetServiceStart' -Target $Service -Data ([ordered]@{
+                    Service = $Service
+                    State   = $stateMap[$startKey]
+                })
+            }
+        } catch {}
+    }
     # 1. Direct write
     try {
         Set-ItemProperty -LiteralPath $regPath -Name 'Start' -Value $value -Type DWord -ErrorAction Stop
@@ -60,6 +79,14 @@ function Disable-DefenderServices {
     foreach ($s in $targets) {
         if ($script:RefuseTouchServices -contains $s) { continue }
         if ($WhatIfPreference) { Write-Log "WhatIf: would stop service $s" INFO; continue }
+        try {
+            $service = Get-Service -Name $s -ErrorAction Stop
+            if ($service.Status -eq 'Running') {
+                Write-RestoreManifestEntry -Phase 'Services' -Action 'StartService' -Target $s -Data ([ordered]@{
+                    Service = $s
+                })
+            }
+        } catch {}
         sc.exe stop $s 2>&1 | Out-Null
     }
     Write-Log "Stop signals sent." OK

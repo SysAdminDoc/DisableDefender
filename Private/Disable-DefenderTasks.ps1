@@ -8,6 +8,13 @@ function Disable-DefenderTasks {
         $tn = Split-Path $t -Leaf
         $tp = Split-Path $t -Parent
         try {
+            $task = Get-ScheduledTask -TaskName $tn -TaskPath "$tp\" -ErrorAction Stop
+            Write-RestoreManifestEntry -Phase 'Tasks' -Action 'SetScheduledTaskState' -Target $t -Data ([ordered]@{
+                TaskPath = $t
+                Enabled  = ($task.State -ne 'Disabled')
+            })
+        } catch {}
+        try {
             Disable-ScheduledTask -TaskName $tn -TaskPath "$tp\" -ErrorAction Stop | Out-Null
             Write-Log "Disabled task: $t" DEBUG
         } catch {

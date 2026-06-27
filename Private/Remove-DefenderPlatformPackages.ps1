@@ -12,6 +12,9 @@ function Remove-DefenderPlatformPackages {
     foreach ($p in $pkgs) {
         if ([string]::IsNullOrWhiteSpace($p)) { continue }
         if ($WhatIfPreference) { Write-Log "WhatIf: would DISM remove $p" INFO; continue }
+        Write-RestoreManifestEntry -Phase 'DISM' -Action 'DismRestoreHealth' -Target $p -Data ([ordered]@{
+            PackageName = $p
+        })
         Write-Log "DISM remove: $p" DEBUG
         dism.exe /Online /Remove-Package /PackageName:$p /Quiet /NoRestart 2>&1 | Out-Null
     }

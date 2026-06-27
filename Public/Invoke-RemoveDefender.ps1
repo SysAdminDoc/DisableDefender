@@ -39,24 +39,29 @@ function Invoke-RemoveDefender {
 
     Set-RunOptions -Force:$Force -NoRestorePoint:$NoRestorePoint -IncludeMDE:$IncludeMDE -Silent:$Silent -LogPath $LogPath -LogCallback $LogCallback
 
-    Confirm-Prereqs
-    Assert-FirewallSafety -Stage pre
-    if (-not $script:InSafeMode -and -not $script:ForceMode) {
-        Write-Log "Remove mode works best in Safe Mode. Reboot into Safe Mode and rerun, or pass -Force." WARN
-        if (-not $script:SilentMode) {
-            $ans = Read-Host 'Continue anyway? (y/N)'
-            if ($ans.ToUpper() -ne 'Y') { return }
-        } else { return }
+    Start-RestoreManifest -Mode Remove
+    try {
+        Confirm-Prereqs
+        Assert-FirewallSafety -Stage pre
+        if (-not $script:InSafeMode -and -not $script:ForceMode) {
+            Write-Log "Remove mode works best in Safe Mode. Reboot into Safe Mode and rerun, or pass -Force." WARN
+            if (-not $script:SilentMode) {
+                $ans = Read-Host 'Continue anyway? (y/N)'
+                if ($ans.ToUpper() -ne 'Y') { return }
+            } else { return }
+        }
+        New-SafetyRestorePoint
+        Set-DefenderPolicy
+        Set-MpRuntimePrefs
+        Disable-DefenderTasks
+        Disable-DefenderServices
+        Remove-SafeBootWinDefend
+        Remove-SecHealthUI
+        Remove-DefenderPlatformPackages
+        Remove-DefenderContextMenu
+        Assert-FirewallSafety -Stage post
+        Write-Log "Remove complete. Reboot required." OK
+    } finally {
+        Stop-RestoreManifest
     }
-    New-SafetyRestorePoint
-    Set-DefenderPolicy
-    Set-MpRuntimePrefs
-    Disable-DefenderTasks
-    Disable-DefenderServices
-    Remove-SafeBootWinDefend
-    Remove-SecHealthUI
-    Remove-DefenderPlatformPackages
-    Remove-DefenderContextMenu
-    Assert-FirewallSafety -Stage post
-    Write-Log "Remove complete. Reboot required." OK
 }

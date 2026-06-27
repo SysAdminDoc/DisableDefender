@@ -36,13 +36,18 @@ function Invoke-DisableDefender {
 
     Set-RunOptions -Force:$Force -NoRestorePoint:$NoRestorePoint -IncludeMDE:$IncludeMDE -Silent:$Silent -LogPath $LogPath -LogCallback $LogCallback
 
-    Confirm-Prereqs
-    Assert-FirewallSafety -Stage pre
-    New-SafetyRestorePoint
-    Set-DefenderPolicy
-    Set-MpRuntimePrefs
-    Disable-DefenderTasks
-    Disable-DefenderServices
-    Assert-FirewallSafety -Stage post
-    Write-Log "Disable complete. Reboot recommended." OK
+    Start-RestoreManifest -Mode Disable
+    try {
+        Confirm-Prereqs
+        Assert-FirewallSafety -Stage pre
+        New-SafetyRestorePoint
+        Set-DefenderPolicy
+        Set-MpRuntimePrefs
+        Disable-DefenderTasks
+        Disable-DefenderServices
+        Assert-FirewallSafety -Stage post
+        Write-Log "Disable complete. Reboot recommended." OK
+    } finally {
+        Stop-RestoreManifest
+    }
 }

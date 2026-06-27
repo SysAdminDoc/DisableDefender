@@ -29,6 +29,7 @@ function Remove-SafeBootWinDefend {
     Write-Log "Removing SafeBoot\WinDefend entries..." INFO
     foreach ($path in @($script:SafeBootMin, $script:SafeBootNet)) {
         if (Test-Path -LiteralPath $path) {
+            Register-RegistryTreeUndo -Path $path -Phase 'SafeBoot'
             try {
                 Remove-Item -LiteralPath $path -Recurse -Force -ErrorAction Stop
                 Write-Log "Removed $path" DEBUG

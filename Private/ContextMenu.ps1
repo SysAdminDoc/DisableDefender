@@ -10,6 +10,7 @@ function Remove-DefenderContextMenu {
     )
     foreach ($p in $shellPaths) {
         if (Test-Path -LiteralPath $p) {
+            Register-RegistryTreeUndo -Path $p -Phase 'ContextMenu'
             Remove-Item -LiteralPath $p -Force -ErrorAction SilentlyContinue
             Write-Log "Removed context menu: $p" DEBUG
         }

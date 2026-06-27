@@ -15,6 +15,7 @@ function Set-RegValue {
             return
         }
     }
+    Register-RegistryValueUndo -Path $Path -Name $Name -Phase 'Policies'
     if (-not (Test-Path -LiteralPath $Path)) {
         New-Item -Path $Path -Force | Out-Null
     }
