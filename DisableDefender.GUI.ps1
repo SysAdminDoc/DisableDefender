@@ -1,7 +1,7 @@
 #Requires -Version 5.1
 <#
-    DisableDefender GUI v0.0.5
-    Premium WPF dark interface for DisableDefender.ps1
+    DisableDefender GUI v0.0.6
+    Premium WPF dark interface for the DisableDefender module
 
     Features:
       - Catppuccin Mocha dark palette, custom chrome, glassmorphic panels
@@ -50,15 +50,21 @@ Add-Type -AssemblyName WindowsBase
 Add-Type -AssemblyName System.Xaml
 
 # ---------------------------------------------------------------------------
-# Core library - dot-source
+# Core module
 # ---------------------------------------------------------------------------
-$corePath = Join-Path $PSScriptRoot 'DisableDefender.ps1'
-if (-not (Test-Path $corePath)) {
-    [System.Windows.MessageBox]::Show("DisableDefender.ps1 not found alongside GUI.`nExpected: $corePath", 'DisableDefender', 'OK', 'Error') | Out-Null
+$modulePath = Join-Path $PSScriptRoot 'DisableDefender.psd1'
+if (-not (Test-Path -LiteralPath $modulePath)) {
+    [System.Windows.MessageBox]::Show("DisableDefender module manifest not found alongside GUI.`nExpected: $modulePath", 'DisableDefender', 'OK', 'Error') | Out-Null
     exit 1
 }
-$script:LibraryMode = $true
-. $corePath
+Import-Module -Name $modulePath -Force -ErrorAction Stop
+$script:Version = (Get-Module -Name DisableDefender).Version.ToString()
+$script:AppName = 'DisableDefender'
+$script:AppDir = Join-Path $env:ProgramData $script:AppName
+$script:LogPath = Join-Path $script:AppDir "$script:AppName.log"
+if (-not (Test-Path -LiteralPath $script:AppDir)) {
+    New-Item -ItemType Directory -Path $script:AppDir -Force | Out-Null
+}
 
 # ---------------------------------------------------------------------------
 # Synchronized UI state (queue for IPC between worker runspace and dispatcher)
@@ -304,7 +310,7 @@ function Write-Log {
                             <TextBlock Text="D" Foreground="White" FontWeight="Bold" FontSize="14" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                         </Border>
                         <TextBlock Text="DisableDefender" Foreground="{StaticResource Text}" FontSize="14" FontWeight="SemiBold" Margin="10,0,0,0" VerticalAlignment="Center"/>
-                        <TextBlock x:Name="versionText" Text="v0.0.5" Foreground="{StaticResource Overlay0}" FontSize="11" Margin="8,2,0,0" VerticalAlignment="Center"/>
+                        <TextBlock x:Name="versionText" Text="v0.0.6" Foreground="{StaticResource Overlay0}" FontSize="11" Margin="8,2,0,0" VerticalAlignment="Center"/>
                     </StackPanel>
                     <StackPanel Grid.Column="2" Orientation="Horizontal">
                         <Button x:Name="btnMin" Style="{StaticResource ChromeButton}" Content="&#xE921;" FontFamily="Segoe MDL2 Assets" Foreground="{StaticResource Text}" ToolTip="Minimize"/>
@@ -783,7 +789,7 @@ function Update-StatusTiles {
 }
 
 # ---------------------------------------------------------------------------
-# Async worker - runspace with access to core library
+# Async worker - runspace with access to DisableDefender module
 # ---------------------------------------------------------------------------
 $script:Runspace = $null
 $script:AsyncResult = $null
@@ -800,15 +806,13 @@ function Start-ModeAsync {
     $rs.ThreadOptions = 'ReuseThread'
     $rs.Open()
     $rs.SessionStateProxy.SetVariable('UIState', $script:UIState)
-    $rs.SessionStateProxy.SetVariable('CorePath', $corePath)
+    $rs.SessionStateProxy.SetVariable('ModulePath', $modulePath)
     $rs.SessionStateProxy.SetVariable('ActionMode', $ActionMode)
     $rs.SessionStateProxy.SetVariable('LogPath', $script:LogPath)
 
     $worker = {
-        $script:LibraryMode = $true
-        . $CorePath
-        # Override Write-Log inside this runspace scope
-        function Write-Log {
+        Import-Module -Name $ModulePath -Force -ErrorAction Stop
+        $logCallback = {
             param(
                 [Parameter(Mandatory)][string]$Message,
                 [ValidateSet('INFO','WARN','ERROR','OK','DEBUG')][string]$Level = 'INFO'
@@ -816,24 +820,17 @@ function Start-ModeAsync {
             $stamp = (Get-Date).ToString('HH:mm:ss')
             $entry = [PSCustomObject]@{ Time = $stamp; Level = $Level; Message = $Message }
             $UIState.LogQueue.Enqueue($entry)
-            $fileLine = "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')] [$Level] $Message"
-            try { Add-Content -LiteralPath $LogPath -Value $fileLine -ErrorAction Stop } catch {}
         }
-        # Prevent console prompts inside Confirm-Prereqs / Invoke-RemoveMode
-        $script:Force  = $true
-        $script:Silent = $false
-        $script:NoReboot = $true
-        $script:NoRestorePoint = $false
 
         try {
             switch ($ActionMode) {
-                'Disable' { Invoke-DisableMode }
-                'Remove'  { Invoke-RemoveMode  }
-                'Restore' { Invoke-RestoreMode }
+                'Disable' { Invoke-DisableDefender -Force -LogPath $LogPath -LogCallback $logCallback -Confirm:$false }
+                'Remove'  { Invoke-RemoveDefender -Force -LogPath $LogPath -LogCallback $logCallback -Confirm:$false }
+                'Restore' { Invoke-RestoreDefender -LogPath $LogPath -LogCallback $logCallback -Confirm:$false }
             }
             $UIState.LastResult = 'ok'
         } catch {
-            Write-Log "FATAL: $_" ERROR
+            & $logCallback -Message "FATAL: $_" -Level ERROR
             $UIState.LastResult = "error: $($_.Exception.Message)"
         }
     }

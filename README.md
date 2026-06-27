@@ -1,6 +1,6 @@
 # DisableDefender
 
-[![Version](https://img.shields.io/badge/version-0.0.4-blue.svg)](https://github.com/SysAdminDoc/DisableDefender/releases)
+[![Version](https://img.shields.io/badge/version-0.0.6-blue.svg)](https://github.com/SysAdminDoc/DisableDefender/releases)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-0078D6.svg)](https://www.microsoft.com/windows)
 [![PowerShell](https://img.shields.io/badge/powershell-5.1%2B-012456.svg)](https://learn.microsoft.com/powershell)
@@ -13,7 +13,7 @@
 
 DisableDefender fully disables (and optionally removes) Microsoft Defender Antivirus while **explicitly preserving the Windows Firewall**. Firewall services (`mpssvc`, `BFE`, `SharedAccess`) and policy keys are on a refuse-list and verified intact before and after every operation.
 
-PowerShell-native with **both a CLI and a premium WPF GUI**. No external dependencies. Reversible. Built from a synthesis of the best community techniques (policy keys, `Set-MpPreference`, registry ACL takeover, SYSTEM-via-task fallback, DISM package removal, SecHealthUI deprovision, scheduled task nuke, SafeBoot trap).
+PowerShell-native module with **both a CLI launcher and a premium WPF GUI**. No external dependencies. Reversible. Built from a synthesis of the best community techniques (policy keys, `Set-MpPreference`, registry ACL takeover, SYSTEM-via-task fallback, DISM package removal, SecHealthUI deprovision, scheduled task nuke, SafeBoot trap).
 
 ---
 
@@ -41,19 +41,20 @@ Dashboard tiles show: Antivirus engine, Real-time protection, Tamper Protection 
 - **SYSTEM-via-task fallback** for keys that even Admin+ACL-override can't touch
 - **Multi-strategy `Set-ServiceStart`**: direct write → ACL takeover → SYSTEM task
 - **Full policy coverage** (privacy.sexy-enriched): `DisableAntiSpyware`, real-time, behavior, IOAV, IPS, IPC, spynet, MAPS, NIS, IPS-throttle, MpEngine PUA + file-hash, signatures, scan, SmartScreen, MRT, passive-mode for MDE, UX suppression, legacy `Microsoft Antimalware`
-- **Runtime prefs**: `Set-MpPreference` sweep + global path/extension/process exclusions
+- **Runtime prefs**: `Set-MpPreference` sweep + global path/extension exclusions
 - **Scheduled tasks**: all four Defender tasks + ExploitGuard refresh disabled
-- **Service takedown**: 17 services including `MDCoreSvc`, `MDDlpSvc`, `MsSecFlt`, `MsSecCore`, `SgrmAgent`/`Broker`, `webthreatdefsvc`
+- **Service takedown**: 16 Defender services by default, including `MDCoreSvc`, `MDDlpSvc`, `MsSecFlt`, `MsSecCore`, `SgrmAgent`/`Broker`, `webthreatdefsvc`; MDE `Sense` requires explicit `-IncludeMDE`
 - **Appx removal**: SecHealthUI deprovision with `NonRemovableAppPolicy` override
 - **SafeBoot trap** (Remove mode): nukes `SafeBoot\{Minimal,Network}\WinDefend` so the service can't load even in Safe Mode
 - **Restore point** before any destructive op (opt-out with `-NoRestorePoint`)
-- **Auto-elevate, silent mode, transcript logging, Safe Mode aware**
+- **Module layout**: `DisableDefender.psd1` / `DisableDefender.psm1` with public commands and private helpers for function-level tests
+- **GUI auto-elevate, silent CLI mode, transcript logging, Safe Mode aware**
 
 ## Requirements
 
 - Windows 10 (1809+) or Windows 11 (any build, including 24H2/25H2)
 - PowerShell 5.1+ (PowerShell 7 works too)
-- Administrator rights (script auto-elevates)
+- Administrator rights (GUI auto-elevates; CLI must run from an elevated PowerShell session)
 - **Tamper Protection OFF** — you must toggle this manually first:
   *Settings > Windows Security > Virus & threat protection > Manage settings > Tamper Protection*
   There is no scripted bypass for Tamper Protection on 24H2+. DisableDefender detects the state and aborts if still on.
@@ -88,6 +89,17 @@ A menu appears with Disable / Remove / Restore / Status.
 
 # Silent automation
 .\DisableDefender.ps1 -Mode Disable -Silent -NoReboot
+
+# JSON status for automation
+.\DisableDefender.ps1 -Mode Status -Json
+```
+
+### Module
+```powershell
+Import-Module .\DisableDefender.psd1
+Get-DefenderStatus
+Invoke-DisableDefender -Force -NoRestorePoint
+Invoke-RestoreDefender
 ```
 
 ### Parameters
@@ -98,7 +110,9 @@ A menu appears with Disable / Remove / Restore / Status.
 | `-NoRestorePoint` | Skip System Restore checkpoint. |
 | `-NoReboot` | Don't auto-reboot at end. |
 | `-Force` | Bypass Tamper Protection / Safe Mode abort gates. |
-| `-LogPath` | Override log path (default `%APPDATA%\DisableDefender\DisableDefender.log`). |
+| `-IncludeMDE` | Also target the MDE `Sense` service. Disabled by default to preserve enterprise EDR visibility. |
+| `-Json` | Emit JSON for `Status`. |
+| `-LogPath` | Override log path (default `%ProgramData%\DisableDefender\DisableDefender.log`). |
 
 ## What each mode does
 
@@ -109,7 +123,7 @@ A menu appears with Disable / Remove / Restore / Status.
 4. Writes Defender policy keys (anti-spyware, real-time, behavior, IPS, spynet, passive-mode, SmartScreen, MRT)
 5. Applies `Set-MpPreference` sweep + global exclusions
 6. Disables 5 scheduled tasks
-7. Stops + disables 10 Defender services (NOT firewall)
+7. Stops + disables Defender services (NOT firewall; MDE `Sense` only with `-IncludeMDE`)
 8. Re-verifies firewall intact
 9. Prompts reboot
 
@@ -124,6 +138,7 @@ Everything Disable does, plus:
 - Resets `MpPreference` flags to default
 - Re-enables scheduled tasks
 - Restores default service start types
+- Restores backed-up registry ACLs when ACL takeover was used
 - Re-registers SecHealthUI from `%ProgramFiles%\WindowsApps`
 - If the Security app does not come back: `sfc /scannow` then `DISM /Online /Cleanup-Image /RestoreHealth`
 
@@ -160,8 +175,8 @@ v0.0.2 fixed a false-positive where `SharedAccess` (ICS, off by default) tripped
 | Firewall got disabled | Run `-Mode Restore`, or `netsh advfirewall set allprofiles state on` |
 
 ## Log locations
-- `%APPDATA%\DisableDefender\DisableDefender.log`
-- `%APPDATA%\DisableDefender\transcript.log`
+- `%ProgramData%\DisableDefender\DisableDefender.log`
+- `%ProgramData%\DisableDefender\transcript.log`
 
 ## License
 
