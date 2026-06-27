@@ -44,20 +44,88 @@ function Get-DefenderPartialState {
 function New-DefenderPhase {
     param(
         [Parameter(Mandatory)][string]$Name,
+        [string]$Key,
         [Parameter(Mandatory)][scriptblock]$Action
     )
 
+    if ([string]::IsNullOrWhiteSpace($Key)) {
+        $Key = $Name
+    }
+
     return [PSCustomObject]@{
         Name   = $Name
+        Key    = $Key
         Action = $Action
     }
+}
+
+function ConvertTo-DefenderPhaseToken {
+    param(
+        [Parameter(Mandatory)][string]$Value
+    )
+
+    return (($Value -replace '[^A-Za-z0-9]', '').ToLowerInvariant())
+}
+
+function New-DefenderPhaseFilterSet {
+    param(
+        [string[]]$Values
+    )
+
+    $set = @{}
+    foreach ($value in @($Values)) {
+        if ([string]::IsNullOrWhiteSpace($value)) { continue }
+        $set[(ConvertTo-DefenderPhaseToken -Value $value)] = $true
+    }
+    return $set
+}
+
+function Get-DefenderPhaseSkipReason {
+    param(
+        [Parameter(Mandatory)]$Phase,
+        [hashtable]$OnlySet,
+        [hashtable]$SkipSet
+    )
+
+    $tokens = @(
+        (ConvertTo-DefenderPhaseToken -Value $Phase.Name),
+        (ConvertTo-DefenderPhaseToken -Value $Phase.Key)
+    ) | Select-Object -Unique
+
+    if ($OnlySet.Count -gt 0) {
+        $matchedOnly = $false
+        foreach ($token in $tokens) {
+            if ($OnlySet.ContainsKey($token)) {
+                $matchedOnly = $true
+                break
+            }
+        }
+        if (-not $matchedOnly) { return 'Only' }
+    }
+
+    foreach ($token in $tokens) {
+        if ($SkipSet.ContainsKey($token)) { return 'Skip' }
+    }
+
+    return $null
 }
 
 function Invoke-DefenderPhasePlan {
     param(
         [Parameter(Mandatory)][ValidateSet('Disable','Remove','Restore')][string]$Mode,
-        [Parameter(Mandatory)][object[]]$Phases
+        [Parameter(Mandatory)][object[]]$Phases,
+        [string[]]$Only,
+        [string[]]$Skip
     )
+
+    $onlySet = New-DefenderPhaseFilterSet -Values $Only
+    $skipSet = New-DefenderPhaseFilterSet -Values $Skip
+    if ($onlySet.Count -gt 0) {
+        Write-Log "Phase filter active: Only=$($Only -join ',')" INFO
+    }
+    if ($skipSet.Count -gt 0) {
+        Write-Log "Phase filter active: Skip=$($Skip -join ',')" INFO
+    }
 
     $state = [ordered]@{
         SchemaVersion = 1
@@ -67,14 +135,18 @@ function Invoke-DefenderPhasePlan {
         Started       = (Get-Date).ToString('o')
         Updated       = (Get-Date).ToString('o')
         PhaseStatePath = (Get-DefenderPhaseStatePath)
+        Only          = @($Only)
+        Skip          = @($Skip)
         Phases        = @()
     }
     $phaseStates = New-Object System.Collections.ArrayList
+    $runCount = 0
     Save-DefenderPhaseState -State $state
 
     foreach ($phase in $Phases) {
         $phaseState = [ordered]@{
             Name      = $phase.Name
+            Key       = $phase.Key
             Status    = 'Running'
             Started   = (Get-Date).ToString('o')
             Completed = $null
@@ -83,6 +155,19 @@ function Invoke-DefenderPhasePlan {
         [void]$phaseStates.Add($phaseState)
         $state.Phases = @($phaseStates)
         Save-DefenderPhaseState -State $state
+
+        $skipReason = Get-DefenderPhaseSkipReason -Phase $phase -OnlySet $onlySet -SkipSet $skipSet
+        if ($skipReason) {
+            $phaseState.Status = 'Skipped'
+            $phaseState.Completed = (Get-Date).ToString('o')
+            $phaseState.SkipReason = $skipReason
+            $state.Phases = @($phaseStates)
+            Save-DefenderPhaseState -State $state
+            Write-Log "Skipped phase: $($phase.Name) ($skipReason filter)" DEBUG
+            continue
+        }
+
+        $runCount++
         Write-Log "Starting phase: $($phase.Name)" INFO
 
         try {
@@ -108,6 +193,13 @@ function Invoke-DefenderPhasePlan {
             Write-Log "Recovery choices: rerun $Mode to resume idempotent phases, or run Restore to roll back from the replay manifest." WARN
             throw
         }
+    }
+
+    if ($runCount -eq 0) {
+        $state.Status = 'Failed'
+        $state.Error = 'Phase filters selected no runnable phases.'
+        Save-DefenderPhaseState -State $state
+        throw 'Phase filters selected no runnable phases.'
     }
 
     $state.Status = 'Completed'

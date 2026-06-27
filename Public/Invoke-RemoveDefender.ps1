@@ -20,6 +20,10 @@ function Invoke-RemoveDefender {
         Suppress console output and prompts.
     .PARAMETER LogPath
         Override the default log file path.
+    .PARAMETER Only
+        Run only the named phase keys.
+    .PARAMETER Skip
+        Skip the named phase keys.
     .EXAMPLE
         Invoke-RemoveDefender -Force
     .EXAMPLE
@@ -32,6 +36,10 @@ function Invoke-RemoveDefender {
         [switch]$IncludeMDE,
         [switch]$Silent,
         [string]$LogPath,
+        [ValidateSet('Prerequisites','FirewallPreflight','FirewallPostflight','RestorePoint','Policies','MpPreference','Tasks','Services','SafeBoot','Appx','DISM','ContextMenu')]
+        [string[]]$Only,
+        [ValidateSet('Prerequisites','FirewallPreflight','FirewallPostflight','RestorePoint','Policies','MpPreference','Tasks','Services','SafeBoot','Appx','DISM','ContextMenu')]
+        [string[]]$Skip,
         [scriptblock]$LogCallback
     )
 
@@ -42,26 +50,26 @@ function Invoke-RemoveDefender {
     Start-RestoreManifest -Mode Remove
     try {
         $phases = @(
-            New-DefenderPhase -Name 'Prerequisites' -Action { Confirm-Prereqs }
-            New-DefenderPhase -Name 'Firewall preflight' -Action { Assert-FirewallSafety -Stage pre }
-            New-DefenderPhase -Name 'Safe Mode gate' -Action {
+            New-DefenderPhase -Name 'Prerequisites' -Key 'Prerequisites' -Action { Confirm-Prereqs }
+            New-DefenderPhase -Name 'Firewall preflight' -Key 'FirewallPreflight' -Action { Assert-FirewallSafety -Stage pre }
+            New-DefenderPhase -Name 'Safe Mode gate' -Key 'SafeModeGate' -Action {
                 if (-not $script:InSafeMode -and -not $script:ForceMode) {
                     Write-Log "Remove mode works best in Safe Mode. Reboot into Safe Mode and rerun, or pass -Force." WARN
                     throw 'Remove mode requires Safe Mode or -Force.'
                 }
             }
-            New-DefenderPhase -Name 'Restore point' -Action { New-SafetyRestorePoint }
-            New-DefenderPhase -Name 'Policy keys' -Action { Set-DefenderPolicy }
-            New-DefenderPhase -Name 'MpPreference' -Action { Set-MpRuntimePrefs }
-            New-DefenderPhase -Name 'Scheduled tasks' -Action { Disable-DefenderTasks }
-            New-DefenderPhase -Name 'Services' -Action { Disable-DefenderServices }
-            New-DefenderPhase -Name 'SafeBoot' -Action { Remove-SafeBootWinDefend }
-            New-DefenderPhase -Name 'SecHealthUI' -Action { Remove-SecHealthUI }
-            New-DefenderPhase -Name 'DISM packages' -Action { Remove-DefenderPlatformPackages }
-            New-DefenderPhase -Name 'Context menu' -Action { Remove-DefenderContextMenu }
-            New-DefenderPhase -Name 'Firewall postflight' -Action { Assert-FirewallSafety -Stage post }
+            New-DefenderPhase -Name 'Restore point' -Key 'RestorePoint' -Action { New-SafetyRestorePoint }
+            New-DefenderPhase -Name 'Policy keys' -Key 'Policies' -Action { Set-DefenderPolicy }
+            New-DefenderPhase -Name 'MpPreference' -Key 'MpPreference' -Action { Set-MpRuntimePrefs }
+            New-DefenderPhase -Name 'Scheduled tasks' -Key 'Tasks' -Action { Disable-DefenderTasks }
+            New-DefenderPhase -Name 'Services' -Key 'Services' -Action { Disable-DefenderServices }
+            New-DefenderPhase -Name 'SafeBoot' -Key 'SafeBoot' -Action { Remove-SafeBootWinDefend }
+            New-DefenderPhase -Name 'SecHealthUI' -Key 'Appx' -Action { Remove-SecHealthUI }
+            New-DefenderPhase -Name 'DISM packages' -Key 'DISM' -Action { Remove-DefenderPlatformPackages }
+            New-DefenderPhase -Name 'Context menu' -Key 'ContextMenu' -Action { Remove-DefenderContextMenu }
+            New-DefenderPhase -Name 'Firewall postflight' -Key 'FirewallPostflight' -Action { Assert-FirewallSafety -Stage post }
         )
-        Invoke-DefenderPhasePlan -Mode Remove -Phases $phases
+        Invoke-DefenderPhasePlan -Mode Remove -Phases $phases -Only $Only -Skip $Skip
         Write-Log "Remove complete. Reboot required." OK
     } finally {
         Stop-RestoreManifest

@@ -324,5 +324,38 @@ InModuleScope DisableDefender {
             $state.PartialState.firewall_Domain | Should -Be $true
             $state.PartialState.svc_WinDefend | Should -Be 'Running / Automatic'
         }
+
+        It 'runs only matching phase keys and records skipped phases' {
+            $script:FilterRun = @()
+            $phases = @(
+                New-DefenderPhase -Name 'Policy keys' -Key 'Policies' -Action { $script:FilterRun += 'Policies' }
+                New-DefenderPhase -Name 'Services' -Key 'Services' -Action { $script:FilterRun += 'Services' }
+                New-DefenderPhase -Name 'Tasks' -Key 'Tasks' -Action { $script:FilterRun += 'Tasks' }
+            )
+
+            Invoke-DefenderPhasePlan -Mode Disable -Phases $phases -Only Services
+
+            $script:FilterRun | Should -Be @('Services')
+            $state = Get-Content -Raw -LiteralPath $script:PhaseStatePath | ConvertFrom-Json
+            $state.Status | Should -Be 'Completed'
+            $state.Only | Should -Be @('Services')
+            $state.Phases[0].Status | Should -Be 'Skipped'
+            $state.Phases[0].SkipReason | Should -Be 'Only'
+            $state.Phases[1].Status | Should -Be 'Completed'
+            $state.Phases[2].Status | Should -Be 'Skipped'
+        }
+
+        It 'skips matching phase keys and fails when filters select nothing' {
+            $phases = @(
+                New-DefenderPhase -Name 'Services' -Key 'Services' -Action { $script:SkipRun = $true }
+            )
+
+            { Invoke-DefenderPhasePlan -Mode Disable -Phases $phases -Skip Services } | Should -Throw 'Phase filters selected no runnable phases.'
+
+            $state = Get-Content -Raw -LiteralPath $script:PhaseStatePath | ConvertFrom-Json
+            $state.Status | Should -Be 'Failed'
+            $state.Phases[0].Status | Should -Be 'Skipped'
+            $state.Phases[0].SkipReason | Should -Be 'Skip'
+        }
     }
 }

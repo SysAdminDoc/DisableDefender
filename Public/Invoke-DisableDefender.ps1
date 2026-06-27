@@ -17,6 +17,10 @@ function Invoke-DisableDefender {
         Suppress console output while still writing the log file.
     .PARAMETER LogPath
         Override the default log file path.
+    .PARAMETER Only
+        Run only the named phase keys.
+    .PARAMETER Skip
+        Skip the named phase keys.
     .EXAMPLE
         Invoke-DisableDefender
     .EXAMPLE
@@ -29,6 +33,10 @@ function Invoke-DisableDefender {
         [switch]$IncludeMDE,
         [switch]$Silent,
         [string]$LogPath,
+        [ValidateSet('Prerequisites','FirewallPreflight','FirewallPostflight','RestorePoint','Policies','MpPreference','Tasks','Services')]
+        [string[]]$Only,
+        [ValidateSet('Prerequisites','FirewallPreflight','FirewallPostflight','RestorePoint','Policies','MpPreference','Tasks','Services')]
+        [string[]]$Skip,
         [scriptblock]$LogCallback
     )
 
@@ -39,16 +47,16 @@ function Invoke-DisableDefender {
     Start-RestoreManifest -Mode Disable
     try {
         $phases = @(
-            New-DefenderPhase -Name 'Prerequisites' -Action { Confirm-Prereqs }
-            New-DefenderPhase -Name 'Firewall preflight' -Action { Assert-FirewallSafety -Stage pre }
-            New-DefenderPhase -Name 'Restore point' -Action { New-SafetyRestorePoint }
-            New-DefenderPhase -Name 'Policy keys' -Action { Set-DefenderPolicy }
-            New-DefenderPhase -Name 'MpPreference' -Action { Set-MpRuntimePrefs }
-            New-DefenderPhase -Name 'Scheduled tasks' -Action { Disable-DefenderTasks }
-            New-DefenderPhase -Name 'Services' -Action { Disable-DefenderServices }
-            New-DefenderPhase -Name 'Firewall postflight' -Action { Assert-FirewallSafety -Stage post }
+            New-DefenderPhase -Name 'Prerequisites' -Key 'Prerequisites' -Action { Confirm-Prereqs }
+            New-DefenderPhase -Name 'Firewall preflight' -Key 'FirewallPreflight' -Action { Assert-FirewallSafety -Stage pre }
+            New-DefenderPhase -Name 'Restore point' -Key 'RestorePoint' -Action { New-SafetyRestorePoint }
+            New-DefenderPhase -Name 'Policy keys' -Key 'Policies' -Action { Set-DefenderPolicy }
+            New-DefenderPhase -Name 'MpPreference' -Key 'MpPreference' -Action { Set-MpRuntimePrefs }
+            New-DefenderPhase -Name 'Scheduled tasks' -Key 'Tasks' -Action { Disable-DefenderTasks }
+            New-DefenderPhase -Name 'Services' -Key 'Services' -Action { Disable-DefenderServices }
+            New-DefenderPhase -Name 'Firewall postflight' -Key 'FirewallPostflight' -Action { Assert-FirewallSafety -Stage post }
         )
-        Invoke-DefenderPhasePlan -Mode Disable -Phases $phases
+        Invoke-DefenderPhasePlan -Mode Disable -Phases $phases -Only $Only -Skip $Skip
         Write-Log "Disable complete. Reboot recommended." OK
     } finally {
         Stop-RestoreManifest
