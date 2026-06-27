@@ -290,6 +290,33 @@ InModuleScope DisableDefender {
         }
     }
 
+    Describe 'System Restore checkpoint throttling' {
+        BeforeEach {
+            $script:NoRestorePointMode = $false
+            $script:RestorePointLogs = @()
+            Mock Enable-ComputerRestore {}
+            Mock Write-Log {
+                param($Message, $Level)
+                $script:RestorePointLogs += "$Level|$Message"
+            }
+        }
+
+        It 'logs throttle-aware messaging when Windows refuses due to restore point frequency' {
+            Mock Checkpoint-Computer { throw 'A new system restore point cannot be created because one has already been created within the past 1440 minutes.' }
+            Mock Get-ItemProperty {
+                [PSCustomObject]@{ SystemRestorePointCreationFrequency = 720 }
+            } -ParameterFilter { $Name -eq 'SystemRestorePointCreationFrequency' }
+
+            New-SafetyRestorePoint
+
+            ($script:RestorePointLogs -join "`n") | Should -Match 'WARN\|System Restore point skipped by Windows throttle interval \(720 minutes\)'
+        }
+
+        It 'recognizes SystemRestorePointCreationFrequency errors' {
+            Test-SystemRestoreThrottleError -Message 'SystemRestorePointCreationFrequency policy blocked this request.' | Should -Be $true
+        }
+    }
+
     Describe 'DefenderServices configuration' {
         It 'does not contain any firewall services' {
             foreach ($s in $script:DefenderServices) {
