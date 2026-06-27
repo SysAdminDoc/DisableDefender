@@ -331,6 +331,7 @@ InModuleScope DisableDefender {
         BeforeEach {
             $script:PhaseStatePath = Join-Path $TestDrive 'phase-state.json'
             $script:AppDir = $TestDrive
+            Mock Assert-FirewallSafety {}
         }
 
         It 'records completed phase boundaries' {
@@ -347,6 +348,7 @@ InModuleScope DisableDefender {
             $state.Phases[0].Status | Should -Be 'Completed'
             $state.Phases[1].Status | Should -Be 'Completed'
             $script:PhaseTestValue | Should -Be 2
+            Should -Invoke Assert-FirewallSafety -Times 4 -Exactly
         }
 
         It 'records failed phase, partial state, and rethrows' {
@@ -369,6 +371,7 @@ InModuleScope DisableDefender {
             $state.Phases[1].Status | Should -Be 'Failed'
             $state.PartialState.firewall_Domain | Should -Be $true
             $state.PartialState.svc_WinDefend | Should -Be 'Running / Automatic'
+            Should -Invoke Assert-FirewallSafety -Times 3 -Exactly
         }
 
         It 'runs only matching phase keys and records skipped phases' {
@@ -389,6 +392,7 @@ InModuleScope DisableDefender {
             $state.Phases[0].SkipReason | Should -Be 'Only'
             $state.Phases[1].Status | Should -Be 'Completed'
             $state.Phases[2].Status | Should -Be 'Skipped'
+            Should -Invoke Assert-FirewallSafety -Times 2 -Exactly
         }
 
         It 'skips matching phase keys and fails when filters select nothing' {

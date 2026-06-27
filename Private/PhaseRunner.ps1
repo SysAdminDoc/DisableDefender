@@ -110,6 +110,15 @@ function Get-DefenderPhaseSkipReason {
     return $null
 }
 
+function Assert-DefenderFirewallBoundary {
+    param(
+        [Parameter(Mandatory)][string]$Phase,
+        [Parameter(Mandatory)][ValidateSet('before','after')][string]$Boundary
+    )
+
+    Assert-FirewallSafety -Stage "${Boundary}:$Phase"
+}
+
 function Invoke-DefenderPhasePlan {
     param(
         [Parameter(Mandatory)][ValidateSet('Disable','Remove','Restore')][string]$Mode,
@@ -171,7 +180,9 @@ function Invoke-DefenderPhasePlan {
         Write-Log "Starting phase: $($phase.Name)" INFO
 
         try {
+            Assert-DefenderFirewallBoundary -Phase $phase.Key -Boundary before
             & $phase.Action
+            Assert-DefenderFirewallBoundary -Phase $phase.Key -Boundary after
             $phaseState.Status = 'Completed'
             $phaseState.Completed = (Get-Date).ToString('o')
             $state.Phases = @($phaseStates)
