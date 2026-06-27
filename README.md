@@ -1,6 +1,6 @@
 # DisableDefender
 
-[![Version](https://img.shields.io/badge/version-0.0.14-blue.svg)](https://github.com/SysAdminDoc/DisableDefender/releases)
+[![Version](https://img.shields.io/badge/version-0.0.15-blue.svg)](https://github.com/SysAdminDoc/DisableDefender/releases)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-0078D6.svg)](https://www.microsoft.com/windows)
 [![PowerShell](https://img.shields.io/badge/powershell-5.1%2B-012456.svg)](https://learn.microsoft.com/powershell)
@@ -28,6 +28,7 @@ Run via:
 or double-click `DisableDefender.GUI.bat`.
 
 Dashboard tiles show: Antivirus engine, Real-time protection, Tamper Protection (with warning banner + direct link to Windows Security), Firewall, Defender service count, MAPS telemetry. Overall indicator summarizes to PROTECTED / DISABLED / BLOCKED. Live log pane streams every operation with level colors (INFO / OK / WARN / ERROR / DEBUG). Copy, Export, Clear buttons. Toast notifications on completion.
+Disable confirmation includes a current-vs-target drift preview before execution.
 
 ![GUI placeholder — re-capture after first run per screenshots.md]
 

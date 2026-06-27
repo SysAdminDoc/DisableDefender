@@ -1,6 +1,6 @@
 #Requires -Version 5.1
 <#
-    DisableDefender GUI v0.0.14
+    DisableDefender GUI v0.0.15
     Premium WPF dark interface for the DisableDefender module
 
     Features:
@@ -310,7 +310,7 @@ function Write-Log {
                             <TextBlock Text="D" Foreground="White" FontWeight="Bold" FontSize="14" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                         </Border>
                         <TextBlock Text="DisableDefender" Foreground="{StaticResource Text}" FontSize="14" FontWeight="SemiBold" Margin="10,0,0,0" VerticalAlignment="Center"/>
-                        <TextBlock x:Name="versionText" Text="v0.0.14" Foreground="{StaticResource Overlay0}" FontSize="11" Margin="8,2,0,0" VerticalAlignment="Center"/>
+                        <TextBlock x:Name="versionText" Text="v0.0.15" Foreground="{StaticResource Overlay0}" FontSize="11" Margin="8,2,0,0" VerticalAlignment="Center"/>
                     </StackPanel>
                     <StackPanel Grid.Column="2" Orientation="Horizontal">
                         <Button x:Name="btnMin" Style="{StaticResource ChromeButton}" Content="&#xE921;" FontFamily="Segoe MDL2 Assets" Foreground="{StaticResource Text}" ToolTip="Minimize"/>
@@ -560,10 +560,19 @@ function Write-Log {
             <!-- ============ CONFIRMATION OVERLAY ============ -->
             <Grid x:Name="confirmOverlay" Grid.Row="0" Grid.RowSpan="4" Background="#BB000000" Visibility="Collapsed">
                 <Border Background="{StaticResource Base}" BorderBrush="{StaticResource Surface1}" BorderThickness="1" CornerRadius="12"
-                        Padding="28" MaxWidth="520" HorizontalAlignment="Center" VerticalAlignment="Center">
+                        Padding="28" MaxWidth="660" HorizontalAlignment="Center" VerticalAlignment="Center">
                     <StackPanel>
                         <TextBlock x:Name="confirmTitle" Text="Confirm Action" Foreground="{StaticResource Text}" FontSize="18" FontWeight="SemiBold"/>
                         <TextBlock x:Name="confirmBody" Text="" Foreground="{StaticResource Subtext1}" FontSize="13" Margin="0,10,0,0" TextWrapping="Wrap"/>
+                        <Border x:Name="confirmDiffPanel" Visibility="Collapsed" Margin="0,14,0,0" Padding="12"
+                                Background="{StaticResource Mantle}" BorderBrush="{StaticResource Surface1}" BorderThickness="1" CornerRadius="8">
+                            <StackPanel>
+                                <TextBlock Text="Current vs target" Foreground="{StaticResource Subtext0}" FontSize="11" FontWeight="SemiBold" Margin="0,0,0,8"/>
+                                <ScrollViewer MaxHeight="220" VerticalScrollBarVisibility="Auto">
+                                    <TextBlock x:Name="confirmDiffText" Text="" Foreground="{StaticResource Text}" FontSize="11" FontFamily="Consolas" TextWrapping="NoWrap"/>
+                                </ScrollViewer>
+                            </StackPanel>
+                        </Border>
                         <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,20,0,0">
                             <Button x:Name="btnConfirmCancel" Style="{StaticResource BaseButton}" Content="Cancel" Padding="18,8" Margin="0,0,10,0"/>
                             <Button x:Name="btnConfirmOk" Style="{StaticResource DangerAction}" Content="Proceed" Padding="18,8" Margin="0"/>
@@ -649,10 +658,45 @@ function Show-Toast {
     $tmr.Start()
 }
 
+function Get-DisableTargetDiffText {
+    try {
+        $health = Get-DefenderHealth -Target Disable
+        $items = @($health.Items | Where-Object { $_.Status -ne 'OK' } | Select-Object -First 18)
+        $builder = [System.Text.StringBuilder]::new()
+        [void]$builder.AppendLine(("Target Disable: OK={0} Drift={1} Unknown={2} Total={3}" -f $health.Summary.OK, $health.Summary.Drift, $health.Summary.Unknown, $health.Summary.Total))
+        if ($items.Count -eq 0) {
+            [void]$builder.AppendLine('No drift from Disable target detected.')
+            return $builder.ToString().TrimEnd()
+        }
+        [void]$builder.AppendLine('Status   Category      Name')
+        [void]$builder.AppendLine('------   --------      ----')
+        foreach ($item in $items) {
+            $name = [string]$item.Name
+            if ($name.Length -gt 54) { $name = $name.Substring(0, 51) + '...' }
+            [void]$builder.AppendLine(("{0,-8} {1,-13} {2}" -f $item.Status, $item.Category, $name))
+            [void]$builder.AppendLine(("         expected: {0}" -f $item.Expected))
+            [void]$builder.AppendLine(("         current : {0}" -f $item.Actual))
+        }
+        if (($health.Summary.Drift + $health.Summary.Unknown) -gt $items.Count) {
+            [void]$builder.AppendLine(("... {0} more drift/unknown item(s)" -f (($health.Summary.Drift + $health.Summary.Unknown) - $items.Count)))
+        }
+        return $builder.ToString().TrimEnd()
+    } catch {
+        return "Unable to build Disable target diff: $($_.Exception.Message)"
+    }
+}
+
 function Show-Confirm {
-    param([string]$Title, [string]$Body, [scriptblock]$OnProceed)
+    param([string]$Title, [string]$Body, [scriptblock]$OnProceed, [string]$DiffText)
     $ui.confirmTitle.Text = $Title
     $ui.confirmBody.Text  = $Body
+    if ([string]::IsNullOrWhiteSpace($DiffText)) {
+        $ui.confirmDiffText.Text = ''
+        $ui.confirmDiffPanel.Visibility = 'Collapsed'
+    } else {
+        $ui.confirmDiffText.Text = $DiffText
+        $ui.confirmDiffPanel.Visibility = 'Visible'
+    }
     $script:ConfirmAction = $OnProceed
     $ui.confirmOverlay.Visibility = 'Visible'
 }
@@ -925,7 +969,8 @@ $ui.btnRefresh.Add_Click({
 })
 
 $ui.btnDisable.Add_Click({
-    Show-Confirm -Title 'Disable Microsoft Defender?' -Body "This will apply policy keys, disable services, and turn off real-time protection. Reversible via Restore.`n`nYour firewall will not be touched." -OnProceed {
+    $diffText = Get-DisableTargetDiffText
+    Show-Confirm -Title 'Disable Microsoft Defender?' -Body "This will apply policy keys, disable services, and turn off real-time protection. Reversible via Restore.`n`nYour firewall will not be touched." -DiffText $diffText -OnProceed {
         Start-ModeAsync -ActionMode 'Disable'
     }
 })
