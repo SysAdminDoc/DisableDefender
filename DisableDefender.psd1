@@ -1,6 +1,6 @@
 @{
     RootModule        = 'DisableDefender.psm1'
-    ModuleVersion     = '0.0.7'
+    ModuleVersion     = '0.0.8'
     GUID              = 'a7e3f8d1-4b2c-4e9a-b5d6-1c8f2a3e4d5b'
     Author            = 'SysAdminDoc'
     CompanyName       = 'SysAdminDoc'
@@ -26,7 +26,7 @@
             Tags         = @('Defender', 'Security', 'Windows', 'Disable', 'Remove', 'Restore', 'Firewall')
             LicenseUri   = 'https://github.com/SysAdminDoc/DisableDefender/blob/main/LICENSE'
             ProjectUri   = 'https://github.com/SysAdminDoc/DisableDefender'
-            ReleaseNotes = 'v0.0.7: Added replay-based restore manifest recording and reverse-order restore replay.'
+            ReleaseNotes = 'v0.0.8: Added atomic phase boundaries with runtime phase-state recovery logging.'
         }
     }
 }

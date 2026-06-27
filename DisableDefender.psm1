@@ -26,6 +26,7 @@ if (-not (Test-Path $script:AppDir)) {
 . "$moduleRoot\Private\Variables.ps1"
 . "$moduleRoot\Private\Write-Log.ps1"
 . "$moduleRoot\Private\ReplayManifest.ps1"
+. "$moduleRoot\Private\PhaseRunner.ps1"
 . "$moduleRoot\Private\Initialize-Priv.ps1"
 . "$moduleRoot\Private\Grant-RegKeyControl.ps1"
 . "$moduleRoot\Private\Invoke-AsSystem.ps1"

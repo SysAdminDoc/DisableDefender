@@ -38,14 +38,17 @@ function Invoke-DisableDefender {
 
     Start-RestoreManifest -Mode Disable
     try {
-        Confirm-Prereqs
-        Assert-FirewallSafety -Stage pre
-        New-SafetyRestorePoint
-        Set-DefenderPolicy
-        Set-MpRuntimePrefs
-        Disable-DefenderTasks
-        Disable-DefenderServices
-        Assert-FirewallSafety -Stage post
+        $phases = @(
+            New-DefenderPhase -Name 'Prerequisites' -Action { Confirm-Prereqs }
+            New-DefenderPhase -Name 'Firewall preflight' -Action { Assert-FirewallSafety -Stage pre }
+            New-DefenderPhase -Name 'Restore point' -Action { New-SafetyRestorePoint }
+            New-DefenderPhase -Name 'Policy keys' -Action { Set-DefenderPolicy }
+            New-DefenderPhase -Name 'MpPreference' -Action { Set-MpRuntimePrefs }
+            New-DefenderPhase -Name 'Scheduled tasks' -Action { Disable-DefenderTasks }
+            New-DefenderPhase -Name 'Services' -Action { Disable-DefenderServices }
+            New-DefenderPhase -Name 'Firewall postflight' -Action { Assert-FirewallSafety -Stage post }
+        )
+        Invoke-DefenderPhasePlan -Mode Disable -Phases $phases
         Write-Log "Disable complete. Reboot recommended." OK
     } finally {
         Stop-RestoreManifest

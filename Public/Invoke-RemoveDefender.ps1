@@ -41,25 +41,27 @@ function Invoke-RemoveDefender {
 
     Start-RestoreManifest -Mode Remove
     try {
-        Confirm-Prereqs
-        Assert-FirewallSafety -Stage pre
-        if (-not $script:InSafeMode -and -not $script:ForceMode) {
-            Write-Log "Remove mode works best in Safe Mode. Reboot into Safe Mode and rerun, or pass -Force." WARN
-            if (-not $script:SilentMode) {
-                $ans = Read-Host 'Continue anyway? (y/N)'
-                if ($ans.ToUpper() -ne 'Y') { return }
-            } else { return }
-        }
-        New-SafetyRestorePoint
-        Set-DefenderPolicy
-        Set-MpRuntimePrefs
-        Disable-DefenderTasks
-        Disable-DefenderServices
-        Remove-SafeBootWinDefend
-        Remove-SecHealthUI
-        Remove-DefenderPlatformPackages
-        Remove-DefenderContextMenu
-        Assert-FirewallSafety -Stage post
+        $phases = @(
+            New-DefenderPhase -Name 'Prerequisites' -Action { Confirm-Prereqs }
+            New-DefenderPhase -Name 'Firewall preflight' -Action { Assert-FirewallSafety -Stage pre }
+            New-DefenderPhase -Name 'Safe Mode gate' -Action {
+                if (-not $script:InSafeMode -and -not $script:ForceMode) {
+                    Write-Log "Remove mode works best in Safe Mode. Reboot into Safe Mode and rerun, or pass -Force." WARN
+                    throw 'Remove mode requires Safe Mode or -Force.'
+                }
+            }
+            New-DefenderPhase -Name 'Restore point' -Action { New-SafetyRestorePoint }
+            New-DefenderPhase -Name 'Policy keys' -Action { Set-DefenderPolicy }
+            New-DefenderPhase -Name 'MpPreference' -Action { Set-MpRuntimePrefs }
+            New-DefenderPhase -Name 'Scheduled tasks' -Action { Disable-DefenderTasks }
+            New-DefenderPhase -Name 'Services' -Action { Disable-DefenderServices }
+            New-DefenderPhase -Name 'SafeBoot' -Action { Remove-SafeBootWinDefend }
+            New-DefenderPhase -Name 'SecHealthUI' -Action { Remove-SecHealthUI }
+            New-DefenderPhase -Name 'DISM packages' -Action { Remove-DefenderPlatformPackages }
+            New-DefenderPhase -Name 'Context menu' -Action { Remove-DefenderContextMenu }
+            New-DefenderPhase -Name 'Firewall postflight' -Action { Assert-FirewallSafety -Stage post }
+        )
+        Invoke-DefenderPhasePlan -Mode Remove -Phases $phases
         Write-Log "Remove complete. Reboot required." OK
     } finally {
         Stop-RestoreManifest

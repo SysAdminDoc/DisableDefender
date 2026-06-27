@@ -280,4 +280,49 @@ InModuleScope DisableDefender {
             $entries[0].Data.Name | Should -Be 'MissingValue'
         }
     }
+
+    Describe 'Atomic phase runner' {
+        BeforeEach {
+            $script:PhaseStatePath = Join-Path $TestDrive 'phase-state.json'
+            $script:AppDir = $TestDrive
+        }
+
+        It 'records completed phase boundaries' {
+            $phases = @(
+                New-DefenderPhase -Name 'First' -Action { $script:PhaseTestValue = 1 }
+                New-DefenderPhase -Name 'Second' -Action { $script:PhaseTestValue = 2 }
+            )
+
+            Invoke-DefenderPhasePlan -Mode Disable -Phases $phases
+
+            $state = Get-Content -Raw -LiteralPath $script:PhaseStatePath | ConvertFrom-Json
+            $state.Status | Should -Be 'Completed'
+            $state.Phases.Count | Should -Be 2
+            $state.Phases[0].Status | Should -Be 'Completed'
+            $state.Phases[1].Status | Should -Be 'Completed'
+            $script:PhaseTestValue | Should -Be 2
+        }
+
+        It 'records failed phase, partial state, and rethrows' {
+            Mock Get-DefenderStatus {
+                [ordered]@{
+                    firewall_Domain = $true
+                    svc_WinDefend   = 'Running / Automatic'
+                }
+            }
+            $phases = @(
+                New-DefenderPhase -Name 'First' -Action { $script:PhaseFailureReached = $true }
+                New-DefenderPhase -Name 'Broken' -Action { throw 'boom' }
+            )
+
+            { Invoke-DefenderPhasePlan -Mode Remove -Phases $phases } | Should -Throw 'boom'
+
+            $state = Get-Content -Raw -LiteralPath $script:PhaseStatePath | ConvertFrom-Json
+            $state.Status | Should -Be 'Failed'
+            $state.FailedPhase | Should -Be 'Broken'
+            $state.Phases[1].Status | Should -Be 'Failed'
+            $state.PartialState.firewall_Domain | Should -Be $true
+            $state.PartialState.svc_WinDefend | Should -Be 'Running / Automatic'
+        }
+    }
 }

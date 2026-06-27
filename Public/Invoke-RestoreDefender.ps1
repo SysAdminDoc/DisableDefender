@@ -24,16 +24,19 @@ function Invoke-RestoreDefender {
     $previousReplayMode = [bool]$script:RestoreManifestReplayMode
     $script:RestoreManifestReplayMode = $true
     try {
-        Assert-FirewallSafety -Stage pre
-        Invoke-RestoreManifest | Out-Null
-        Clear-DefenderPolicy
-        Clear-MpRuntimePrefs
-        Enable-DefenderTasks
-        Restore-DefenderServices
-        Restore-RegKeyACLs
-        Restore-SecHealthUI
-        Restore-DefenderContextMenu
-        Assert-FirewallSafety -Stage post
+        $phases = @(
+            New-DefenderPhase -Name 'Firewall preflight' -Action { Assert-FirewallSafety -Stage pre }
+            New-DefenderPhase -Name 'Replay manifest' -Action { Invoke-RestoreManifest | Out-Null }
+            New-DefenderPhase -Name 'Policy cleanup' -Action { Clear-DefenderPolicy }
+            New-DefenderPhase -Name 'MpPreference cleanup' -Action { Clear-MpRuntimePrefs }
+            New-DefenderPhase -Name 'Scheduled task restore' -Action { Enable-DefenderTasks }
+            New-DefenderPhase -Name 'Service restore' -Action { Restore-DefenderServices }
+            New-DefenderPhase -Name 'Registry ACL restore' -Action { Restore-RegKeyACLs }
+            New-DefenderPhase -Name 'SecHealthUI restore' -Action { Restore-SecHealthUI }
+            New-DefenderPhase -Name 'Context menu restore' -Action { Restore-DefenderContextMenu }
+            New-DefenderPhase -Name 'Firewall postflight' -Action { Assert-FirewallSafety -Stage post }
+        )
+        Invoke-DefenderPhasePlan -Mode Restore -Phases $phases
         Write-Log "Restore complete. Reboot recommended. If Defender does not come back: sfc /scannow then DISM /Online /Cleanup-Image /RestoreHealth." OK
     } finally {
         $script:RestoreManifestReplayMode = $previousReplayMode
