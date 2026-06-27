@@ -1,6 +1,6 @@
 # DisableDefender
 
-[![Version](https://img.shields.io/badge/version-0.0.9-blue.svg)](https://github.com/SysAdminDoc/DisableDefender/releases)
+[![Version](https://img.shields.io/badge/version-0.0.10-blue.svg)](https://github.com/SysAdminDoc/DisableDefender/releases)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-0078D6.svg)](https://www.microsoft.com/windows)
 [![PowerShell](https://img.shields.io/badge/powershell-5.1%2B-012456.svg)](https://learn.microsoft.com/powershell)
@@ -50,6 +50,7 @@ Dashboard tiles show: Antivirus engine, Real-time protection, Tamper Protection 
 - **Replay restore manifest**: Disable/Remove record JSONL undo entries and Restore replays them in reverse before deterministic cleanup
 - **Atomic phase boundaries**: each mode records phase status to `phase-state.json`; failures log partial state plus resume/rollback recovery choices
 - **Surgical reruns**: `-Only` and `-Skip` phase filters for Policies, MpPreference, Tasks, Services, Appx, DISM, SafeBoot, and ContextMenu
+- **Health mode**: compares current state to Disable/Remove/Restore targets and reports drift for services, policy keys, tasks, Appx, SafeBoot, and MpPreference
 - **Module layout**: `DisableDefender.psd1` / `DisableDefender.psm1` with public commands and private helpers for function-level tests
 - **GUI auto-elevate, silent CLI mode, transcript logging, Safe Mode aware**
 
@@ -90,11 +91,15 @@ A menu appears with Disable / Remove / Restore / Status.
 # Just show state
 .\DisableDefender.ps1 -Mode Status
 
+# Health check against the Disable target
+.\DisableDefender.ps1 -Mode Health
+
 # Silent automation
 .\DisableDefender.ps1 -Mode Disable -Silent -NoReboot
 
 # JSON status for automation
 .\DisableDefender.ps1 -Mode Status -Json
+.\DisableDefender.ps1 -Mode Health -HealthTarget Remove -Json
 
 # Surgical reruns
 .\DisableDefender.ps1 -Mode Disable -Only Policies,MpPreference
@@ -105,6 +110,7 @@ A menu appears with Disable / Remove / Restore / Status.
 ```powershell
 Import-Module .\DisableDefender.psd1
 Get-DefenderStatus
+Get-DefenderHealth -Target Disable
 Invoke-DisableDefender -Force -NoRestorePoint
 Invoke-RestoreDefender
 ```
@@ -112,7 +118,7 @@ Invoke-RestoreDefender
 ### Parameters
 | Flag | Description |
 |---|---|
-| `-Mode` | `Disable` / `Remove` / `Restore` / `Status` |
+| `-Mode` | `Disable` / `Remove` / `Restore` / `Status` / `Health` |
 | `-Silent` | No console output, no prompts. Requires `-Mode`. |
 | `-NoRestorePoint` | Skip System Restore checkpoint. |
 | `-NoReboot` | Don't auto-reboot at end. |
@@ -121,6 +127,7 @@ Invoke-RestoreDefender
 | `-Json` | Emit JSON for `Status`. |
 | `-Only` | Run only matching phase keys. Common keys: `Policies`, `MpPreference`, `Tasks`, `Services`, `Appx`, `DISM`, `SafeBoot`, `ContextMenu`. |
 | `-Skip` | Skip matching phase keys while running the rest of the selected mode. |
+| `-HealthTarget` | Expected target for `-Mode Health`: `Disable`, `Remove`, or `Restore`. |
 | `-LogPath` | Override log path (default `%ProgramData%\DisableDefender\DisableDefender.log`). |
 
 ## What each mode does

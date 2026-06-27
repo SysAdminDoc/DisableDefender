@@ -15,6 +15,7 @@ Describe 'Module manifest' {
 
     It 'exports only public commands' {
         $expected = @(
+            'Get-DefenderHealth'
             'Get-DefenderStatus'
             'Invoke-DisableDefender'
             'Invoke-RemoveDefender'
@@ -177,6 +178,51 @@ InModuleScope DisableDefender {
             }
             $result = Get-DefenderStatus
             $result.Keys | Should -Contain 'firewall_Domain'
+        }
+    }
+
+    Describe 'Get-DefenderHealth' {
+        It 'returns summary and drift items for the default target' {
+            Mock Get-MpPreference {
+                [PSCustomObject]@{
+                    DisableRealtimeMonitoring = $true
+                    DisableBehaviorMonitoring = $true
+                    DisableBlockAtFirstSeen = $true
+                    DisableIOAVProtection = $true
+                    DisableScriptScanning = $true
+                    DisableArchiveScanning = $true
+                    DisableIntrusionPreventionSystem = $true
+                    DisableRemovableDriveScanning = $true
+                    DisableScanningMappedNetworkDrivesForFullScan = $true
+                    DisableScanningNetworkFiles = $true
+                    ExclusionPath = @('C:\','D:\','E:\')
+                }
+            }
+            Mock Get-ScheduledTask { [PSCustomObject]@{ State = 'Disabled' } }
+            Mock Get-AppxPackage { @([PSCustomObject]@{ PackageFullName = 'Microsoft.SecHealthUI_1.0.0.0_x64__8wekyb3d8bbwe' }) }
+            Mock Get-AppxProvisionedPackage { @([PSCustomObject]@{ DisplayName = 'Microsoft.SecHealthUI'; PackageName = 'Microsoft.SecHealthUI_1.0.0.0_neutral__8wekyb3d8bbwe' }) }
+
+            $result = Get-DefenderHealth
+
+            $result.Keys | Should -Contain 'Summary'
+            $result.Keys | Should -Contain 'Items'
+            $result.Target | Should -Be 'Disable'
+            $result.Items.Count | Should -BeGreaterThan 0
+            ($result.Items | Where-Object { $_.Category -eq 'Appx' }).Expected | Should -Contain 'Present'
+            ($result.Items | Where-Object { $_.Category -eq 'Service' -and $_.Name -eq 'Sense' }).Expected | Should -Contain 'Manual'
+        }
+
+        It 'emits JSON health output' {
+            Mock Get-MpPreference { throw 'Not available' }
+            Mock Get-ScheduledTask { throw 'Not available' }
+            Mock Get-AppxPackage { @() }
+            Mock Get-AppxProvisionedPackage { @() }
+
+            $json = Get-DefenderHealth -Target Remove -Json
+            $parsed = $json | ConvertFrom-Json
+
+            $parsed.Target | Should -Be 'Remove'
+            $parsed.Summary.Total | Should -BeGreaterThan 0
         }
     }
 

@@ -1,7 +1,7 @@
 #Requires -Version 5.1
 #Requires -RunAsAdministrator
 <#
-    DisableDefender v0.0.9
+    DisableDefender v0.0.10
     CLI launcher for the DisableDefender PowerShell module.
 
     DOES NOT touch the Windows Firewall. Firewall services (mpssvc, BFE) and the
@@ -10,7 +10,7 @@
 
 [CmdletBinding(SupportsShouldProcess)]
 param(
-    [ValidateSet('Disable','Remove','Restore','Status')]
+    [ValidateSet('Disable','Remove','Restore','Status','Health')]
     [string]$Mode,
 
     [switch]$Silent,
@@ -21,6 +21,8 @@ param(
     [switch]$Json,
     [string[]]$Only,
     [string[]]$Skip,
+    [ValidateSet('Disable','Remove','Restore')]
+    [string]$HealthTarget = 'Disable',
     [string]$LogPath = "$env:ProgramData\DisableDefender\DisableDefender.log"
 )
 
@@ -65,6 +67,7 @@ function Show-Menu {
     Write-Host '  [2] Remove   (aggressive; Safe Mode recommended; SecHealthUI + SafeBoot trap)' -ForegroundColor Red
     Write-Host '  [3] Restore  (undo: clear policy, re-enable services, reprovision UI)' -ForegroundColor Green
     Write-Host '  [4] Status   (show current Defender + firewall state)' -ForegroundColor Cyan
+    Write-Host '  [5] Health   (compare current state to expected target)' -ForegroundColor Cyan
     Write-Host '  [Q] Quit' -ForegroundColor Gray
     Write-Host ''
     $choice = Read-Host 'Select'
@@ -73,13 +76,14 @@ function Show-Menu {
         '2' { return 'Remove' }
         '3' { return 'Restore' }
         '4' { return 'Status' }
+        '5' { return 'Health' }
         'Q' { return $null }
         default { return $null }
     }
 }
 
 function Invoke-SelectedMode {
-    param([Parameter(Mandatory)][ValidateSet('Disable','Remove','Restore','Status')][string]$SelectedMode)
+    param([Parameter(Mandatory)][ValidateSet('Disable','Remove','Restore','Status','Health')][string]$SelectedMode)
 
     $common = @{
         Silent      = [bool]$Silent
@@ -101,6 +105,16 @@ function Invoke-SelectedMode {
         }
         'Status' {
             Show-DefenderStatus -Json:$Json
+        }
+        'Health' {
+            $health = Get-DefenderHealth -Target $HealthTarget -IncludeMDE:$IncludeMDE -Json:$Json
+            if ($Json) {
+                $health
+            } else {
+                Write-Host "Health target: $($health.Target)" -ForegroundColor Cyan
+                Write-Host "OK=$($health.Summary.OK) Drift=$($health.Summary.Drift) Unknown=$($health.Summary.Unknown) Total=$($health.Summary.Total)" -ForegroundColor Gray
+                $health.Items | Format-Table Category, Name, Expected, Actual, Status -AutoSize
+            }
         }
     }
 }

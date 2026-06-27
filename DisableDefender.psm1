@@ -45,6 +45,7 @@ if (-not (Test-Path $script:AppDir)) {
 
 # Dot-source all public functions
 . "$moduleRoot\Public\Get-DefenderStatus.ps1"
+. "$moduleRoot\Public\Get-DefenderHealth.ps1"
 . "$moduleRoot\Public\Show-DefenderStatus.ps1"
 . "$moduleRoot\Public\Invoke-DisableDefender.ps1"
 . "$moduleRoot\Public\Invoke-RemoveDefender.ps1"
@@ -52,6 +53,7 @@ if (-not (Test-Path $script:AppDir)) {
 
 Export-ModuleMember -Function @(
     'Get-DefenderStatus',
+    'Get-DefenderHealth',
     'Show-DefenderStatus',
     'Invoke-DisableDefender',
     'Invoke-RemoveDefender',
