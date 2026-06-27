@@ -38,6 +38,7 @@ function Set-RunOptions {
         [switch]$Force,
         [switch]$NoRestorePoint,
         [switch]$IncludeMDE,
+        [switch]$AllowRemoting,
         [switch]$Silent,
         [string]$LogPath,
         [scriptblock]$LogCallback
@@ -46,6 +47,7 @@ function Set-RunOptions {
     $script:ForceMode = [bool]$Force
     $script:NoRestorePointMode = [bool]$NoRestorePoint
     $script:IncludeMDEMode = [bool]$IncludeMDE
+    $script:AllowRemotingMode = [bool]$AllowRemoting
     $script:SilentMode = [bool]$Silent
     $script:LogPathOverride = if ([string]::IsNullOrWhiteSpace($LogPath)) { $null } else { $LogPath }
     $script:LogCallback = $LogCallback

@@ -252,6 +252,7 @@ InModuleScope DisableDefender {
         BeforeEach {
             $script:AppDir = $TestDrive
             $script:ForceMode = $false
+            $script:AllowRemotingMode = $false
             Mock Write-Log {}
             Remove-Item -LiteralPath (Join-Path $TestDrive 'tripwire.jsonl') -Force -ErrorAction SilentlyContinue
         }
@@ -287,6 +288,28 @@ InModuleScope DisableDefender {
             $tripwire = Get-Content -LiteralPath (Join-Path $TestDrive 'tripwire.jsonl') | Select-Object -Last 1 | ConvertFrom-Json
             $tripwire.Blocked | Should -Be $false
             $tripwire.Force | Should -Be $true
+        }
+
+        It 'refuses PSRemoting sessions unless explicitly allowed' {
+            Mock Test-PSRemotingSession { $true }
+
+            { Confirm-LocalSession -Mode Disable } | Should -Throw -ExpectedMessage '*AllowRemoting*'
+
+            $tripwire = Get-Content -LiteralPath (Join-Path $TestDrive 'tripwire.jsonl') | Select-Object -Last 1 | ConvertFrom-Json
+            $tripwire.Name | Should -Be 'PSRemotingSession'
+            $tripwire.Blocked | Should -Be $true
+        }
+
+        It 'allows PSRemoting sessions when override is set' {
+            $script:AllowRemotingMode = $true
+            Mock Test-PSRemotingSession { $true }
+
+            { Confirm-LocalSession -Mode Restore } | Should -Not -Throw
+
+            $tripwire = Get-Content -LiteralPath (Join-Path $TestDrive 'tripwire.jsonl') | Select-Object -Last 1 | ConvertFrom-Json
+            $tripwire.Name | Should -Be 'PSRemotingSession'
+            $tripwire.Mode | Should -Be 'Restore'
+            $tripwire.Blocked | Should -Be $false
         }
     }
 

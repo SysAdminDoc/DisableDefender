@@ -24,6 +24,8 @@ function Invoke-RemoveDefender {
         Run only the named phase keys.
     .PARAMETER Skip
         Skip the named phase keys.
+    .PARAMETER AllowRemoting
+        Allow execution inside PSRemoting / PSSession contexts.
     .EXAMPLE
         Invoke-RemoveDefender -Force
     .EXAMPLE
@@ -34,6 +36,7 @@ function Invoke-RemoveDefender {
         [switch]$Force,
         [switch]$NoRestorePoint,
         [switch]$IncludeMDE,
+        [switch]$AllowRemoting,
         [switch]$Silent,
         [string]$LogPath,
         [ValidateSet('Prerequisites','FirewallPreflight','FirewallPostflight','RestorePoint','Policies','MpPreference','Tasks','Services','SafeBoot','Appx','DISM','ContextMenu')]
@@ -45,7 +48,8 @@ function Invoke-RemoveDefender {
 
     if (-not $PSCmdlet.ShouldProcess('Microsoft Defender', 'Remove')) { return }
 
-    Set-RunOptions -Force:$Force -NoRestorePoint:$NoRestorePoint -IncludeMDE:$IncludeMDE -Silent:$Silent -LogPath $LogPath -LogCallback $LogCallback
+    Set-RunOptions -Force:$Force -NoRestorePoint:$NoRestorePoint -IncludeMDE:$IncludeMDE -AllowRemoting:$AllowRemoting -Silent:$Silent -LogPath $LogPath -LogCallback $LogCallback
+    Confirm-LocalSession -Mode Remove
 
     Start-RestoreManifest -Mode Remove
     try {

@@ -11,12 +11,15 @@ function Invoke-RestoreDefender {
         Run only the named phase keys.
     .PARAMETER Skip
         Skip the named phase keys.
+    .PARAMETER AllowRemoting
+        Allow execution inside PSRemoting / PSSession contexts.
     .EXAMPLE
         Invoke-RestoreDefender
     #>
     [CmdletBinding(SupportsShouldProcess)]
     param(
         [switch]$Silent,
+        [switch]$AllowRemoting,
         [string]$LogPath,
         [ValidateSet('FirewallPreflight','FirewallPostflight','ReplayManifest','Policies','MpPreference','Tasks','Services','AclRestore','Appx','ContextMenu')]
         [string[]]$Only,
@@ -27,7 +30,8 @@ function Invoke-RestoreDefender {
 
     if (-not $PSCmdlet.ShouldProcess('Microsoft Defender', 'Restore')) { return }
 
-    Set-RunOptions -Silent:$Silent -LogPath $LogPath -LogCallback $LogCallback
+    Set-RunOptions -Silent:$Silent -AllowRemoting:$AllowRemoting -LogPath $LogPath -LogCallback $LogCallback
+    Confirm-LocalSession -Mode Restore
 
     $previousReplayMode = [bool]$script:RestoreManifestReplayMode
     $script:RestoreManifestReplayMode = $true

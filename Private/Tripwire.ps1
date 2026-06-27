@@ -58,3 +58,25 @@ function Confirm-RemoveKnownBadOverrides {
         throw "Remove refused because known-bad condition(s) are present: $names. Use -Force to override."
     }
 }
+
+function Test-PSRemotingSession {
+    if ($Host.Name -eq 'ServerRemoteHost') { return $true }
+    if (Get-Variable -Name PSSenderInfo -ErrorAction SilentlyContinue) { return $true }
+    return $false
+}
+
+function Confirm-LocalSession {
+    param(
+        [Parameter(Mandatory)][ValidateSet('Disable','Remove','Restore')][string]$Mode
+    )
+
+    if (-not (Test-PSRemotingSession)) { return }
+
+    Write-SafetyTripwire -Name 'PSRemotingSession' -Mode $Mode -Reason 'Running this tool through PSRemoting or a PSSession can strand security and recovery changes away from the interactive workstation context.' -Blocked:(-not $script:AllowRemotingMode) -Details @{
+        HostName = $Host.Name
+    }
+
+    if (-not $script:AllowRemotingMode) {
+        throw "PSRemoting/PSSession execution refused for $Mode. Use -AllowRemoting to override."
+    }
+}

@@ -21,6 +21,8 @@ function Invoke-DisableDefender {
         Run only the named phase keys.
     .PARAMETER Skip
         Skip the named phase keys.
+    .PARAMETER AllowRemoting
+        Allow execution inside PSRemoting / PSSession contexts.
     .EXAMPLE
         Invoke-DisableDefender
     .EXAMPLE
@@ -31,6 +33,7 @@ function Invoke-DisableDefender {
         [switch]$Force,
         [switch]$NoRestorePoint,
         [switch]$IncludeMDE,
+        [switch]$AllowRemoting,
         [switch]$Silent,
         [string]$LogPath,
         [ValidateSet('Prerequisites','FirewallPreflight','FirewallPostflight','RestorePoint','Policies','MpPreference','Tasks','Services')]
@@ -42,7 +45,8 @@ function Invoke-DisableDefender {
 
     if (-not $PSCmdlet.ShouldProcess('Microsoft Defender', 'Disable')) { return }
 
-    Set-RunOptions -Force:$Force -NoRestorePoint:$NoRestorePoint -IncludeMDE:$IncludeMDE -Silent:$Silent -LogPath $LogPath -LogCallback $LogCallback
+    Set-RunOptions -Force:$Force -NoRestorePoint:$NoRestorePoint -IncludeMDE:$IncludeMDE -AllowRemoting:$AllowRemoting -Silent:$Silent -LogPath $LogPath -LogCallback $LogCallback
+    Confirm-LocalSession -Mode Disable
 
     Start-RestoreManifest -Mode Disable
     try {
