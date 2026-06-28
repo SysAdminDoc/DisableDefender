@@ -23,9 +23,7 @@ function Assert-FirewallSafety {
     if ($issues.Count -gt 0) {
         Write-Log "Firewall issues at $Stage stage:" WARN
         foreach ($i in $issues) { Write-Log "  - $i" WARN }
-        if ($Stage -eq 'post' -and -not $script:ForceMode) {
-            throw "Firewall integrity broken after operation. Aborting."
-        }
+        throw "Firewall integrity broken at $Stage stage. Aborting."
     } else {
         Write-Log "Firewall intact at $Stage stage." OK
     }

@@ -132,6 +132,54 @@ InModuleScope DisableDefender {
         }
     }
 
+    Describe 'Assert-FirewallSafety' {
+        BeforeEach {
+            Mock Write-Log {}
+        }
+
+        It 'does not throw when firewall is healthy' {
+            Mock Get-Service {
+                [PSCustomObject]@{ Name = $Name; Status = 'Running'; StartType = 'Automatic' }
+            }
+            Mock Get-NetFirewallProfile {
+                @(
+                    [PSCustomObject]@{ Name = 'Domain'; Enabled = $true },
+                    [PSCustomObject]@{ Name = 'Private'; Enabled = $true },
+                    [PSCustomObject]@{ Name = 'Public'; Enabled = $true }
+                )
+            }
+
+            { Assert-FirewallSafety -Stage pre } | Should -Not -Throw
+        }
+
+        It 'fails closed during preflight when firewall is already broken' {
+            Mock Get-Service {
+                [PSCustomObject]@{ Name = $Name; Status = 'Stopped'; StartType = 'Disabled' }
+            }
+            Mock Get-NetFirewallProfile {
+                @([PSCustomObject]@{ Name = 'Domain'; Enabled = $true })
+            }
+
+            { Assert-FirewallSafety -Stage pre } | Should -Throw -ExpectedMessage '*pre stage*'
+        }
+
+        It 'fails closed during per-phase before boundaries even when Force is active' {
+            $script:ForceMode = $true
+            try {
+                Mock Get-Service {
+                    [PSCustomObject]@{ Name = $Name; Status = 'Running'; StartType = 'Automatic' }
+                }
+                Mock Get-NetFirewallProfile {
+                    @([PSCustomObject]@{ Name = 'Private'; Enabled = $false })
+                }
+
+                { Assert-FirewallSafety -Stage 'before:Services' } | Should -Throw -ExpectedMessage '*before:Services stage*'
+            } finally {
+                $script:ForceMode = $false
+            }
+        }
+    }
+
     Describe 'Get-TargetServices' {
         Context 'Default' {
             It 'does not include Sense in the default list' {
@@ -543,5 +591,23 @@ InModuleScope DisableDefender {
             $state.Phases[0].Status | Should -Be 'Skipped'
             $state.Phases[0].SkipReason | Should -Be 'Skip'
         }
+    }
+}
+
+Describe 'DisableDefender GUI safety wiring' {
+    BeforeAll {
+        $script:GuiSource = Get-Content -LiteralPath (Join-Path $PSScriptRoot '..\DisableDefender.GUI.ps1') -Raw
+    }
+
+    It 'does not force Disable or Remove from the GUI by default' {
+        $script:GuiSource | Should -Not -Match "Invoke-DisableDefender\s+-Force\s"
+        $script:GuiSource | Should -Not -Match "Invoke-RemoveDefender\s+-Force\s"
+    }
+
+    It 'passes force only through the explicit override checkbox state' {
+        $script:GuiSource | Should -Match 'confirmForceOverride'
+        $script:GuiSource | Should -Match 'Start-ModeAsync\s+-ActionMode ''Disable''\s+-ForceOverride:\$script:ConfirmForceOverride'
+        $script:GuiSource | Should -Match 'Invoke-DisableDefender\s+-Force:\$ForceOverride'
+        $script:GuiSource | Should -Match 'Invoke-RemoveDefender\s+-Force:\$ForceOverride'
     }
 }

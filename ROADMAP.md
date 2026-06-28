@@ -116,20 +116,6 @@ Actionable work beyond v0.0.18. Completed work is removed. True blockers live in
   Acceptance: CLI and GUI report FullLanguage/ConstrainedLanguage/App Control status before destructive phases; unsupported language modes fail with signed/offline remediation guidance; tests cover FullLanguage, ConstrainedLanguage, and unknown policy states.
   Complexity: M
 
-- [ ] P0 - Stop GUI from forcing destructive override gates
-  Why: The recommended GUI currently passes `-Force` for Disable and Remove, bypassing Tamper Protection, managed-device, and Safe Mode gates by default.
-  Evidence: RESEARCH.md Security, Privacy, and Reliability; `DisableDefender.GUI.ps1:1203`; `DisableDefender.GUI.ps1:1204`; `Private/Confirm-Prereqs.ps1`.
-  Touches: `DisableDefender.GUI.ps1`, `Private/Confirm-Prereqs.ps1`, `Tests/DisableDefender.Tests.ps1`, `README.md`.
-  Acceptance: GUI Disable/Remove do not pass `-Force` unless the user explicitly selects a visible override path; blocked gates show exact reason and remediation; tests assert GUI worker command construction omits default force.
-  Complexity: M
-
-- [ ] P0 - Make firewall preflight fail closed before destructive phases
-  Why: Firewall failures at `pre` and `before:*` stages only warn today, contradicting the firewall-preservation guarantee and allowing destructive phases to run on an already-broken firewall baseline.
-  Evidence: RESEARCH.md Security, Privacy, and Reliability; `Private/Test-FirewallIntact.ps1:20`; `Private/PhaseRunner.ps1:119`; README firewall guarantee.
-  Touches: `Private/Test-FirewallIntact.ps1`, `Private/PhaseRunner.ps1`, `Tests/DisableDefender.Tests.ps1`, `README.md`.
-  Acceptance: Any firewall preflight or per-phase pre-boundary issue aborts Disable/Remove/Restore before mutation unless a documented recovery-only path is selected; tests cover pre, before-phase, post, and GUI force behavior.
-  Complexity: S
-
 - [ ] P1 - MpPreference restore and health parity audit
   Why: `Set-MpRuntimePrefs` writes more values than `Clear-MpRuntimePrefs` restores and more values than `Get-DefenderHealth` checks, so Restore can report healthier than the actual Defender preference state.
   Evidence: RESEARCH.md Security, Privacy, and Reliability; `Private/Set-MpRuntimePrefs.ps1`; `Public/Get-DefenderHealth.ps1`; Microsoft `Set-MpPreference` docs.

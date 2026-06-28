@@ -1,12 +1,13 @@
 #Requires -Version 5.1
 <#
-    DisableDefender GUI v0.0.17
+    DisableDefender GUI v0.0.19
     Premium WPF dark interface for the DisableDefender module
 
     Features:
       - Catppuccin Mocha dark palette, custom chrome, glassmorphic panels
       - Live status tiles plus per-component lockdown/PPL dashboard
       - Live policy edit stream with direct, ACL, and SYSTEM method icons
+      - Always-on firewall integrity banner with guard-trip flash
       - Async worker runspace so the UI never blocks
       - Streaming log pane with level colors + auto-scroll
       - Confirmation modal for destructive ops
@@ -118,6 +119,8 @@ function Write-Log {
         <SolidColorBrush x:Key="Text"     Color="#cdd6f4"/>
         <SolidColorBrush x:Key="Subtext0" Color="#a6adc8"/>
         <SolidColorBrush x:Key="Subtext1" Color="#bac2de"/>
+        <SolidColorBrush x:Key="FirewallOkBg"  Color="#14291f"/>
+        <SolidColorBrush x:Key="FirewallBadBg" Color="#3b1f2e"/>
         <SolidColorBrush x:Key="Red"      Color="#f38ba8"/>
         <SolidColorBrush x:Key="Maroon"   Color="#eba0ac"/>
         <SolidColorBrush x:Key="Peach"    Color="#fab387"/>
@@ -294,6 +297,7 @@ function Write-Log {
             <Grid.RowDefinitions>
                 <RowDefinition Height="44"/>    <!-- title bar -->
                 <RowDefinition Height="Auto"/>  <!-- tamper banner -->
+                <RowDefinition Height="Auto"/>  <!-- firewall banner -->
                 <RowDefinition Height="*"/>     <!-- body -->
                 <RowDefinition Height="40"/>    <!-- status bar -->
             </Grid.RowDefinitions>
@@ -311,7 +315,7 @@ function Write-Log {
                             <TextBlock Text="D" Foreground="White" FontWeight="Bold" FontSize="14" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                         </Border>
                         <TextBlock Text="DisableDefender" Foreground="{StaticResource Text}" FontSize="14" FontWeight="SemiBold" Margin="10,0,0,0" VerticalAlignment="Center"/>
-                        <TextBlock x:Name="versionText" Text="v0.0.17" Foreground="{StaticResource Overlay0}" FontSize="11" Margin="8,2,0,0" VerticalAlignment="Center"/>
+                        <TextBlock x:Name="versionText" Text="v0.0.19" Foreground="{StaticResource Overlay0}" FontSize="11" Margin="8,2,0,0" VerticalAlignment="Center"/>
                     </StackPanel>
                     <StackPanel Grid.Column="2" Orientation="Horizontal">
                         <Button x:Name="btnMin" Style="{StaticResource ChromeButton}" Content="&#xE921;" FontFamily="Segoe MDL2 Assets" Foreground="{StaticResource Text}" ToolTip="Minimize"/>
@@ -335,8 +339,23 @@ function Write-Log {
                 </Grid>
             </Border>
 
+            <!-- ============ FIREWALL INTEGRITY BANNER ============ -->
+            <Border x:Name="firewallBanner" Grid.Row="2" Background="{StaticResource FirewallOkBg}" BorderBrush="{StaticResource Green}" BorderThickness="0,0,0,1" Padding="16,8">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <Ellipse x:Name="firewallBannerDot" Grid.Column="0" Width="9" Height="9" Fill="{StaticResource Green}" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                        <TextBlock x:Name="firewallBannerTitle" Text="Firewall integrity OK" FontWeight="SemiBold" Foreground="{StaticResource Green}" FontSize="12" VerticalAlignment="Center"/>
+                        <TextBlock x:Name="firewallBannerText" Text="mpssvc and BFE guarded; firewall profiles enabled" Foreground="{StaticResource Subtext1}" FontSize="11" Margin="12,0,0,0" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                    </StackPanel>
+                </Grid>
+            </Border>
+
             <!-- ============ BODY ============ -->
-            <Grid Grid.Row="2">
+            <Grid Grid.Row="3">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="280"/>
                     <ColumnDefinition Width="*"/>
@@ -568,7 +587,7 @@ function Write-Log {
             </Grid>
 
             <!-- ============ STATUS BAR ============ -->
-            <Border Grid.Row="3" Background="{StaticResource Mantle}" BorderBrush="{StaticResource Surface0}" BorderThickness="0,1,0,0">
+            <Border Grid.Row="4" Background="{StaticResource Mantle}" BorderBrush="{StaticResource Surface0}" BorderThickness="0,1,0,0">
                 <Grid Margin="16,0">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="200"/>
@@ -582,7 +601,7 @@ function Write-Log {
             </Border>
 
             <!-- ============ TOAST OVERLAY ============ -->
-            <Border x:Name="toast" Grid.Row="2" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,24,24"
+            <Border x:Name="toast" Grid.Row="3" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,24,24"
                     Background="{StaticResource Mantle}" BorderBrush="{StaticResource Mauve}" BorderThickness="1" CornerRadius="10"
                     Padding="16,12" MaxWidth="360" Visibility="Collapsed">
                 <StackPanel Orientation="Horizontal">
@@ -592,7 +611,7 @@ function Write-Log {
             </Border>
 
             <!-- ============ CONFIRMATION OVERLAY ============ -->
-            <Grid x:Name="confirmOverlay" Grid.Row="0" Grid.RowSpan="4" Background="#BB000000" Visibility="Collapsed">
+            <Grid x:Name="confirmOverlay" Grid.Row="0" Grid.RowSpan="5" Background="#BB000000" Visibility="Collapsed">
                 <Border Background="{StaticResource Base}" BorderBrush="{StaticResource Surface1}" BorderThickness="1" CornerRadius="12"
                         Padding="28" MaxWidth="660" HorizontalAlignment="Center" VerticalAlignment="Center">
                     <StackPanel>
@@ -606,6 +625,14 @@ function Write-Log {
                                     <TextBlock x:Name="confirmDiffText" Text="" Foreground="{StaticResource Text}" FontSize="11" FontFamily="Consolas" TextWrapping="NoWrap"/>
                                 </ScrollViewer>
                             </StackPanel>
+                        </Border>
+                        <Border x:Name="confirmForcePanel" Visibility="Collapsed" Margin="0,14,0,0" Padding="12"
+                                Background="{StaticResource Mantle}" BorderBrush="{StaticResource Red}" BorderThickness="1" CornerRadius="8">
+                            <CheckBox x:Name="confirmForceOverride"
+                                      Content="Override safety gates (-Force)"
+                                      Foreground="{StaticResource Red}"
+                                      FontSize="12"
+                                      ToolTip="Bypasses Tamper Protection, managed-device, and Safe Mode refusal gates for this run only."/>
                         </Border>
                         <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,20,0,0">
                             <Button x:Name="btnConfirmCancel" Style="{StaticResource BaseButton}" Content="Cancel" Padding="18,8" Margin="0,0,10,0"/>
@@ -748,6 +775,77 @@ function Update-ComponentTiles {
     } catch {
         $block = New-ComponentText -Text "Component dashboard unavailable: $($_.Exception.Message)" -FontSize 11 -Resource 'Yellow'
         $ui.componentTilePanel.Children.Add($block) | Out-Null
+    }
+}
+
+function Get-GuiFirewallIssues {
+    $issues = New-Object System.Collections.ArrayList
+    foreach ($serviceName in @('mpssvc','BFE')) {
+        try {
+            $service = Get-Service -Name $serviceName -ErrorAction Stop
+            if ($service.StartType -eq 'Disabled') {
+                [void]$issues.Add("$serviceName is Disabled")
+            }
+        } catch {
+            [void]$issues.Add("$serviceName unavailable")
+        }
+    }
+
+    try {
+        foreach ($fwProfile in @(Get-NetFirewallProfile -ErrorAction Stop)) {
+            if (-not $fwProfile.Enabled) {
+                [void]$issues.Add("$($fwProfile.Name) profile is off")
+            }
+        }
+    } catch {
+        [void]$issues.Add("Firewall profile query failed")
+    }
+
+    return @($issues)
+}
+
+function Test-FirewallGuardTripMessage {
+    param([string]$Message)
+    return ($Message -match '^Firewall issues at .+ stage:' -or
+            $Message -match '^Firewall integrity broken after operation')
+}
+
+function Start-FirewallBannerFlash {
+    if (-not $ui.firewallBanner) { return }
+    $flash = New-Object System.Windows.Media.Animation.DoubleAnimation 0.35, 1, ([System.Windows.Duration][TimeSpan]::FromMilliseconds(180))
+    $flash.AutoReverse = $true
+    $flash.RepeatBehavior = New-Object System.Windows.Media.Animation.RepeatBehavior 4
+    $ui.firewallBanner.BeginAnimation([System.Windows.UIElement]::OpacityProperty, $flash)
+}
+
+function Set-FirewallBannerState {
+    param(
+        [string[]]$Issues,
+        [string]$Source = 'live poll',
+        [switch]$Flash
+    )
+
+    if (-not $ui.firewallBanner) { return }
+    if (@($Issues).Count -gt 0) {
+        $ui.firewallBanner.Background = $window.Resources['FirewallBadBg']
+        $ui.firewallBanner.BorderBrush = $window.Resources['Red']
+        $ui.firewallBannerDot.Fill = $window.Resources['Red']
+        $ui.firewallBannerTitle.Text = 'Firewall integrity guard tripped'
+        $ui.firewallBannerTitle.Foreground = $window.Resources['Red']
+        $ui.firewallBannerText.Text = "$Source - $((@($Issues) | Select-Object -First 3) -join '; ')"
+        $ui.footerText.Text = 'firewall attention required'
+        $ui.footerText.Foreground = $window.Resources['Red']
+        if ($Flash) { Start-FirewallBannerFlash }
+    } else {
+        $ui.firewallBanner.Opacity = 1
+        $ui.firewallBanner.Background = $window.Resources['FirewallOkBg']
+        $ui.firewallBanner.BorderBrush = $window.Resources['Green']
+        $ui.firewallBannerDot.Fill = $window.Resources['Green']
+        $ui.firewallBannerTitle.Text = 'Firewall integrity OK'
+        $ui.firewallBannerTitle.Foreground = $window.Resources['Green']
+        $ui.firewallBannerText.Text = 'mpssvc and BFE guarded; firewall profiles enabled'
+        $ui.footerText.Text = 'firewall preserved'
+        $ui.footerText.Foreground = $window.Resources['Overlay0']
     }
 }
 
@@ -922,7 +1020,7 @@ function Get-DisableTargetDiffText {
 }
 
 function Show-Confirm {
-    param([string]$Title, [string]$Body, [scriptblock]$OnProceed, [string]$DiffText)
+    param([string]$Title, [string]$Body, [scriptblock]$OnProceed, [string]$DiffText, [switch]$AllowForceOverride)
     $ui.confirmTitle.Text = $Title
     $ui.confirmBody.Text  = $Body
     if ([string]::IsNullOrWhiteSpace($DiffText)) {
@@ -931,6 +1029,11 @@ function Show-Confirm {
     } else {
         $ui.confirmDiffText.Text = $DiffText
         $ui.confirmDiffPanel.Visibility = 'Visible'
+    }
+    $script:ConfirmForceOverride = $false
+    if ($ui.confirmForceOverride) { $ui.confirmForceOverride.IsChecked = $false }
+    if ($ui.confirmForcePanel) {
+        $ui.confirmForcePanel.Visibility = if ($AllowForceOverride) { 'Visible' } else { 'Collapsed' }
     }
     $script:ConfirmAction = $OnProceed
     $ui.confirmOverlay.Visibility = 'Visible'
@@ -955,6 +1058,9 @@ function Add-LogEntry {
     $para.Inlines.Add($run)
     $ui.logBox.ScrollToEnd()
     Add-PolicyStreamEntry -Entry $Entry
+    if (Test-FirewallGuardTripMessage -Message $Entry.Message) {
+        Set-FirewallBannerState -Issues @($Entry.Message) -Source 'operation guard' -Flash
+    }
 }
 
 function Set-Busy {
@@ -996,6 +1102,8 @@ function Update-StatusTiles {
         }
 
         # Firewall
+        $firewallIssues = Get-GuiFirewallIssues
+        Set-FirewallBannerState -Issues $firewallIssues -Source 'live poll'
         try {
             $fwp = Get-NetFirewallProfile -ErrorAction Stop
             $allOn = $fwp | ForEach-Object { $_.Enabled } | Where-Object { -not $_ } | Measure-Object | Select-Object -ExpandProperty Count
@@ -1077,7 +1185,10 @@ $script:AsyncResult = $null
 $script:AsyncPS = $null
 
 function Start-ModeAsync {
-    param([ValidateSet('Disable','Remove','Restore')][string]$ActionMode)
+    param(
+        [ValidateSet('Disable','Remove','Restore')][string]$ActionMode,
+        [switch]$ForceOverride
+    )
     if ($script:UIState.Busy) { return }
     Set-Busy -IsBusy $true -Label "Running $ActionMode..."
     Show-Toast "Starting $ActionMode..." info
@@ -1090,6 +1201,7 @@ function Start-ModeAsync {
     $rs.SessionStateProxy.SetVariable('ModulePath', $modulePath)
     $rs.SessionStateProxy.SetVariable('ActionMode', $ActionMode)
     $rs.SessionStateProxy.SetVariable('LogPath', $script:LogPath)
+    $rs.SessionStateProxy.SetVariable('ForceOverride', [bool]$ForceOverride)
 
     $worker = {
         Import-Module -Name $ModulePath -Force -ErrorAction Stop
@@ -1105,8 +1217,8 @@ function Start-ModeAsync {
 
         try {
             switch ($ActionMode) {
-                'Disable' { Invoke-DisableDefender -Force -LogPath $LogPath -LogCallback $logCallback -Confirm:$false }
-                'Remove'  { Invoke-RemoveDefender -Force -LogPath $LogPath -LogCallback $logCallback -Confirm:$false }
+                'Disable' { Invoke-DisableDefender -Force:$ForceOverride -LogPath $LogPath -LogCallback $logCallback -Confirm:$false }
+                'Remove'  { Invoke-RemoveDefender -Force:$ForceOverride -LogPath $LogPath -LogCallback $logCallback -Confirm:$false }
                 'Restore' { Invoke-RestoreDefender -LogPath $LogPath -LogCallback $logCallback -Confirm:$false }
             }
             $UIState.LastResult = 'ok'
@@ -1189,6 +1301,11 @@ $window.Add_KeyDown({
 })
 $ui.btnConfirmOk.Add_Click({
     $ui.confirmOverlay.Visibility = 'Collapsed'
+    if ($ui.confirmForcePanel -and $ui.confirmForcePanel.Visibility -eq 'Visible' -and $ui.confirmForceOverride) {
+        $script:ConfirmForceOverride = [bool]$ui.confirmForceOverride.IsChecked
+    } else {
+        $script:ConfirmForceOverride = $false
+    }
     if ($script:ConfirmAction) {
         $action = $script:ConfirmAction
         $script:ConfirmAction = $null
@@ -1207,14 +1324,14 @@ $ui.btnRefresh.Add_Click({
 
 $ui.btnDisable.Add_Click({
     $diffText = Get-DisableTargetDiffText
-    Show-Confirm -Title 'Disable Microsoft Defender?' -Body "This will apply policy keys, disable services, and turn off real-time protection. Reversible via Restore.`n`nYour firewall will not be touched." -DiffText $diffText -OnProceed {
-        Start-ModeAsync -ActionMode 'Disable'
+    Show-Confirm -Title 'Disable Microsoft Defender?' -Body "This will apply policy keys, disable services, and turn off real-time protection. Reversible via Restore.`n`nYour firewall will not be touched." -DiffText $diffText -AllowForceOverride -OnProceed {
+        Start-ModeAsync -ActionMode 'Disable' -ForceOverride:$script:ConfirmForceOverride
     }
 })
 
 $ui.btnRemove.Add_Click({
-    Show-Confirm -Title 'FULL REMOVE Microsoft Defender?' -Body "This is aggressive. It will:`n  - Apply all Disable operations`n  - Deprovision the Windows Security UI app`n  - Remove SafeBoot\WinDefend so it cannot load even in Safe Mode`n  - DISM-remove platform packages`n`nBest run from Safe Mode. Restore mode may require sfc/DISM to fully repair. Firewall preserved." -OnProceed {
-        Start-ModeAsync -ActionMode 'Remove'
+    Show-Confirm -Title 'FULL REMOVE Microsoft Defender?' -Body "This is aggressive. It will:`n  - Apply all Disable operations`n  - Deprovision the Windows Security UI app`n  - Remove SafeBoot\WinDefend so it cannot load even in Safe Mode`n  - DISM-remove platform packages`n`nBest run from Safe Mode. Restore mode may require sfc/DISM to fully repair. Firewall preserved." -AllowForceOverride -OnProceed {
+        Start-ModeAsync -ActionMode 'Remove' -ForceOverride:$script:ConfirmForceOverride
     }
 })
 
