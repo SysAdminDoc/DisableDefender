@@ -5,25 +5,10 @@
 
 $moduleRoot = $PSScriptRoot
 
-# Initialize app directory with hardened ACLs
-$script:AppDir = Join-Path $env:ProgramData 'DisableDefender'
-if (-not (Test-Path $script:AppDir)) {
-    New-Item -ItemType Directory -Path $script:AppDir -Force | Out-Null
-    try {
-        $dirAcl = Get-Acl -LiteralPath $script:AppDir
-        $dirAcl.SetAccessRuleProtection($true, $false)
-        $adminRule = New-Object System.Security.AccessControl.FileSystemAccessRule(
-            'BUILTIN\Administrators', 'FullControl', 'ContainerInherit,ObjectInherit', 'None', 'Allow')
-        $systemRule = New-Object System.Security.AccessControl.FileSystemAccessRule(
-            'NT AUTHORITY\SYSTEM', 'FullControl', 'ContainerInherit,ObjectInherit', 'None', 'Allow')
-        $dirAcl.AddAccessRule($adminRule)
-        $dirAcl.AddAccessRule($systemRule)
-        Set-Acl -LiteralPath $script:AppDir -AclObject $dirAcl
-    } catch {}
-}
-
-# Dot-source all private functions (order matters: Variables first, Write-Log second)
+# Dot-source all private functions (order matters: Variables, runtime preflight, then Write-Log)
 . "$moduleRoot\Private\Variables.ps1"
+. "$moduleRoot\Private\RuntimeDirectory.ps1"
+Initialize-DefenderRuntimeDirectory -Path $script:AppDir | Out-Null
 . "$moduleRoot\Private\Write-Log.ps1"
 . "$moduleRoot\Private\Tripwire.ps1"
 . "$moduleRoot\Private\ReplayManifest.ps1"

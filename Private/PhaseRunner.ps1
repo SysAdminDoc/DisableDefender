@@ -18,10 +18,7 @@ function Save-DefenderPhaseState {
     if ($WhatIfPreference) { return }
 
     $path = Get-DefenderPhaseStatePath
-    $dir = Split-Path -Parent $path
-    if (-not (Test-Path -LiteralPath $dir)) {
-        New-Item -ItemType Directory -Path $dir -Force | Out-Null
-    }
+    Assert-DefenderRuntimeDirectory -Path (Split-Path -Parent $path)
     $State.Updated = (Get-Date).ToString('o')
     $State | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $path -Encoding UTF8
 }

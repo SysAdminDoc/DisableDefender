@@ -1,6 +1,6 @@
 @{
     RootModule        = 'DisableDefender.psm1'
-    ModuleVersion     = '0.0.24'
+    ModuleVersion     = '0.0.25'
     GUID              = 'a7e3f8d1-4b2c-4e9a-b5d6-1c8f2a3e4d5b'
     Author            = 'SysAdminDoc'
     CompanyName       = 'SysAdminDoc'
@@ -28,7 +28,7 @@
             Tags         = @('Defender', 'Security', 'Windows', 'Disable', 'Remove', 'Restore', 'Firewall')
             LicenseUri   = 'https://github.com/SysAdminDoc/DisableDefender/blob/main/LICENSE'
             ProjectUri   = 'https://github.com/SysAdminDoc/DisableDefender'
-            ReleaseNotes = 'v0.0.24: Added deterministic Restore manifest selection for repeated Disable/Remove runs.'
+            ReleaseNotes = 'v0.0.25: Added runtime directory reparse-point and ACL preflight hardening.'
         }
     }
 }

@@ -22,6 +22,7 @@ function Write-SafetyTripwire {
     }
     $json = $entry | ConvertTo-Json -Depth 8 -Compress
     $path = Join-Path $script:AppDir 'tripwire.jsonl'
+    Assert-DefenderRuntimeDirectory -Path (Split-Path -Parent $path)
     try { Add-Content -LiteralPath $path -Value $json -ErrorAction Stop } catch {}
     Write-Log "TRIPWIRE $json" WARN
 }

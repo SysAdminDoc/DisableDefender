@@ -1,6 +1,6 @@
 # DisableDefender
 
-[![Version](https://img.shields.io/badge/version-0.0.24-blue.svg)](https://github.com/SysAdminDoc/DisableDefender/releases)
+[![Version](https://img.shields.io/badge/version-0.0.25-blue.svg)](https://github.com/SysAdminDoc/DisableDefender/releases)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-0078D6.svg)](https://www.microsoft.com/windows)
 [![PowerShell](https://img.shields.io/badge/powershell-5.1%2B-012456.svg)](https://learn.microsoft.com/powershell)
@@ -48,6 +48,7 @@ Disable confirmation includes a current-vs-target drift preview before execution
 - **Appx removal**: SecHealthUI deprovision with `NonRemovableAppPolicy` override
 - **SafeBoot trap** (Remove mode): nukes `SafeBoot\{Minimal,Network}\WinDefend` so the service can't load even in Safe Mode
 - **Restore point** before any destructive op (opt-out with `-NoRestorePoint`)
+- **Runtime directory preflight**: `%ProgramData%\DisableDefender` refuses junctions/symlinks and repairs weak ACLs before writing logs, manifests, phase state, tripwires, ACL backups, or SYSTEM task output
 - **Replay restore manifest**: Disable/Remove record validated JSONL undo entries; Restore logs run IDs, entry count, and SHA256 before reverse-order replay, detects archived undo chains, and can replay newest or all manifests deterministically
 - **Atomic phase boundaries**: each mode records phase status to `phase-state.json`; failures log partial state plus resume/rollback recovery choices
 - **Per-phase firewall guard**: every executed phase checks firewall services and profiles before and after running

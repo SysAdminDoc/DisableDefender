@@ -87,14 +87,6 @@ Actionable work beyond v0.0.18. Completed work is removed. True blockers live in
   Touches: `Public/Get-DefenderHealth.ps1`, `Private/Set-MpRuntimePrefs.ps1`, `DisableDefender.GUI.ps1`, `README.md`.
   Acceptance: Users can export/import a small JSON preset for supported Defender-adjacent choices; unsupported broad privacy tweaks are rejected with a clear message.
   Complexity: M
-
-- [ ] P1 - Runtime directory reparse-point and ACL preflight
-  Why: `%ProgramData%\DisableDefender` receives privileged manifests, logs, phase state, tripwires, and ACL backups; existing code hardens ACLs only when creating the directory, so a pre-existing junction/symlink or weak DACL can redirect or expose sensitive artifacts.
-  Evidence: RESEARCH.md Security, Privacy, and Reliability; `DisableDefender.psm1`; `DisableDefender.ps1`; `Private/Write-Log.ps1`; `Private/ReplayManifest.ps1`; `Private/PhaseRunner.ps1`; `Private/Tripwire.ps1`; Microsoft reparse-point operations docs.
-  Touches: `DisableDefender.psm1`, `DisableDefender.ps1`, `Private/Write-Log.ps1`, `Private/ReplayManifest.ps1`, `Private/PhaseRunner.ps1`, `Private/Tripwire.ps1`, `Tests/DisableDefender.Tests.ps1`.
-  Acceptance: Startup refuses or repairs a pre-existing runtime directory that is a reparse point or grants non-admin/SYSTEM write access; tests cover safe directory, reparse-point directory, and weak-DACL cases.
-  Complexity: M
-
 - [ ] P2 - PowerShell App Control and language-mode preflight
   Why: The GUI and module depend on `Add-Type`, WPF/XAML, dot-sourced functions, and admin registry/service writes; App Control or Constrained Language can fail before the user gets an actionable Defender-specific error.
   Evidence: RESEARCH.md Security, Privacy, and Reliability; `DisableDefender.GUI.ps1`; `Private/Confirm-Prereqs.ps1`; Microsoft PowerShell language-mode and App Control docs.

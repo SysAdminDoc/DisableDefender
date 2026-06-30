@@ -12,6 +12,7 @@ function Invoke-AsSystem {
         return $true
     }
     $taskName = "_dp_{0:N}" -f [guid]::NewGuid()
+    Assert-DefenderRuntimeDirectory
     $outputPath = Join-Path $script:AppDir ("system-task-{0:N}.log" -f [guid]::NewGuid())
     try {
         $cmdArgument = "/c `"`"$Execute`" $Argument > `"$outputPath`" 2>&1`""

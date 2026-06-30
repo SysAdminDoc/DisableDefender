@@ -62,7 +62,7 @@ function Grant-RegKeyControl {
 function Save-AclBackup {
     if ($null -eq $script:AclBackups -or $script:AclBackups.Count -eq 0) { return }
     $dir = $script:AppDir
-    if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
+    Assert-DefenderRuntimeDirectory -Path $dir
     $path = Join-Path $dir 'acl-backup.clixml'
     $script:AclBackups | Export-Clixml -Path $path -Force
     Write-Log "ACL backup saved ($($script:AclBackups.Count) keys) to $path" DEBUG
@@ -70,6 +70,7 @@ function Save-AclBackup {
 
 function Restore-RegKeyACLs {
     $path = Join-Path $script:AppDir 'acl-backup.clixml'
+    Assert-DefenderRuntimeDirectory -Path (Split-Path -Parent $path)
     if (-not (Test-Path $path)) {
         Write-Log "No ACL backup found -- skipping ACL restore." DEBUG
         return

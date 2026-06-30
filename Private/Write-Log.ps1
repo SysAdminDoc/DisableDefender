@@ -5,6 +5,7 @@ function Write-Log {
     )
     $stamp = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
     $line  = "[$stamp] [$Level] $Message"
+    Assert-DefenderRuntimeDirectory
     $logTarget = if ($script:LogPathOverride) { $script:LogPathOverride }
                  else { Join-Path $script:AppDir "$script:AppName.log" }
     try { Add-Content -LiteralPath $logTarget -Value $line -ErrorAction Stop } catch {}

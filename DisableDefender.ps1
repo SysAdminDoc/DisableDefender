@@ -1,7 +1,7 @@
 #Requires -Version 5.1
 #Requires -RunAsAdministrator
 <#
-    DisableDefender v0.0.24
+    DisableDefender v0.0.25
     CLI launcher for the DisableDefender PowerShell module.
 
     DOES NOT touch the Windows Firewall. Firewall services (mpssvc, BFE) and the
@@ -31,20 +31,12 @@ param(
 
 $script:AppName = 'DisableDefender'
 $script:AppDir = Join-Path $env:ProgramData $script:AppName
-if (-not (Test-Path -LiteralPath $script:AppDir)) {
-    New-Item -ItemType Directory -Path $script:AppDir -Force | Out-Null
-    try {
-        $dirAcl = Get-Acl -LiteralPath $script:AppDir
-        $dirAcl.SetAccessRuleProtection($true, $false)
-        $adminRule = New-Object System.Security.AccessControl.FileSystemAccessRule(
-            'BUILTIN\Administrators', 'FullControl', 'ContainerInherit,ObjectInherit', 'None', 'Allow')
-        $systemRule = New-Object System.Security.AccessControl.FileSystemAccessRule(
-            'NT AUTHORITY\SYSTEM', 'FullControl', 'ContainerInherit,ObjectInherit', 'None', 'Allow')
-        $dirAcl.AddAccessRule($adminRule)
-        $dirAcl.AddAccessRule($systemRule)
-        Set-Acl -LiteralPath $script:AppDir -AclObject $dirAcl
-    } catch {}
+$runtimeDirectoryHelper = Join-Path $PSScriptRoot 'Private\RuntimeDirectory.ps1'
+if (-not (Test-Path -LiteralPath $runtimeDirectoryHelper)) {
+    throw "Runtime directory helper not found: $runtimeDirectoryHelper"
 }
+. $runtimeDirectoryHelper
+Initialize-DefenderRuntimeDirectory -Path $script:AppDir | Out-Null
 
 $modulePath = Join-Path $PSScriptRoot 'DisableDefender.psd1'
 if (-not (Test-Path -LiteralPath $modulePath)) {

@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.0.25 - 2026-06-30
+
+### Added
+- Runtime directory preflight that refuses reparse-point `%ProgramData%\DisableDefender` paths.
+- Runtime directory ACL hardening that repairs inherited or non-admin/SYSTEM write access.
+- Pester coverage for safe runtime directories, reparse-point refusal, and weak-DACL repair.
+
+### Changed
+- Logs, restore manifests, phase state, tripwires, ACL backups, and SYSTEM task output now assert the runtime directory before writing.
+- Version metadata is aligned to `0.0.25` across the manifest, scripts, README badge, and changelog.
+
 ## v0.0.24 - 2026-06-30
 
 ### Added

@@ -29,6 +29,99 @@ Describe 'Module manifest' {
 }
 
 InModuleScope DisableDefender {
+    Describe 'Runtime directory preflight' {
+        BeforeAll {
+            function New-TestRuntimeDirectoryAcl {
+                param([switch]$Weak)
+
+                $acl = New-Object System.Security.AccessControl.DirectorySecurity
+                $acl.SetAccessRuleProtection($true, $false)
+                foreach ($sidValue in @('S-1-5-32-544','S-1-5-18')) {
+                    $identity = New-Object System.Security.Principal.SecurityIdentifier($sidValue)
+                    $rule = New-Object System.Security.AccessControl.FileSystemAccessRule(
+                        $identity,
+                        [System.Security.AccessControl.FileSystemRights]::FullControl,
+                        [System.Security.AccessControl.InheritanceFlags]'ContainerInherit,ObjectInherit',
+                        [System.Security.AccessControl.PropagationFlags]::None,
+                        [System.Security.AccessControl.AccessControlType]::Allow)
+                    $acl.AddAccessRule($rule)
+                }
+                if ($Weak) {
+                    $users = New-Object System.Security.Principal.SecurityIdentifier('S-1-5-32-545')
+                    $rule = New-Object System.Security.AccessControl.FileSystemAccessRule(
+                        $users,
+                        [System.Security.AccessControl.FileSystemRights]::Modify,
+                        [System.Security.AccessControl.InheritanceFlags]'ContainerInherit,ObjectInherit',
+                        [System.Security.AccessControl.PropagationFlags]::None,
+                        [System.Security.AccessControl.AccessControlType]::Allow)
+                    $acl.AddAccessRule($rule)
+                }
+                return $acl
+            }
+        }
+
+        It 'accepts a safe runtime directory' {
+            $dir = Join-Path $TestDrive 'runtime-safe'
+            Mock Test-Path { $true }
+            Mock Get-Item {
+                [pscustomobject]@{
+                    PSIsContainer = $true
+                    Attributes    = [System.IO.FileAttributes]::Directory
+                }
+            }
+            $script:SafeRuntimeAcl = New-TestRuntimeDirectoryAcl
+            Mock Get-DefenderRuntimeDirectoryAcl { return $script:SafeRuntimeAcl }
+            Mock Set-DefenderRuntimeDirectoryAcl {}
+
+            $result = Initialize-DefenderRuntimeDirectory -Path $dir
+
+            $result.Created | Should -Be $false
+            $result.Repaired | Should -Be $false
+            Should -Invoke Set-DefenderRuntimeDirectoryAcl -Times 0 -Exactly
+        }
+
+        It 'refuses a runtime directory that is a reparse point' {
+            $dir = Join-Path $TestDrive 'runtime-link'
+            Mock Test-Path { $true }
+            Mock Get-Item {
+                [pscustomobject]@{
+                    PSIsContainer = $true
+                    Attributes    = ([System.IO.FileAttributes]::Directory -bor [System.IO.FileAttributes]::ReparsePoint)
+                }
+            }
+            Mock Get-DefenderRuntimeDirectoryAcl { throw 'should not inspect ACL for reparse point' }
+
+            { Initialize-DefenderRuntimeDirectory -Path $dir } | Should -Throw -ExpectedMessage '*reparse point*'
+            Should -Invoke Get-DefenderRuntimeDirectoryAcl -Times 0 -Exactly
+        }
+
+        It 'repairs a runtime directory with non-admin write access' {
+            $dir = Join-Path $TestDrive 'runtime-weak'
+            $script:WeakRuntimeAcl = New-TestRuntimeDirectoryAcl -Weak
+            $script:SafeRuntimeAcl = New-TestRuntimeDirectoryAcl
+            @(Get-DefenderRuntimeDirectoryWeakWriteRules -Acl $script:WeakRuntimeAcl).Count | Should -BeGreaterThan 0
+            $script:RuntimeAclReads = 0
+            Mock Test-Path { $true }
+            Mock Get-Item {
+                [pscustomobject]@{
+                    PSIsContainer = $true
+                    Attributes    = [System.IO.FileAttributes]::Directory
+                }
+            }
+            Mock Get-DefenderRuntimeDirectoryAcl {
+                $script:RuntimeAclReads++
+                if ($script:RuntimeAclReads -eq 1) { return $script:WeakRuntimeAcl }
+                return $script:SafeRuntimeAcl
+            }
+            Mock Set-DefenderRuntimeDirectoryAcl {}
+
+            $result = Initialize-DefenderRuntimeDirectory -Path $dir
+
+            $result.Repaired | Should -Be $true
+            Should -Invoke Set-DefenderRuntimeDirectoryAcl -Times 1 -Exactly
+        }
+    }
+
     Describe 'Set-RegValue' {
         Context 'Refuse-list guard' {
             It 'refuses to write to firewall policy paths' {

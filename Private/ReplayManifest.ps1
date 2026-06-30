@@ -231,9 +231,7 @@ function Start-RestoreManifest {
 
     $path = Get-RestoreManifestPath
     $dir = Split-Path -Parent $path
-    if (-not (Test-Path -LiteralPath $dir)) {
-        New-Item -ItemType Directory -Path $dir -Force | Out-Null
-    }
+    Assert-DefenderRuntimeDirectory -Path $dir
 
     if (Test-Path -LiteralPath $path) {
         $existing = Get-Item -LiteralPath $path -ErrorAction SilentlyContinue

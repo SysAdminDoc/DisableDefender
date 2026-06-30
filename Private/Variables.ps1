@@ -2,7 +2,7 @@
 # Module-scoped variables: service lists, policy paths, refuse-lists
 # ---------------------------------------------------------------------------
 
-$script:Version = '0.0.24'
+$script:Version = '0.0.25'
 $script:AppName = 'DisableDefender'
 $script:AppDir  = Join-Path $env:ProgramData $script:AppName
 
