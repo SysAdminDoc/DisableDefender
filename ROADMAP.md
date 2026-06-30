@@ -102,13 +102,6 @@ Actionable work beyond v0.0.18. Completed work is removed. True blockers live in
   Acceptance: CLI and GUI report FullLanguage/ConstrainedLanguage/App Control status before destructive phases; unsupported language modes fail with signed/offline remediation guidance; tests cover FullLanguage, ConstrainedLanguage, and unknown policy states.
   Complexity: M
 
-- [ ] P1 - MpPreference restore and health parity audit
-  Why: `Set-MpRuntimePrefs` writes more values than `Clear-MpRuntimePrefs` restores and more values than `Get-DefenderHealth` checks, so Restore can report healthier than the actual Defender preference state.
-  Evidence: RESEARCH.md Security, Privacy, and Reliability; `Private/Set-MpRuntimePrefs.ps1`; `Public/Get-DefenderHealth.ps1`; Microsoft `Set-MpPreference` docs.
-  Touches: `Private/Set-MpRuntimePrefs.ps1`, `Public/Get-DefenderHealth.ps1`, `Tests/DisableDefender.Tests.ps1`, `README.md`.
-  Acceptance: Every preference/exclusion added during Disable has a restore default and a health expectation; a unit test fails if a new write lacks restore and health coverage.
-  Complexity: M
-
 - [ ] P1 - Verify SYSTEM task fallback completion and target effects
   Why: `Invoke-AsSystem` returns success after task start without validating final task result, and SafeBoot fallback does not verify the registry keys were removed.
   Evidence: RESEARCH.md Security, Privacy, and Reliability; `Private/Invoke-AsSystem.ps1`; `Private/SafeBoot.ps1`; `Private/Set-ServiceStart.ps1`.

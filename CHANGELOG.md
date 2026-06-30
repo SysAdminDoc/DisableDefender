@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.0.22 - 2026-06-30
+
+### Added
+- Shared MpPreference catalog used by Disable, Restore, and Health.
+- Health coverage for every runtime MpPreference write and every managed path / extension exclusion.
+- Pester parity checks that fail when a runtime preference lacks restore or health coverage.
+
+### Changed
+- Restore now resets all runtime preferences written by Disable, including signature schedule, scan schedule, cloud, network protection, and parsing preferences.
+- Version metadata is aligned to `0.0.22` across the manifest, scripts, README badge, and changelog.
+
 ## v0.0.21 - 2026-06-30
 
 ### Added

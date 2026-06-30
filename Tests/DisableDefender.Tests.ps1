@@ -273,6 +273,43 @@ InModuleScope DisableDefender {
             $parsed.Target | Should -Be 'Remove'
             $parsed.Summary.Total | Should -BeGreaterThan 0
         }
+
+        It 'defines restore values for every runtime MpPreference write' {
+            $catalog = @(Get-MpRuntimePreferenceCatalog)
+
+            $catalog.Count | Should -BeGreaterThan 0
+            foreach ($preference in $catalog) {
+                $preference.Name | Should -Not -BeNullOrEmpty
+                $preference.PSObject.Properties.Name | Should -Contain 'DisableValue'
+                $preference.PSObject.Properties.Name | Should -Contain 'RestoreValue'
+            }
+        }
+
+        It 'reports health for every runtime MpPreference and exclusion entry' {
+            $prefData = [ordered]@{}
+            foreach ($preference in Get-MpRuntimePreferenceCatalog) {
+                $prefData[$preference.Name] = $preference.DisableValue
+            }
+            foreach ($exclusion in Get-MpRuntimeExclusionCatalog) {
+                $prefData[$exclusion.Parameter] = $exclusion.Values
+            }
+            Mock Get-MpPreference { [PSCustomObject]$prefData }
+            Mock Get-ScheduledTask { throw 'Not available' }
+            Mock Get-AppxPackage { @() }
+            Mock Get-AppxProvisionedPackage { @() }
+
+            $result = Get-DefenderHealth -Target Disable
+            $healthNames = @($result.Items | Where-Object { $_.Category -eq 'MpPreference' } | ForEach-Object { $_.Name })
+
+            foreach ($preference in Get-MpRuntimePreferenceCatalog) {
+                $healthNames | Should -Contain $preference.Name
+            }
+            foreach ($exclusion in Get-MpRuntimeExclusionCatalog) {
+                foreach ($value in $exclusion.Values) {
+                    $healthNames | Should -Contain "$($exclusion.Parameter):$value"
+                }
+            }
+        }
     }
 
     Describe 'Get-DefenderComponentStatus' {

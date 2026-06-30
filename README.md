@@ -1,6 +1,6 @@
 # DisableDefender
 
-[![Version](https://img.shields.io/badge/version-0.0.21-blue.svg)](https://github.com/SysAdminDoc/DisableDefender/releases)
+[![Version](https://img.shields.io/badge/version-0.0.22-blue.svg)](https://github.com/SysAdminDoc/DisableDefender/releases)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-0078D6.svg)](https://www.microsoft.com/windows)
 [![PowerShell](https://img.shields.io/badge/powershell-5.1%2B-012456.svg)](https://learn.microsoft.com/powershell)
@@ -42,7 +42,7 @@ Disable confirmation includes a current-vs-target drift preview before execution
 - **SYSTEM-via-task fallback** for keys that even Admin+ACL-override can't touch
 - **Multi-strategy `Set-ServiceStart`**: direct write → ACL takeover → SYSTEM task
 - **Full policy coverage** (privacy.sexy-enriched): `DisableAntiSpyware`, real-time, behavior, IOAV, IPS, IPC, spynet, MAPS, NIS, IPS-throttle, MpEngine PUA + file-hash, signatures, scan, SmartScreen, MRT, passive-mode for MDE, UX suppression, legacy `Microsoft Antimalware`
-- **Runtime prefs**: `Set-MpPreference` sweep + global path/extension exclusions
+- **Runtime prefs**: cataloged `Set-MpPreference` sweep with restore defaults, health expectations, and global path/extension exclusions
 - **Scheduled tasks**: all four Defender tasks + ExploitGuard refresh disabled
 - **Service takedown**: 16 Defender services by default, including `MDCoreSvc`, `MDDlpSvc`, `MsSecFlt`, `MsSecCore`, `SgrmAgent`/`Broker`, `webthreatdefsvc`; MDE `Sense` requires explicit `-IncludeMDE`
 - **Appx removal**: SecHealthUI deprovision with `NonRemovableAppPolicy` override

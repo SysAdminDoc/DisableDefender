@@ -1,102 +1,96 @@
 # ---------------------------------------------------------------------------
 # Phase: Set-MpPreference (runtime, expanded)
 # ---------------------------------------------------------------------------
+function Get-MpRuntimePreferenceCatalog {
+    return @(
+        [PSCustomObject]@{ Name = 'DisableRealtimeMonitoring'; DisableValue = $true; RestoreValue = $false }
+        [PSCustomObject]@{ Name = 'DisableBehaviorMonitoring'; DisableValue = $true; RestoreValue = $false }
+        [PSCustomObject]@{ Name = 'DisableBlockAtFirstSeen'; DisableValue = $true; RestoreValue = $false }
+        [PSCustomObject]@{ Name = 'DisableIOAVProtection'; DisableValue = $true; RestoreValue = $false }
+        [PSCustomObject]@{ Name = 'DisableScriptScanning'; DisableValue = $true; RestoreValue = $false }
+        [PSCustomObject]@{ Name = 'DisableArchiveScanning'; DisableValue = $true; RestoreValue = $false }
+        [PSCustomObject]@{ Name = 'DisableIntrusionPreventionSystem'; DisableValue = $true; RestoreValue = $false }
+        [PSCustomObject]@{ Name = 'DisableRemovableDriveScanning'; DisableValue = $true; RestoreValue = $false }
+        [PSCustomObject]@{ Name = 'DisableScanningMappedNetworkDrivesForFullScan'; DisableValue = $true; RestoreValue = $false }
+        [PSCustomObject]@{ Name = 'DisableScanningNetworkFiles'; DisableValue = $true; RestoreValue = $false }
+        [PSCustomObject]@{ Name = 'SignatureDisableUpdateOnStartupWithoutEngine'; DisableValue = $true; RestoreValue = $false }
+        [PSCustomObject]@{ Name = 'DisableCoreServiceECSIntegration'; DisableValue = $true; RestoreValue = $false }
+        [PSCustomObject]@{ Name = 'DisableCoreServiceTelemetry'; DisableValue = $true; RestoreValue = $false }
+        [PSCustomObject]@{ Name = 'DisableSshParsing'; DisableValue = $true; RestoreValue = $false }
+        [PSCustomObject]@{ Name = 'DisableRdpParsing'; DisableValue = $true; RestoreValue = $false }
+        [PSCustomObject]@{ Name = 'DisableDnsOverTcpParsing'; DisableValue = $true; RestoreValue = $false }
+        [PSCustomObject]@{ Name = 'DisableInboundConnectionFiltering'; DisableValue = $true; RestoreValue = $false }
+        [PSCustomObject]@{ Name = 'DisableNetworkProtectionPerfTelemetry'; DisableValue = $true; RestoreValue = $false }
+        [PSCustomObject]@{ Name = 'MAPSReporting'; DisableValue = 'Disabled'; RestoreValue = 'Advanced' }
+        [PSCustomObject]@{ Name = 'SubmitSamplesConsent'; DisableValue = 'NeverSend'; RestoreValue = 'SendSafeSamples' }
+        [PSCustomObject]@{ Name = 'PUAProtection'; DisableValue = 'Disabled'; RestoreValue = 'Enabled' }
+        [PSCustomObject]@{ Name = 'SignatureScheduleDay'; DisableValue = 'Never'; RestoreValue = 'Everyday' }
+        [PSCustomObject]@{ Name = 'ScanScheduleDay'; DisableValue = 'Never'; RestoreValue = 'Everyday' }
+        [PSCustomObject]@{ Name = 'EnableControlledFolderAccess'; DisableValue = 'Disabled'; RestoreValue = 'Disabled' }
+        [PSCustomObject]@{ Name = 'EnableNetworkProtection'; DisableValue = 'Disabled'; RestoreValue = 'Disabled' }
+        [PSCustomObject]@{ Name = 'CloudBlockLevel'; DisableValue = 'Default'; RestoreValue = 'Default' }
+    )
+}
+
+function Get-MpRuntimeExclusionCatalog {
+    return @(
+        [PSCustomObject]@{ Parameter = 'ExclusionPath'; Values = @('C:\','D:\','E:\') }
+        [PSCustomObject]@{ Parameter = 'ExclusionExtension'; Values = @('exe','dll','ps1','bat','cmd','vbs','js','msi') }
+    )
+}
+
 function Set-MpRuntimePrefs {
     Write-Log "Applying Set-MpPreference flags..." INFO
-    $boolPrefs = @(
-        'DisableRealtimeMonitoring','DisableBehaviorMonitoring','DisableBlockAtFirstSeen',
-        'DisableIOAVProtection','DisableScriptScanning','DisableArchiveScanning',
-        'DisableIntrusionPreventionSystem','DisableRemovableDriveScanning',
-        'DisableScanningMappedNetworkDrivesForFullScan','DisableScanningNetworkFiles',
-        'SignatureDisableUpdateOnStartupWithoutEngine',
-        'DisableCoreServiceECSIntegration',
-        'DisableCoreServiceTelemetry',
-        'DisableSshParsing',
-        'DisableRdpParsing',
-        'DisableDnsOverTcpParsing',
-        'DisableInboundConnectionFiltering',
-        'DisableNetworkProtectionPerfTelemetry'
-    )
     $currentPrefs = $null
     if (Test-RestoreManifestRecording) {
         try { $currentPrefs = Get-MpPreference -ErrorAction Stop } catch {}
     }
-    foreach ($p in $boolPrefs) {
-        if ($currentPrefs -and ($currentPrefs.PSObject.Properties.Name -contains $p)) {
-            Write-RestoreManifestEntry -Phase 'MpPreference' -Action 'SetMpPreference' -Target $p -Data ([ordered]@{
-                Name  = $p
-                Value = $currentPrefs.$p
+    foreach ($preference in Get-MpRuntimePreferenceCatalog) {
+        if ($currentPrefs -and ($currentPrefs.PSObject.Properties.Name -contains $preference.Name)) {
+            Write-RestoreManifestEntry -Phase 'MpPreference' -Action 'SetMpPreference' -Target $preference.Name -Data ([ordered]@{
+                Name  = $preference.Name
+                Value = $currentPrefs.($preference.Name)
             })
         }
-        $splat = @{ $p = $true; ErrorAction = 'SilentlyContinue' }
-        try { Set-MpPreference @splat } catch {}
-    }
-    $enumPrefs = @{
-        MAPSReporting                = 'Disabled'
-        SubmitSamplesConsent         = 'NeverSend'
-        PUAProtection                = 'Disabled'
-        SignatureScheduleDay         = 'Never'
-        ScanScheduleDay              = 'Never'
-        EnableControlledFolderAccess = 'Disabled'
-        EnableNetworkProtection      = 'Disabled'
-        CloudBlockLevel              = 'Default'     # minimum
-    }
-    foreach ($k in $enumPrefs.Keys) {
-        if ($currentPrefs -and ($currentPrefs.PSObject.Properties.Name -contains $k)) {
-            Write-RestoreManifestEntry -Phase 'MpPreference' -Action 'SetMpPreference' -Target $k -Data ([ordered]@{
-                Name  = $k
-                Value = $currentPrefs.$k
-            })
-        }
-        $splat = @{ $k = $enumPrefs[$k]; ErrorAction = 'SilentlyContinue' }
+        $splat = @{ ErrorAction = 'SilentlyContinue' }
+        $splat[$preference.Name] = $preference.DisableValue
         try { Set-MpPreference @splat } catch {}
     }
     try {
         if ($currentPrefs) {
-            foreach ($path in @('C:\','D:\','E:\')) {
-                if (@($currentPrefs.ExclusionPath) -notcontains $path) {
-                    Write-RestoreManifestEntry -Phase 'MpPreference' -Action 'RemoveMpPreferenceValue' -Target "ExclusionPath:$path" -Data ([ordered]@{
-                        Parameter = 'ExclusionPath'
-                        Value     = $path
-                    })
-                }
-            }
-            foreach ($extension in @('exe','dll','ps1','bat','cmd','vbs','js','msi')) {
-                if (@($currentPrefs.ExclusionExtension) -notcontains $extension) {
-                    Write-RestoreManifestEntry -Phase 'MpPreference' -Action 'RemoveMpPreferenceValue' -Target "ExclusionExtension:$extension" -Data ([ordered]@{
-                        Parameter = 'ExclusionExtension'
-                        Value     = $extension
-                    })
+            foreach ($exclusion in Get-MpRuntimeExclusionCatalog) {
+                foreach ($value in $exclusion.Values) {
+                    if (@($currentPrefs.($exclusion.Parameter)) -notcontains $value) {
+                        Write-RestoreManifestEntry -Phase 'MpPreference' -Action 'RemoveMpPreferenceValue' -Target "$($exclusion.Parameter):$value" -Data ([ordered]@{
+                            Parameter = $exclusion.Parameter
+                            Value     = $value
+                        })
+                    }
                 }
             }
         }
-        Add-MpPreference -ExclusionPath @('C:\','D:\','E:\') -ErrorAction SilentlyContinue
-        Add-MpPreference -ExclusionExtension @('exe','dll','ps1','bat','cmd','vbs','js','msi') -ErrorAction SilentlyContinue
+        foreach ($exclusion in Get-MpRuntimeExclusionCatalog) {
+            $splat = @{ ErrorAction = 'SilentlyContinue' }
+            $splat[$exclusion.Parameter] = $exclusion.Values
+            Add-MpPreference @splat
+        }
     } catch {}
     Write-Log "Runtime preferences applied." OK
 }
 
 function Clear-MpRuntimePrefs {
     Write-Log "Restoring MpPreference defaults..." INFO
-    $prefs = @(
-        'DisableRealtimeMonitoring','DisableBehaviorMonitoring','DisableBlockAtFirstSeen',
-        'DisableIOAVProtection','DisableScriptScanning','DisableArchiveScanning',
-        'DisableIntrusionPreventionSystem','DisableRemovableDriveScanning',
-        'DisableScanningMappedNetworkDrivesForFullScan','DisableScanningNetworkFiles',
-        'DisableCoreServiceECSIntegration','DisableCoreServiceTelemetry',
-        'DisableSshParsing','DisableRdpParsing','DisableDnsOverTcpParsing',
-        'DisableInboundConnectionFiltering','DisableNetworkProtectionPerfTelemetry'
-    )
-    foreach ($p in $prefs) {
-        $splat = @{ $p = $false; ErrorAction = 'SilentlyContinue' }
+    foreach ($preference in Get-MpRuntimePreferenceCatalog) {
+        $splat = @{ ErrorAction = 'SilentlyContinue' }
+        $splat[$preference.Name] = $preference.RestoreValue
         try { Set-MpPreference @splat } catch {}
     }
     try {
-        Set-MpPreference -MAPSReporting Advanced -ErrorAction SilentlyContinue
-        Set-MpPreference -SubmitSamplesConsent SendSafeSamples -ErrorAction SilentlyContinue
-        Set-MpPreference -PUAProtection Enabled -ErrorAction SilentlyContinue
-        Remove-MpPreference -ExclusionPath @('C:\','D:\','E:\') -ErrorAction SilentlyContinue
-        Remove-MpPreference -ExclusionExtension @('exe','dll','ps1','bat','cmd','vbs','js','msi') -ErrorAction SilentlyContinue
+        foreach ($exclusion in Get-MpRuntimeExclusionCatalog) {
+            $splat = @{ ErrorAction = 'SilentlyContinue' }
+            $splat[$exclusion.Parameter] = $exclusion.Values
+            Remove-MpPreference @splat
+        }
     } catch {}
     Write-Log "MpPreference defaults restored (may require service restart)." OK
 }

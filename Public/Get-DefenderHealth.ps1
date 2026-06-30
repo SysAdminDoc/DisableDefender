@@ -237,22 +237,18 @@ function Add-MpPreferenceHealthItems {
         return
     }
 
-    $boolPrefs = @(
-        'DisableRealtimeMonitoring','DisableBehaviorMonitoring','DisableBlockAtFirstSeen',
-        'DisableIOAVProtection','DisableScriptScanning','DisableArchiveScanning',
-        'DisableIntrusionPreventionSystem','DisableRemovableDriveScanning',
-        'DisableScanningMappedNetworkDrivesForFullScan','DisableScanningNetworkFiles'
-    )
-    foreach ($name in $boolPrefs) {
-        $expected = if ($Target -eq 'Restore') { 'False' } else { 'True' }
-        $actual = if ($prefs.PSObject.Properties.Name -contains $name) { [string]$prefs.$name } else { $null }
-        [void]$Items.Add((New-DefenderHealthItem -Category 'MpPreference' -Name $name -Expected $expected -Actual $actual))
+    foreach ($preference in Get-MpRuntimePreferenceCatalog) {
+        $expectedValue = if ($Target -eq 'Restore') { $preference.RestoreValue } else { $preference.DisableValue }
+        $actual = if ($prefs.PSObject.Properties.Name -contains $preference.Name) { [string]$prefs.($preference.Name) } else { $null }
+        [void]$Items.Add((New-DefenderHealthItem -Category 'MpPreference' -Name $preference.Name -Expected ([string]$expectedValue) -Actual $actual))
     }
 
-    foreach ($path in @('C:\','D:\','E:\')) {
-        $expected = if ($Target -eq 'Restore') { 'Absent' } else { 'Present' }
-        $actual = if (@($prefs.ExclusionPath) -contains $path) { 'Present' } else { 'Absent' }
-        [void]$Items.Add((New-DefenderHealthItem -Category 'MpPreference' -Name "ExclusionPath:$path" -Expected $expected -Actual $actual))
+    foreach ($exclusion in Get-MpRuntimeExclusionCatalog) {
+        foreach ($value in $exclusion.Values) {
+            $expected = if ($Target -eq 'Restore') { 'Absent' } else { 'Present' }
+            $actual = if (@($prefs.($exclusion.Parameter)) -contains $value) { 'Present' } else { 'Absent' }
+            [void]$Items.Add((New-DefenderHealthItem -Category 'MpPreference' -Name "$($exclusion.Parameter):$value" -Expected $expected -Actual $actual))
+        }
     }
 }
 
