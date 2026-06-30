@@ -1,6 +1,6 @@
 # DisableDefender
 
-[![Version](https://img.shields.io/badge/version-0.0.25-blue.svg)](https://github.com/SysAdminDoc/DisableDefender/releases)
+[![Version](https://img.shields.io/badge/version-0.0.26-blue.svg)](https://github.com/SysAdminDoc/DisableDefender/releases)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-0078D6.svg)](https://www.microsoft.com/windows)
 [![PowerShell](https://img.shields.io/badge/powershell-5.1%2B-012456.svg)](https://learn.microsoft.com/powershell)
@@ -57,6 +57,7 @@ Disable confirmation includes a current-vs-target drift preview before execution
 - **Restore point throttle awareness**: Windows restore-point interval refusals are logged with the configured cadence instead of a generic warning
 - **Surgical reruns**: `-Only` and `-Skip` phase filters for Policies, MpPreference, Tasks, Services, Appx, DISM, SafeBoot, and ContextMenu
 - **Health mode + Restore verification**: compares current state to Disable/Remove/Restore targets and reports drift for services, policy keys, tasks, Appx, SafeBoot, and MpPreference; Restore ends with a health summary and repair commands when drift remains
+- **Feature-update drift detection**: Disable/Remove record a Defender surface baseline; Health flags changed Windows builds plus unknown Defender-like services, tasks, and packages and prints a reapply plan that preserves firewall and MDE Sense by default
 - **Module layout**: `DisableDefender.psd1` / `DisableDefender.psm1` with public commands and private helpers for function-level tests
 - **GUI auto-elevate, silent CLI mode, transcript logging, Safe Mode aware**
 
@@ -102,6 +103,9 @@ A menu appears with Disable / Remove / Restore / Status.
 
 # Health check against the Disable target
 .\DisableDefender.ps1 -Mode Health
+
+# After a Windows feature update, review drift and the reapply plan
+.\DisableDefender.ps1 -Mode Health -HealthTarget Disable
 
 # Silent automation
 .\DisableDefender.ps1 -Mode Disable -Silent -NoReboot
@@ -210,6 +214,7 @@ v0.0.2 fixed a false-positive where `SharedAccess` (ICS, off by default) tripped
 - `%ProgramData%\DisableDefender\transcript.log`
 - `%ProgramData%\DisableDefender\restore-manifest.jsonl`
 - `%ProgramData%\DisableDefender\restore-manifest.*.jsonl`
+- `%ProgramData%\DisableDefender\surface-baseline.json`
 - `%ProgramData%\DisableDefender\phase-state.json`
 - `%ProgramData%\DisableDefender\tripwire.jsonl`
 

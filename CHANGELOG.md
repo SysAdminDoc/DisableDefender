@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.0.26 - 2026-06-30
+
+### Added
+- Defender surface baseline saved after successful Disable/Remove runs.
+- Health drift detection for changed Windows builds and unknown Defender-like services, scheduled tasks, and Appx packages.
+- CLI health reapply plan that preserves firewall and MDE Sense by default unless `-IncludeMDE` is explicit.
+- Pester coverage for unknown surface detection, build-baseline drift, and component status unknown service rows.
+
+### Changed
+- Component status now includes unknown Defender-like services as drift rows for GUI visibility after feature updates.
+- Version metadata is aligned to `0.0.26` across the manifest, scripts, README badge, and changelog.
+
 ## v0.0.25 - 2026-06-30
 
 ### Added

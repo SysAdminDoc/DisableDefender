@@ -61,6 +61,7 @@ function Invoke-DisableDefender {
             New-DefenderPhase -Name 'Firewall postflight' -Key 'FirewallPostflight' -Action { Assert-FirewallSafety -Stage post }
         )
         Invoke-DefenderPhasePlan -Mode Disable -Phases $phases -Only $Only -Skip $Skip
+        Save-DefenderSurfaceBaseline -Mode Disable
         Write-Log "Disable complete. Reboot recommended." OK
     } finally {
         Stop-RestoreManifest

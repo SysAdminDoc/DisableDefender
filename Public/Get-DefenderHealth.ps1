@@ -252,6 +252,56 @@ function Add-MpPreferenceHealthItems {
     }
 }
 
+function Add-SurfaceHealthItems {
+    param(
+        [Parameter(Mandatory)]$Items,
+        [switch]$IncludeMDE
+    )
+
+    $snapshot = Get-DefenderSurfaceSnapshot
+    $baseline = Read-DefenderSurfaceBaseline
+    $knownServices = @(Get-KnownDefenderServiceNames)
+    $knownTasks = @($script:DefenderTasks)
+    $knownPackages = @('Microsoft.SecHealthUI')
+    $issueCount = 0
+
+    foreach ($service in @($snapshot.Services | Where-Object { $knownServices -notcontains $_ })) {
+        $issueCount++
+        [void]$Items.Add((New-DefenderHealthItem -Category 'Surface' -Name "Unknown service $service" -Expected 'Known' -Actual 'Unknown' -Detail 'Review this Defender-like service before reapplying Disable.'))
+    }
+
+    foreach ($task in @($snapshot.Tasks | Where-Object { $knownTasks -notcontains $_ })) {
+        $issueCount++
+        [void]$Items.Add((New-DefenderHealthItem -Category 'Surface' -Name "Unknown task $task" -Expected 'Known' -Actual 'Unknown' -Detail 'Review this Defender-like scheduled task before reapplying Disable.'))
+    }
+
+    foreach ($package in @($snapshot.Packages | Where-Object { $knownPackages -notcontains $_ })) {
+        $issueCount++
+        [void]$Items.Add((New-DefenderHealthItem -Category 'Surface' -Name "Unknown package $package" -Expected 'Known' -Actual 'Unknown' -Detail 'Review this Defender-like package before reapplying Disable.'))
+    }
+
+    if ($baseline -and $baseline.WindowsBuild) {
+        $baselineBuild = ConvertTo-DefenderBuildLabel -Build $baseline.WindowsBuild
+        $currentBuild = ConvertTo-DefenderBuildLabel -Build $snapshot.WindowsBuild
+        if ($baselineBuild -ne $currentBuild) {
+            $issueCount++
+            [void]$Items.Add((New-DefenderHealthItem -Category 'WindowsBuild' -Name 'Feature update baseline' -Expected $baselineBuild -Actual $currentBuild -Detail 'Windows build changed since the last Disable/Remove baseline; re-check Defender surfaces before reapplying.'))
+        }
+    }
+
+    $plan = @()
+    if ($issueCount -gt 0) {
+        $plan = @(Get-DefenderReapplyPlan -IncludeMDE:$IncludeMDE)
+        [void]$Items.Add((New-DefenderHealthItem -Category 'ReapplyPlan' -Name 'Feature update reapply' -Expected 'Not needed' -Actual 'Recommended' -Detail ($plan -join ' | ')))
+    }
+
+    return [pscustomobject][ordered]@{
+        Snapshot = $snapshot
+        Baseline = $baseline
+        Plan     = $plan
+    }
+}
+
 function Get-DefenderHealth {
     <#
     .SYNOPSIS
@@ -282,6 +332,7 @@ function Get-DefenderHealth {
     Add-AppxHealthItems -Items $items -Target $Target
     Add-SafeBootHealthItems -Items $items -Target $Target
     Add-MpPreferenceHealthItems -Items $items -Target $Target
+    $surface = Add-SurfaceHealthItems -Items $items -IncludeMDE:$IncludeMDE
 
     $ok = @($items | Where-Object { $_.Status -eq 'OK' }).Count
     $drift = @($items | Where-Object { $_.Status -eq 'Drift' }).Count
@@ -290,6 +341,9 @@ function Get-DefenderHealth {
     $result = [ordered]@{
         Target    = $Target
         Generated = (Get-Date).ToString('o')
+        WindowsBuild = $surface.Snapshot.WindowsBuild
+        SurfaceBaseline = $surface.Baseline
+        ReapplyPlan = @($surface.Plan)
         Summary   = [ordered]@{
             Total   = $items.Count
             OK      = $ok

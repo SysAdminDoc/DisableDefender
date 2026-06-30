@@ -104,7 +104,8 @@ function Get-DefenderComponentStatus {
         [switch]$Json
     )
 
-    $components = foreach ($definition in Get-DefenderComponentDefinition) {
+    $components = New-Object System.Collections.ArrayList
+    foreach ($definition in Get-DefenderComponentDefinition) {
         $serviceName = $definition.Service
         $service = Get-Service -Name $serviceName -ErrorAction SilentlyContinue
         $startValue = Get-ComponentRegistryDword -Service $serviceName -ValueName 'Start'
@@ -120,7 +121,7 @@ function Get-DefenderComponentStatus {
             'N/A'
         }
 
-        [PSCustomObject][ordered]@{
+        [void]$components.Add([PSCustomObject][ordered]@{
             Name              = $definition.Name
             Service           = $serviceName
             Kind              = $definition.Kind
@@ -132,7 +133,27 @@ function Get-DefenderComponentStatus {
             LaunchProtected   = $launchProtected
             DisableTargetDrift = $status
             Detail            = $definition.Detail
-        }
+        })
+    }
+
+    $knownServices = @(Get-KnownDefenderServiceNames)
+    foreach ($serviceName in @(Get-DefenderLikeServices | Where-Object { $knownServices -notcontains $_ })) {
+        $service = Get-Service -Name $serviceName -ErrorAction SilentlyContinue
+        $startText = Convert-ServiceStartValue -Value (Get-ComponentRegistryDword -Service $serviceName -ValueName 'Start')
+        $runtime = if ($service) { [string]$service.Status } else { 'registry-only' }
+        [void]$components.Add([PSCustomObject][ordered]@{
+            Name              = $serviceName
+            Service           = $serviceName
+            Kind              = 'UnknownService'
+            ExpectedStart     = 'Review'
+            CurrentStart      = $startText
+            RuntimeStatus     = $runtime
+            DriverRuntime     = $null
+            PPLStatus         = 'Unknown'
+            LaunchProtected   = Convert-LaunchProtectedValue -Value (Get-ComponentRegistryDword -Service $serviceName -ValueName 'LaunchProtected')
+            DisableTargetDrift = 'Drift'
+            Detail            = 'Unknown Defender-like service detected; review after Windows feature updates before reapplying Disable.'
+        })
     }
 
     if ($Json) {

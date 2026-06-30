@@ -75,6 +75,7 @@ function Invoke-RemoveDefender {
             New-DefenderPhase -Name 'Firewall postflight' -Key 'FirewallPostflight' -Action { Assert-FirewallSafety -Stage post }
         )
         Invoke-DefenderPhasePlan -Mode Remove -Phases $phases -Only $Only -Skip $Skip
+        Save-DefenderSurfaceBaseline -Mode Remove
         Write-Log "Remove complete. Reboot required." OK
     } finally {
         Stop-RestoreManifest

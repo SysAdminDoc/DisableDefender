@@ -419,6 +419,73 @@ InModuleScope DisableDefender {
                 }
             }
         }
+
+        It 'flags unknown Defender surfaces and changed Windows build with a reapply plan' {
+            $previousAppDir = $script:AppDir
+            $script:AppDir = $TestDrive
+            try {
+                $baseline = [ordered]@{
+                    SchemaVersion = 1
+                    WindowsBuild  = [ordered]@{
+                        Caption        = 'Microsoft Windows 11'
+                        Version        = '10.0.26100'
+                        BuildNumber    = '26100'
+                        DisplayVersion = '24H2'
+                    }
+                    Services = @('WinDefend')
+                    Tasks    = @()
+                    Packages = @('Microsoft.SecHealthUI')
+                }
+                $baseline | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $TestDrive 'surface-baseline.json') -Encoding UTF8
+
+                $prefData = [ordered]@{}
+                foreach ($preference in Get-MpRuntimePreferenceCatalog) {
+                    $prefData[$preference.Name] = $preference.DisableValue
+                }
+                foreach ($exclusion in Get-MpRuntimeExclusionCatalog) {
+                    $prefData[$exclusion.Parameter] = $exclusion.Values
+                }
+                Mock Get-MpPreference { [PSCustomObject]$prefData }
+                Mock Get-ScheduledTask {
+                    if ($PSBoundParameters.ContainsKey('TaskName')) { return [PSCustomObject]@{ State = 'Disabled' } }
+                    return @(
+                        [PSCustomObject]@{ TaskPath = '\Microsoft\Windows\Windows Defender\'; TaskName = 'Windows Defender Scheduled Scan' },
+                        [PSCustomObject]@{ TaskPath = '\Microsoft\Windows\Windows Defender\'; TaskName = 'Windows Defender Future Scan' }
+                    )
+                }
+                Mock Get-AppxPackage {
+                    @(
+                        [PSCustomObject]@{ Name = 'Microsoft.SecHealthUI'; PackageFullName = 'Microsoft.SecHealthUI_1.0.0.0_x64__8wekyb3d8bbwe' },
+                        [PSCustomObject]@{ Name = 'Microsoft.DefenderFuture'; PackageFullName = 'Microsoft.DefenderFuture_1.0.0.0_x64__8wekyb3d8bbwe' }
+                    )
+                }
+                Mock Get-AppxProvisionedPackage { @() }
+                Mock Get-CimInstance {
+                    [PSCustomObject]@{ Caption = 'Microsoft Windows 11'; Version = '10.0.29999'; BuildNumber = '29999' }
+                } -ParameterFilter { $ClassName -eq 'Win32_OperatingSystem' }
+                Mock Get-ItemProperty {
+                    [PSCustomObject]@{ DisplayVersion = '26H1' }
+                } -ParameterFilter { $LiteralPath -eq 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion' }
+                Mock Get-ChildItem {
+                    @(
+                        [PSCustomObject]@{ PSChildName = 'WinDefend' },
+                        [PSCustomObject]@{ PSChildName = 'WdFutureSvc' }
+                    )
+                } -ParameterFilter { $LiteralPath -eq 'HKLM:\SYSTEM\CurrentControlSet\Services' }
+
+                $result = Get-DefenderHealth -Target Disable
+
+                $surfaceNames = @($result.Items | Where-Object { $_.Category -eq 'Surface' } | ForEach-Object { $_.Name })
+                $surfaceNames | Should -Contain 'Unknown service WdFutureSvc'
+                $surfaceNames | Should -Contain 'Unknown task \Microsoft\Windows\Windows Defender\Windows Defender Future Scan'
+                $surfaceNames | Should -Contain 'Unknown package Microsoft.DefenderFuture'
+                ($result.Items | Where-Object { $_.Category -eq 'WindowsBuild' }).Status | Should -Contain 'Drift'
+                ($result.Items | Where-Object { $_.Category -eq 'ReapplyPlan' }).Status | Should -Contain 'Drift'
+                ($result.ReapplyPlan -join ' ') | Should -Match 'MDE Sense is preserved'
+            } finally {
+                $script:AppDir = $previousAppDir
+            }
+        }
     }
 
     Describe 'Get-DefenderComponentStatus' {
@@ -461,6 +528,35 @@ InModuleScope DisableDefender {
 
             $parsed.Name | Should -Contain 'MsMpEng'
             ($parsed | Where-Object { $_.Name -eq 'Sense' }).ExpectedStart | Should -Be 'Manual'
+        }
+
+        It 'flags unknown Defender-like services as drift rows' {
+            Mock Get-ChildItem {
+                @(
+                    [PSCustomObject]@{ PSChildName = 'WinDefend' },
+                    [PSCustomObject]@{ PSChildName = 'WdFutureSvc' }
+                )
+            } -ParameterFilter { $LiteralPath -eq 'HKLM:\SYSTEM\CurrentControlSet\Services' }
+            Mock Get-Service {
+                if ($Name -eq 'WdFutureSvc') {
+                    return [PSCustomObject]@{ Name = 'WdFutureSvc'; Status = 'Running'; StartType = 'Automatic' }
+                }
+                return $null
+            }
+            Mock Test-Path {
+                return ($LiteralPath -like '*\WdFutureSvc')
+            }
+            Mock Get-ItemProperty {
+                [PSCustomObject]@{ Start = 2; LaunchProtected = 0 }
+            } -ParameterFilter { $LiteralPath -like '*\WdFutureSvc' }
+            Mock Get-CimInstance { $null } -ParameterFilter { $ClassName -eq 'Win32_SystemDriver' }
+
+            $result = @(Get-DefenderComponentStatus)
+            $unknown = $result | Where-Object { $_.Service -eq 'WdFutureSvc' }
+
+            $unknown.Kind | Should -Be 'UnknownService'
+            $unknown.DisableTargetDrift | Should -Be 'Drift'
+            $unknown.ExpectedStart | Should -Be 'Review'
         }
     }
 

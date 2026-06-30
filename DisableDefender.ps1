@@ -1,7 +1,7 @@
 #Requires -Version 5.1
 #Requires -RunAsAdministrator
 <#
-    DisableDefender v0.0.25
+    DisableDefender v0.0.26
     CLI launcher for the DisableDefender PowerShell module.
 
     DOES NOT touch the Windows Firewall. Firewall services (mpssvc, BFE) and the
@@ -109,6 +109,13 @@ function Invoke-SelectedMode {
                 Write-Host "Health target: $($health.Target)" -ForegroundColor Cyan
                 Write-Host "OK=$($health.Summary.OK) Drift=$($health.Summary.Drift) Unknown=$($health.Summary.Unknown) Total=$($health.Summary.Total)" -ForegroundColor Gray
                 $health.Items | Format-Table Category, Name, Expected, Actual, Status -AutoSize
+                if ($health.ReapplyPlan -and $health.ReapplyPlan.Count -gt 0) {
+                    Write-Host ''
+                    Write-Host 'Reapply plan:' -ForegroundColor Yellow
+                    foreach ($step in $health.ReapplyPlan) {
+                        Write-Host " - $step" -ForegroundColor Gray
+                    }
+                }
             }
         }
     }

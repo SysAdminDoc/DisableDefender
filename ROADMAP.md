@@ -38,14 +38,6 @@ Actionable work beyond v0.0.18. Completed work is removed. True blockers live in
   Touches: `Public/Invoke-RemoveDefender.ps1`, `Private/SafeBoot.ps1`, new functions under `Private/`, `README.md`, `Tests/DisableDefender.Tests.ps1`.
   Acceptance: A `-PrepareOfflineRemove` or equivalent mode creates a one-shot WinRE/offline script bundle that targets an offline Windows volume, logs actions, and refuses to run against the live system root.
   Complexity: L
-
-- [ ] P1 - Feature-update drift detector and reapply plan
-  Why: Defender-removal competitors repeatedly break after Windows feature updates, especially 25H2/26H-era changes; DisableDefender should detect changed surfaces before hard-coded assumptions fail.
-  Evidence: RESEARCH.md Competitive Landscape; ionuttbara/windows-defender-remover issues #263/#270; Microsoft Defender Core service docs; existing ROADMAP 26H1/26H2 tracking item.
-  Touches: `Public/Get-DefenderComponentStatus.ps1`, `Public/Get-DefenderHealth.ps1`, `Private/Variables.ps1`, `Tests/DisableDefender.Tests.ps1`, `README.md`.
-  Acceptance: Health output flags unknown Defender services/packages/tasks and changed Windows build; CLI/GUI provide a "reapply Disable after feature update" plan without modifying firewall or MDE Sense by default.
-  Complexity: M
-
 - [ ] P1 - Signed release and Smart App Control distribution path
   Why: Smart App Control blocks unknown/unsigned code; Defender tools are especially reputation-sensitive, so unsigned zips/scripts undermine installability and trust.
   Evidence: RESEARCH.md Sources - Smart App Control FAQ and Microsoft code-signing guidance; es3n1n/defendnot issue #48; `dist/DisableDefender-v0.0.17.zip`; README distribution section.
