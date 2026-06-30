@@ -1,6 +1,6 @@
 # DisableDefender
 
-[![Version](https://img.shields.io/badge/version-0.0.23-blue.svg)](https://github.com/SysAdminDoc/DisableDefender/releases)
+[![Version](https://img.shields.io/badge/version-0.0.24-blue.svg)](https://github.com/SysAdminDoc/DisableDefender/releases)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-0078D6.svg)](https://www.microsoft.com/windows)
 [![PowerShell](https://img.shields.io/badge/powershell-5.1%2B-012456.svg)](https://learn.microsoft.com/powershell)
@@ -48,7 +48,7 @@ Disable confirmation includes a current-vs-target drift preview before execution
 - **Appx removal**: SecHealthUI deprovision with `NonRemovableAppPolicy` override
 - **SafeBoot trap** (Remove mode): nukes `SafeBoot\{Minimal,Network}\WinDefend` so the service can't load even in Safe Mode
 - **Restore point** before any destructive op (opt-out with `-NoRestorePoint`)
-- **Replay restore manifest**: Disable/Remove record validated JSONL undo entries and Restore logs run IDs, entry count, and SHA256 before reverse-order replay
+- **Replay restore manifest**: Disable/Remove record validated JSONL undo entries; Restore logs run IDs, entry count, and SHA256 before reverse-order replay, detects archived undo chains, and can replay newest or all manifests deterministically
 - **Atomic phase boundaries**: each mode records phase status to `phase-state.json`; failures log partial state plus resume/rollback recovery choices
 - **Per-phase firewall guard**: every executed phase checks firewall services and profiles before and after running
 - **Known-bad Remove gate**: domain-joined machines are refused unless `-Force` is passed and emit JSONL tripwires
@@ -93,6 +93,9 @@ A menu appears with Disable / Remove / Restore / Status.
 # Undo everything
 .\DisableDefender.ps1 -Mode Restore
 
+# Undo every archived run chain after repeated Disable/Remove runs
+.\DisableDefender.ps1 -Mode Restore -ManifestSelection All
+
 # Just show state
 .\DisableDefender.ps1 -Mode Status
 
@@ -118,6 +121,7 @@ Get-DefenderStatus
 Get-DefenderHealth -Target Disable
 Invoke-DisableDefender -Force -NoRestorePoint
 Invoke-RestoreDefender
+Invoke-RestoreDefender -ManifestSelection All
 ```
 
 ### Parameters
@@ -133,6 +137,7 @@ Invoke-RestoreDefender
 | `-Json` | Emit JSON for `Status`. |
 | `-Only` | Run only matching phase keys. Common keys: `Policies`, `MpPreference`, `Tasks`, `Services`, `Appx`, `DISM`, `SafeBoot`, `ContextMenu`. |
 | `-Skip` | Skip matching phase keys while running the rest of the selected mode. |
+| `-ManifestSelection` | Restore manifest selection for `Restore`: `Newest` (default), `All`, or `Active`. Use `All` after repeated Disable/Remove runs when older undo chains must also be replayed. |
 | `-HealthTarget` | Expected target for `-Mode Health`: `Disable`, `Remove`, or `Restore`. |
 | `-LogPath` | Override log path (default `%ProgramData%\DisableDefender\DisableDefender.log`). |
 
@@ -156,7 +161,8 @@ Everything Disable does, plus:
 - **Best run from Safe Mode** for service registry key edits to stick
 
 ### Restore (undo)
-- Validates and replays `%ProgramData%\DisableDefender\restore-manifest.jsonl` in reverse order when present, with run ID / entry count / SHA256 integrity logging
+- Validates and replays the newest non-empty `%ProgramData%\DisableDefender\restore-manifest*.jsonl` in reverse order, with run ID / entry count / SHA256 integrity logging
+- Warns when older archived undo chains exist; use `-ManifestSelection All` to replay active and archived manifests newest-first
 - Removes all Defender policy keys
 - Resets `MpPreference` flags to default
 - Re-enables scheduled tasks
@@ -202,6 +208,7 @@ v0.0.2 fixed a false-positive where `SharedAccess` (ICS, off by default) tripped
 - `%ProgramData%\DisableDefender\DisableDefender.log`
 - `%ProgramData%\DisableDefender\transcript.log`
 - `%ProgramData%\DisableDefender\restore-manifest.jsonl`
+- `%ProgramData%\DisableDefender\restore-manifest.*.jsonl`
 - `%ProgramData%\DisableDefender\phase-state.json`
 - `%ProgramData%\DisableDefender\tripwire.jsonl`
 

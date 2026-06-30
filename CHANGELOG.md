@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.0.24 - 2026-06-30
+
+### Added
+- Restore manifest selection via `-ManifestSelection Newest|All|Active`.
+- Detection and warning for archived restore manifests left behind by repeated Disable/Remove runs.
+- Pester coverage for two-run restore chains and newest-vs-all manifest replay behavior.
+
+### Changed
+- Restore now selects the newest non-empty manifest by default and can replay all active/archived manifests newest-first.
+- Replayed archived manifests are moved to restored archives instead of being left as active undo candidates.
+- Version metadata is aligned to `0.0.24` across the manifest, scripts, README badge, and changelog.
+
 ## v0.0.23 - 2026-06-30
 
 ### Added

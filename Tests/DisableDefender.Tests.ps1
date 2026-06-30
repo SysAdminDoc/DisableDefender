@@ -561,6 +561,7 @@ InModuleScope DisableDefender {
         BeforeEach {
             $script:RestoreManifestPath = Join-Path $TestDrive 'restore-manifest.jsonl'
             $script:AppDir = $TestDrive
+            Get-ChildItem -Path $TestDrive -Filter 'restore-manifest*.jsonl' -ErrorAction SilentlyContinue | Remove-Item -Force
             $script:RestoreManifestActive = $false
             $script:RestoreManifestReplayMode = $false
             $script:RestoreManifestRunId = $null
@@ -639,6 +640,82 @@ InModuleScope DisableDefender {
             $joined = $script:ManifestReplayLogs -join "`n"
             $joined | Should -Match 'INFO\|Restore manifest integrity: RunIds=[0-9a-f-]+ Entries=1 SHA256=[0-9a-f]{64}'
             $joined | Should -Match 'INFO\|Archived replayed restore manifest .+RunIds=[0-9a-f-]+; Entries=1; SHA256=[0-9a-f]{64}'
+        }
+
+        It 'warns when newest selection leaves older archived manifests' {
+            Start-RestoreManifest -Mode Disable
+            Write-RestoreManifestEntry -Phase 'Services' -Action 'SetServiceStart' -Target 'WinDefend' -Data ([ordered]@{
+                Service = 'WinDefend'
+                State   = 'Automatic'
+            })
+            Stop-RestoreManifest
+
+            Start-RestoreManifest -Mode Disable
+            Write-RestoreManifestEntry -Phase 'Services' -Action 'SetServiceStart' -Target 'WinDefend' -Data ([ordered]@{
+                Service = 'WinDefend'
+                State   = 'Disabled'
+            })
+            Stop-RestoreManifest
+
+            $archived = @(Get-ChildItem -Path $TestDrive -Filter 'restore-manifest.*.jsonl' | Where-Object { $_.Name -match '^restore-manifest\.\d{14}(?:\.\d+)?\.jsonl$' })
+            $archived.Count | Should -Be 1
+            $archived[0].LastWriteTimeUtc = [datetime]::UtcNow.AddMinutes(-10)
+            (Get-Item -LiteralPath $script:RestoreManifestPath).LastWriteTimeUtc = [datetime]::UtcNow
+
+            $script:ReplayOrder = @()
+            $script:ManifestReplayLogs = @()
+            Mock Set-ServiceStart {
+                param($Service, $State)
+                $script:ReplayOrder += "$Service=$State"
+                return $true
+            }
+            Mock Write-Log {
+                param($Message, $Level)
+                $script:ManifestReplayLogs += "$Level|$Message"
+            }
+
+            Invoke-RestoreManifest | Should -Be $true
+
+            $script:ReplayOrder | Should -Be @('WinDefend=Disabled')
+            Test-Path -LiteralPath $script:RestoreManifestPath | Should -Be $false
+            Test-Path -LiteralPath $archived[0].FullName | Should -Be $true
+            ($script:ManifestReplayLogs -join "`n") | Should -Match 'WARN\|1 archived restore manifest\(s\) were not selected\..*-ManifestSelection All'
+        }
+
+        It 'replays active and archived manifests newest first when selection is All' {
+            Start-RestoreManifest -Mode Disable
+            Write-RestoreManifestEntry -Phase 'Services' -Action 'SetServiceStart' -Target 'WinDefend' -Data ([ordered]@{
+                Service = 'WinDefend'
+                State   = 'Automatic'
+            })
+            Stop-RestoreManifest
+
+            Start-RestoreManifest -Mode Disable
+            Write-RestoreManifestEntry -Phase 'Services' -Action 'SetServiceStart' -Target 'WinDefend' -Data ([ordered]@{
+                Service = 'WinDefend'
+                State   = 'Disabled'
+            })
+            Stop-RestoreManifest
+
+            $archived = @(Get-ChildItem -Path $TestDrive -Filter 'restore-manifest.*.jsonl' | Where-Object { $_.Name -match '^restore-manifest\.\d{14}(?:\.\d+)?\.jsonl$' })
+            $archived.Count | Should -Be 1
+            $archived[0].LastWriteTimeUtc = [datetime]::UtcNow.AddMinutes(-10)
+            (Get-Item -LiteralPath $script:RestoreManifestPath).LastWriteTimeUtc = [datetime]::UtcNow
+
+            $script:ReplayOrder = @()
+            Mock Set-ServiceStart {
+                param($Service, $State)
+                $script:ReplayOrder += "$Service=$State"
+                return $true
+            }
+            Mock Write-Log {}
+
+            Invoke-RestoreManifest -Selection All | Should -Be $true
+
+            $script:ReplayOrder | Should -Be @('WinDefend=Disabled','WinDefend=Automatic')
+            Test-Path -LiteralPath $script:RestoreManifestPath | Should -Be $false
+            @(Get-ChildItem -Path $TestDrive -Filter 'restore-manifest.*.jsonl' | Where-Object { $_.Name -match '^restore-manifest\.\d{14}(?:\.\d+)?\.jsonl$' }).Count | Should -Be 0
+            @(Get-ChildItem -Path $TestDrive -Filter 'restore-manifest.restored.*.jsonl').Count | Should -Be 2
         }
 
         It 'refuses unexpected actions before replay' {

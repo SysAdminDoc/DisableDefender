@@ -1,7 +1,7 @@
 #Requires -Version 5.1
 #Requires -RunAsAdministrator
 <#
-    DisableDefender v0.0.23
+    DisableDefender v0.0.24
     CLI launcher for the DisableDefender PowerShell module.
 
     DOES NOT touch the Windows Firewall. Firewall services (mpssvc, BFE) and the
@@ -22,6 +22,8 @@ param(
     [switch]$Json,
     [string[]]$Only,
     [string[]]$Skip,
+    [ValidateSet('Newest','All','Active')]
+    [string]$ManifestSelection = 'Newest',
     [ValidateSet('Disable','Remove','Restore')]
     [string]$HealthTarget = 'Disable',
     [string]$LogPath = "$env:ProgramData\DisableDefender\DisableDefender.log"
@@ -102,7 +104,7 @@ function Invoke-SelectedMode {
             Invoke-RemoveDefender @common -Force:$Force -NoRestorePoint:$NoRestorePoint -IncludeMDE:$IncludeMDE -AllowRemoting:$AllowRemoting -Only $Only -Skip $Skip
         }
         'Restore' {
-            Invoke-RestoreDefender @common -AllowRemoting:$AllowRemoting -Only $Only -Skip $Skip
+            Invoke-RestoreDefender @common -AllowRemoting:$AllowRemoting -Only $Only -Skip $Skip -ManifestSelection $ManifestSelection
         }
         'Status' {
             Show-DefenderStatus -Json:$Json

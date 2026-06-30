@@ -97,6 +97,8 @@ function Invoke-RestoreDefender {
         Run only the named phase keys.
     .PARAMETER Skip
         Skip the named phase keys.
+    .PARAMETER ManifestSelection
+        Select which restore manifest chain to replay: newest non-empty manifest, all non-empty manifests newest-first, or only the active manifest.
     .PARAMETER AllowRemoting
         Allow execution inside PSRemoting / PSSession contexts.
     .EXAMPLE
@@ -111,6 +113,8 @@ function Invoke-RestoreDefender {
         [string[]]$Only,
         [ValidateSet('FirewallPreflight','FirewallPostflight','ReplayManifest','Policies','MpPreference','Tasks','Services','AclRestore','Appx','ContextMenu')]
         [string[]]$Skip,
+        [ValidateSet('Newest','All','Active')]
+        [string]$ManifestSelection = 'Newest',
         [scriptblock]$LogCallback
     )
 
@@ -124,7 +128,7 @@ function Invoke-RestoreDefender {
     try {
         $phases = @(
             New-DefenderPhase -Name 'Firewall preflight' -Key 'FirewallPreflight' -Action { Assert-FirewallSafety -Stage pre }
-            New-DefenderPhase -Name 'Replay manifest' -Key 'ReplayManifest' -Action { Invoke-RestoreManifest | Out-Null }
+            New-DefenderPhase -Name 'Replay manifest' -Key 'ReplayManifest' -Action { Invoke-RestoreManifest -Selection $ManifestSelection | Out-Null }
             New-DefenderPhase -Name 'Policy cleanup' -Key 'Policies' -Action { Clear-DefenderPolicy }
             New-DefenderPhase -Name 'MpPreference cleanup' -Key 'MpPreference' -Action { Clear-MpRuntimePrefs }
             New-DefenderPhase -Name 'Scheduled task restore' -Key 'Tasks' -Action { Enable-DefenderTasks }

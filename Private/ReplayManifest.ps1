@@ -10,6 +10,95 @@ function Get-RestoreManifestPath {
     return $script:RestoreManifestPath
 }
 
+function New-RestoreManifestSiblingPath {
+    param(
+        [Parameter(Mandatory)][string]$Directory,
+        [Parameter(Mandatory)][string]$Name
+    )
+
+    $candidate = Join-Path $Directory $Name
+    if (-not (Test-Path -LiteralPath $candidate)) { return $candidate }
+
+    $stem = [System.IO.Path]::GetFileNameWithoutExtension($Name)
+    $extension = [System.IO.Path]::GetExtension($Name)
+    for ($i = 1; $i -lt 1000; $i++) {
+        $candidate = Join-Path $Directory ("{0}.{1}{2}" -f $stem, $i, $extension)
+        if (-not (Test-Path -LiteralPath $candidate)) { return $candidate }
+    }
+
+    throw "Unable to create a unique restore manifest archive path in $Directory."
+}
+
+function Test-RestoreManifestArchiveName {
+    param([Parameter(Mandatory)][string]$Name)
+    return ($Name -match '^restore-manifest\.\d{14}(?:\.\d+)?\.jsonl$')
+}
+
+function Get-RestoreManifestCandidates {
+    $path = Get-RestoreManifestPath
+    $dir = Split-Path -Parent $path
+    $items = New-Object System.Collections.ArrayList
+
+    if (Test-Path -LiteralPath $path) {
+        $active = Get-Item -LiteralPath $path -ErrorAction SilentlyContinue
+        if ($active -and $active.Length -gt 0) {
+            [void]$items.Add([pscustomobject]@{
+                Path             = $active.FullName
+                Name             = $active.Name
+                IsActive         = $true
+                LastWriteTimeUtc = $active.LastWriteTimeUtc
+            })
+        }
+    }
+
+    if (Test-Path -LiteralPath $dir) {
+        foreach ($archive in (Get-ChildItem -LiteralPath $dir -Filter 'restore-manifest.*.jsonl' -File -ErrorAction SilentlyContinue)) {
+            if (-not (Test-RestoreManifestArchiveName -Name $archive.Name)) { continue }
+            if ($archive.Length -le 0) { continue }
+            [void]$items.Add([pscustomobject]@{
+                Path             = $archive.FullName
+                Name             = $archive.Name
+                IsActive         = $false
+                LastWriteTimeUtc = $archive.LastWriteTimeUtc
+            })
+        }
+    }
+
+    return @($items | Sort-Object `
+        @{ Expression = { $_.LastWriteTimeUtc }; Descending = $true },
+        @{ Expression = { $_.Name }; Descending = $true })
+}
+
+function Select-RestoreManifestCandidates {
+    param(
+        [Parameter(Mandatory)][object[]]$Candidates,
+        [Parameter(Mandatory)][ValidateSet('Newest','All','Active')][string]$Selection
+    )
+
+    switch ($Selection) {
+        'All'    { return @($Candidates) }
+        'Active' { return @($Candidates | Where-Object { $_.IsActive }) }
+        default  { return @($Candidates | Select-Object -First 1) }
+    }
+}
+
+function Write-RestoreManifestSelectionWarning {
+    param(
+        [Parameter(Mandatory)][object[]]$Candidates,
+        [Parameter(Mandatory)][object[]]$Selected,
+        [Parameter(Mandatory)][ValidateSet('Newest','All','Active')][string]$Selection
+    )
+
+    $archives = @($Candidates | Where-Object { -not $_.IsActive })
+    if ($archives.Count -eq 0 -or $Selection -eq 'All') { return }
+
+    $selectedPaths = @($Selected | ForEach-Object { $_.Path })
+    $skippedArchives = @($archives | Where-Object { $selectedPaths -notcontains $_.Path })
+    if ($skippedArchives.Count -gt 0) {
+        Write-Log ("{0} archived restore manifest(s) were not selected. Run Restore with -ManifestSelection All to replay every undo chain." -f $skippedArchives.Count) WARN
+    }
+}
+
 function Test-RestoreManifestRecording {
     if ($WhatIfPreference) { return $false }
     if ($script:RestoreManifestReplayMode) { return $false }
@@ -149,7 +238,7 @@ function Start-RestoreManifest {
     if (Test-Path -LiteralPath $path) {
         $existing = Get-Item -LiteralPath $path -ErrorAction SilentlyContinue
         if ($existing -and $existing.Length -gt 0) {
-            $archive = Join-Path $dir ("restore-manifest.{0}.jsonl" -f (Get-Date -Format 'yyyyMMddHHmmss'))
+            $archive = New-RestoreManifestSiblingPath -Directory $dir -Name ("restore-manifest.{0}.jsonl" -f (Get-Date -Format 'yyyyMMddHHmmss'))
             Move-Item -LiteralPath $path -Destination $archive -Force
             Write-Log "Archived previous restore manifest to $archive" WARN
         }
@@ -198,7 +287,9 @@ function Write-RestoreManifestEntry {
 }
 
 function Read-RestoreManifestEntries {
-    $path = Get-RestoreManifestPath
+    param([string]$Path)
+
+    $path = if ($Path) { $Path } else { Get-RestoreManifestPath }
     if (-not (Test-Path -LiteralPath $path)) { return @() }
 
     $entries = New-Object System.Collections.ArrayList
@@ -389,40 +480,81 @@ function Invoke-RestoreManifestEntry {
 }
 
 function Invoke-RestoreManifest {
-    $path = Get-RestoreManifestPath
-    $entries = @(Read-RestoreManifestEntries)
-    if ($entries.Count -eq 0) {
+    param(
+        [ValidateSet('Newest','All','Active')]
+        [string]$Selection = 'Newest'
+    )
+
+    $candidates = @(Get-RestoreManifestCandidates)
+    $selectedManifests = @(Select-RestoreManifestCandidates -Candidates $candidates -Selection $Selection)
+    Write-RestoreManifestSelectionWarning -Candidates $candidates -Selected $selectedManifests -Selection $Selection
+
+    if ($selectedManifests.Count -eq 0) {
         Write-Log "No restore manifest entries found; falling back to deterministic restore steps." WARN
         return $true
     }
 
-    $digest = Get-RestoreManifestDigest -Path $path
-    $runIds = @(($entries | ForEach-Object { $_.RunId }) | Sort-Object -Unique)
-    $runLabel = if ($runIds.Count -eq 0) { 'none' } else { $runIds -join ',' }
-    Write-Log ("Restore manifest integrity: RunIds={0} Entries={1} SHA256={2}" -f $runLabel, $entries.Count, $digest) INFO
-    Write-Log "Replaying $($entries.Count) restore manifest entries in reverse order..." INFO
+    Write-Log ("Restore manifest selection: Selection={0} Candidates={1} Selected={2}" -f $Selection, $candidates.Count, $selectedManifests.Count) INFO
     $failures = 0
+    $totalEntries = 0
+    $replayedManifests = New-Object System.Collections.ArrayList
     $script:RestoreManifestReplayMode = $true
     $script:RestoreManifestActive = $false
     try {
-        foreach ($entry in ($entries | Sort-Object -Property Sequence -Descending)) {
-            try {
-                Invoke-RestoreManifestEntry -Entry $entry
-                Write-Log "Replayed undo entry $($entry.Sequence): $($entry.Action) $($entry.Target)" DEBUG
-            } catch {
-                $failures++
-                Write-Log "Restore manifest entry $($entry.Sequence) failed: $($_.Exception.Message)" WARN
+        foreach ($manifest in $selectedManifests) {
+            $entries = @(Read-RestoreManifestEntries -Path $manifest.Path)
+            if ($entries.Count -eq 0) {
+                Write-Log "Selected restore manifest contains no replayable entries: $($manifest.Path)" WARN
+                continue
+            }
+
+            $digest = Get-RestoreManifestDigest -Path $manifest.Path
+            $runIds = @(($entries | ForEach-Object { $_.RunId }) | Sort-Object -Unique)
+            $runLabel = if ($runIds.Count -eq 0) { 'none' } else { $runIds -join ',' }
+            Write-Log ("Restore manifest integrity: RunIds={0} Entries={1} SHA256={2} Path={3}" -f $runLabel, $entries.Count, $digest, $manifest.Path) INFO
+            Write-Log "Replaying $($entries.Count) restore manifest entries in reverse order..." INFO
+            $totalEntries += $entries.Count
+            [void]$replayedManifests.Add([pscustomobject]@{
+                Path    = $manifest.Path
+                Name    = $manifest.Name
+                Active  = $manifest.IsActive
+                RunIds  = $runLabel
+                Entries = $entries.Count
+                Digest  = $digest
+            })
+
+            foreach ($entry in ($entries | Sort-Object -Property Sequence -Descending)) {
+                try {
+                    Invoke-RestoreManifestEntry -Entry $entry
+                    Write-Log "Replayed undo entry $($entry.Sequence): $($entry.Action) $($entry.Target)" DEBUG
+                } catch {
+                    $failures++
+                    Write-Log "Restore manifest entry $($entry.Sequence) failed: $($_.Exception.Message)" WARN
+                }
             }
         }
     } finally {
         $script:RestoreManifestReplayMode = $false
     }
 
+    if ($totalEntries -eq 0) {
+        Write-Log "No restore manifest entries found; falling back to deterministic restore steps." WARN
+        return $true
+    }
+
     if ($failures -eq 0) {
-        if (Test-Path -LiteralPath $path) {
-            $archive = Join-Path (Split-Path -Parent $path) ("restore-manifest.restored.{0}.jsonl" -f (Get-Date -Format 'yyyyMMddHHmmss'))
-            Move-Item -LiteralPath $path -Destination $archive -Force
-            Write-Log ("Archived replayed restore manifest to {0} (RunIds={1}; Entries={2}; SHA256={3})" -f $archive, $runLabel, $entries.Count, $digest) INFO
+        foreach ($manifest in $replayedManifests) {
+            if (Test-Path -LiteralPath $manifest.Path) {
+                $dir = Split-Path -Parent $manifest.Path
+                $archiveName = if ($manifest.Active) {
+                    "restore-manifest.restored.{0}.jsonl" -f (Get-Date -Format 'yyyyMMddHHmmss')
+                } else {
+                    "restore-manifest.restored.{0}.{1}" -f (Get-Date -Format 'yyyyMMddHHmmss'), $manifest.Name
+                }
+                $archive = New-RestoreManifestSiblingPath -Directory $dir -Name $archiveName
+                Move-Item -LiteralPath $manifest.Path -Destination $archive -Force
+                Write-Log ("Archived replayed restore manifest to {0} (RunIds={1}; Entries={2}; SHA256={3})" -f $archive, $manifest.RunIds, $manifest.Entries, $manifest.Digest) INFO
+            }
         }
         return $true
     }

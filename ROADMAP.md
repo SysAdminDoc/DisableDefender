@@ -101,10 +101,3 @@ Actionable work beyond v0.0.18. Completed work is removed. True blockers live in
   Touches: `Private/Confirm-Prereqs.ps1`, `DisableDefender.GUI.ps1`, `DisableDefender.ps1`, `Public/Invoke-DisableDefender.ps1`, `Public/Invoke-RemoveDefender.ps1`, `Public/Invoke-RestoreDefender.ps1`, `Tests/DisableDefender.Tests.ps1`, `README.md`.
   Acceptance: CLI and GUI report FullLanguage/ConstrainedLanguage/App Control status before destructive phases; unsupported language modes fail with signed/offline remediation guidance; tests cover FullLanguage, ConstrainedLanguage, and unknown policy states.
   Complexity: M
-
-- [ ] P1 - Repeated-run restore manifest selection and warning
-  Why: Starting a new Disable/Remove archives the previous restore manifest, but Restore replays only the active manifest, making older undo state easy to miss after repeated runs.
-  Evidence: RESEARCH.md Security, Privacy, and Reliability; `Private/ReplayManifest.ps1`; `%ProgramData%\DisableDefender\restore-manifest*.jsonl`.
-  Touches: `Private/ReplayManifest.ps1`, `Public/Invoke-RestoreDefender.ps1`, `Tests/DisableDefender.Tests.ps1`, `README.md`.
-  Acceptance: Restore detects archived manifests, warns when older undo chains exist, provides deterministic newest/all selection behavior, and tests cover two Disable runs followed by Restore.
-  Complexity: M
