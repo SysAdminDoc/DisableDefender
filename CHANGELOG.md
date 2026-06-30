@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.0.23 - 2026-06-30
+
+### Added
+- SYSTEM scheduled-task fallback now logs task output and final `LastTaskResult`.
+- Pester coverage for successful and failed SYSTEM fallback task results.
+- Pester coverage for service-start and SafeBoot target-state verification.
+
+### Changed
+- Service start writes now verify the registry value after direct, ACL, and SYSTEM strategies before reporting success.
+- SafeBoot WinDefend removal now fails the phase if a targeted key remains after SYSTEM fallback.
+- Version metadata is aligned to `0.0.23` across the manifest, scripts, README badge, and changelog.
+
 ## v0.0.22 - 2026-06-30
 
 ### Added

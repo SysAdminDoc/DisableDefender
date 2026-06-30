@@ -102,13 +102,6 @@ Actionable work beyond v0.0.18. Completed work is removed. True blockers live in
   Acceptance: CLI and GUI report FullLanguage/ConstrainedLanguage/App Control status before destructive phases; unsupported language modes fail with signed/offline remediation guidance; tests cover FullLanguage, ConstrainedLanguage, and unknown policy states.
   Complexity: M
 
-- [ ] P1 - Verify SYSTEM task fallback completion and target effects
-  Why: `Invoke-AsSystem` returns success after task start without validating final task result, and SafeBoot fallback does not verify the registry keys were removed.
-  Evidence: RESEARCH.md Security, Privacy, and Reliability; `Private/Invoke-AsSystem.ps1`; `Private/SafeBoot.ps1`; `Private/Set-ServiceStart.ps1`.
-  Touches: `Private/Invoke-AsSystem.ps1`, `Private/SafeBoot.ps1`, `Private/Set-ServiceStart.ps1`, `Tests/DisableDefender.Tests.ps1`.
-  Acceptance: SYSTEM fallback returns false on non-zero/failed task result, logs task output/result, and callers verify the target registry/service state before reporting success.
-  Complexity: M
-
 - [ ] P1 - Repeated-run restore manifest selection and warning
   Why: Starting a new Disable/Remove archives the previous restore manifest, but Restore replays only the active manifest, making older undo state easy to miss after repeated runs.
   Evidence: RESEARCH.md Security, Privacy, and Reliability; `Private/ReplayManifest.ps1`; `%ProgramData%\DisableDefender\restore-manifest*.jsonl`.

@@ -1,6 +1,20 @@
 # ---------------------------------------------------------------------------
 # Phase: Services (multi-strategy fallback)
 # ---------------------------------------------------------------------------
+function Test-ServiceStartValue {
+    param(
+        [Parameter(Mandatory)][string]$RegistryPath,
+        [Parameter(Mandatory)][int]$ExpectedValue
+    )
+
+    try {
+        $actual = (Get-ItemProperty -LiteralPath $RegistryPath -Name 'Start' -ErrorAction Stop).Start
+        return ([int]$actual -eq $ExpectedValue)
+    } catch {
+        return $false
+    }
+}
+
 function Set-ServiceStart {
     param(
         [Parameter(Mandatory)][string]$Service,
@@ -40,25 +54,31 @@ function Set-ServiceStart {
     # 1. Direct write
     try {
         Set-ItemProperty -LiteralPath $regPath -Name 'Start' -Value $value -Type DWord -ErrorAction Stop
-        Write-Log "Service $Service Start=$State (direct)." DEBUG
-        return $true
+        if (Test-ServiceStartValue -RegistryPath $regPath -ExpectedValue $value) {
+            Write-Log "Service $Service Start=$State (direct)." DEBUG
+            return $true
+        }
+        Write-Log "Service $Service direct Start=$State write did not persist." DEBUG
     } catch {}
     # 2. ACL takeover -> direct write
     if (Grant-RegKeyControl -SubKey $subKey) {
         try {
             Set-ItemProperty -LiteralPath $regPath -Name 'Start' -Value $value -Type DWord -ErrorAction Stop
-            Write-Log "Service $Service Start=$State (ACL takeover)." DEBUG
-            return $true
+            if (Test-ServiceStartValue -RegistryPath $regPath -ExpectedValue $value) {
+                Write-Log "Service $Service Start=$State (ACL takeover)." DEBUG
+                return $true
+            }
+            Write-Log "Service $Service ACL Start=$State write did not persist." DEBUG
         } catch {}
     }
     # 3. SYSTEM via scheduled task
     if (Invoke-AsSystem -Execute 'reg.exe' -Argument "add `"HKLM\$subKey`" /v Start /t REG_DWORD /d $value /f") {
         Start-Sleep -Milliseconds 500
-        $actual = (Get-ItemProperty -LiteralPath $regPath -Name 'Start' -ErrorAction SilentlyContinue).Start
-        if ($actual -eq $value) {
+        if (Test-ServiceStartValue -RegistryPath $regPath -ExpectedValue $value) {
             Write-Log "Service $Service Start=$State (SYSTEM task)." DEBUG
             return $true
         }
+        Write-Log "Service $Service SYSTEM Start=$State write did not persist." WARN
     }
     Write-Log "Service $Service could not be set to $State. Boot to Safe Mode for full effect." WARN
     return $false

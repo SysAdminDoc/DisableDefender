@@ -79,6 +79,22 @@ InModuleScope DisableDefender {
                 $result | Should -Be $true
             }
         }
+
+        Context 'Target verification' {
+            It 'returns false when SYSTEM fallback reports success but Start value does not change' {
+                Mock Test-Path { $true }
+                Mock Set-ItemProperty { throw 'denied' }
+                Mock Grant-RegKeyControl { $false }
+                Mock Invoke-AsSystem { return $true }
+                Mock Get-ItemProperty { [PSCustomObject]@{ Start = 3 } }
+                Mock Write-Log {}
+
+                $result = Set-ServiceStart -Service 'WinDefend' -State 'Disabled'
+
+                $result | Should -Be $false
+                Should -Invoke Invoke-AsSystem -Times 1 -Exactly
+            }
+        }
     }
 
     Describe 'Test-FirewallIntact' {
@@ -377,6 +393,39 @@ InModuleScope DisableDefender {
         }
     }
 
+    Describe 'Invoke-AsSystem result handling' {
+        BeforeEach {
+            $script:AppDir = $TestDrive
+            $script:SystemTaskLogs = @()
+            Mock Register-ScheduledTask {}
+            Mock Start-ScheduledTask {}
+            Mock Unregister-ScheduledTask {}
+            Mock Remove-Item {}
+            Mock Test-Path { $false }
+            Mock Write-Log {
+                param($Message, $Level)
+                $script:SystemTaskLogs += "$Level|$Message"
+            }
+        }
+
+        It 'returns true when the scheduled task reports success' {
+            Mock Get-ScheduledTaskInfo { [PSCustomObject]@{ LastTaskResult = 0 } }
+
+            Invoke-AsSystem -Execute 'reg.exe' -Argument 'query HKLM /ve' | Should -Be $true
+
+            ($script:SystemTaskLogs -join "`n") | Should -Match 'DEBUG\|SYSTEM task completed:'
+        }
+
+        It 'returns false and logs the result when the scheduled task fails' {
+            Mock Get-ScheduledTaskInfo { [PSCustomObject]@{ LastTaskResult = 1 } }
+
+            Invoke-AsSystem -Execute 'reg.exe' -Argument 'query HKLM /ve' | Should -Be $false
+
+            ($script:SystemTaskLogs -join "`n") | Should -Match 'WARN\|SYSTEM task failed:'
+            ($script:SystemTaskLogs -join "`n") | Should -Match 'LastTaskResult=1'
+        }
+    }
+
     Describe 'Remove known-bad safety gate' {
         BeforeEach {
             $script:AppDir = $TestDrive
@@ -482,6 +531,29 @@ InModuleScope DisableDefender {
 
         It 'contains Sense in the MDE list' {
             $script:MDEServices | Should -Contain 'Sense'
+        }
+    }
+
+    Describe 'SafeBoot removal verification' {
+        BeforeEach {
+            $script:SafeBootMin = 'HKLM:\SYSTEM\CurrentControlSet\Control\SafeBoot\Minimal\WinDefend'
+            $script:SafeBootNet = 'HKLM:\SYSTEM\CurrentControlSet\Control\SafeBoot\Network\WinDefend'
+            $script:SafeBootPresent = @{
+                $script:SafeBootMin = $true
+                $script:SafeBootNet = $false
+            }
+            Mock Test-Path { [bool]$script:SafeBootPresent[$LiteralPath] }
+            Mock Register-RegistryTreeUndo {}
+            Mock Remove-Item { throw 'denied' }
+            Mock Grant-RegKeyControl { $false }
+            Mock Invoke-AsSystem { return $true }
+            Mock Write-Log {}
+        }
+
+        It 'throws when a SafeBoot WinDefend key remains after SYSTEM fallback' {
+            { Remove-SafeBootWinDefend } | Should -Throw -ExpectedMessage '*SafeBoot WinDefend removal failed*'
+
+            Should -Invoke Invoke-AsSystem -Times 1 -Exactly
         }
     }
 
