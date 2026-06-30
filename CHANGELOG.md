@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.0.20 - 2026-06-28
+
+### Added
+- Post-Restore health verification against the Restore target.
+- Repair-command logging for remaining service, Appx, task, policy, and MpPreference drift.
+- Silent Restore now exits non-zero when verification still finds drift or unknown state.
+
+### Changed
+- Version metadata is aligned to `0.0.20` across the manifest, scripts, README badge, and changelog.
+
 ## v0.0.19 - 2026-06-28
 
 ### Fixed

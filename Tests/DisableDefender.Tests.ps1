@@ -511,6 +511,70 @@ InModuleScope DisableDefender {
         }
     }
 
+    Describe 'Restore verification' {
+        BeforeEach {
+            $script:RestoreVerificationLogs = @()
+            $script:SilentMode = $false
+            Mock Write-Log {
+                param($Message, $Level)
+                $script:RestoreVerificationLogs += "$Level|$Message"
+            }
+        }
+
+        It 'logs an OK summary when Restore target health is clean' {
+            Mock Get-DefenderHealth {
+                [ordered]@{
+                    Summary = [ordered]@{ OK = 3; Drift = 0; Unknown = 0; Total = 3 }
+                    Items = @(
+                        [PSCustomObject]@{ Category = 'Service'; Name = 'WinDefend'; Expected = 'Automatic'; Actual = 'Automatic'; Status = 'OK' }
+                    )
+                }
+            }
+
+            { Invoke-RestoreVerification } | Should -Not -Throw
+
+            ($script:RestoreVerificationLogs -join "`n") | Should -Match 'OK\|Restore verification: OK=3 Drift=0 Unknown=0 Total=3'
+        }
+
+        It 'logs service and Appx repair commands for failed Restore checks' {
+            Mock Get-DefenderHealth {
+                [ordered]@{
+                    Summary = [ordered]@{ OK = 1; Drift = 2; Unknown = 0; Total = 3 }
+                    Items = @(
+                        [PSCustomObject]@{ Category = 'Service'; Name = 'WinDefend'; Expected = 'Automatic'; Actual = 'Disabled'; Status = 'Drift' },
+                        [PSCustomObject]@{ Category = 'Appx'; Name = 'Microsoft.SecHealthUI'; Expected = 'Present'; Actual = 'Absent'; Status = 'Drift' }
+                    )
+                }
+            }
+
+            { Invoke-RestoreVerification } | Should -Not -Throw
+
+            $joined = $script:RestoreVerificationLogs -join "`n"
+            $joined | Should -Match 'WARN\|Restore verification: OK=1 Drift=2 Unknown=0 Total=3'
+            $joined | Should -Match 'Repair command: sc\.exe config WinDefend start= auto'
+            $joined | Should -Match 'Repair command: sfc /scannow'
+            $joined | Should -Match 'Repair command: DISM /Online /Cleanup-Image /RestoreHealth'
+        }
+
+        It 'throws in silent mode when Restore verification fails' {
+            $script:SilentMode = $true
+            try {
+                Mock Get-DefenderHealth {
+                    [ordered]@{
+                        Summary = [ordered]@{ OK = 0; Drift = 1; Unknown = 0; Total = 1 }
+                        Items = @(
+                            [PSCustomObject]@{ Category = 'Service'; Name = 'WinDefend'; Expected = 'Automatic'; Actual = 'Disabled'; Status = 'Drift' }
+                        )
+                    }
+                }
+
+                { Invoke-RestoreVerification } | Should -Throw -ExpectedMessage '*Restore verification failed*'
+            } finally {
+                $script:SilentMode = $false
+            }
+        }
+    }
+
     Describe 'Atomic phase runner' {
         BeforeEach {
             $script:PhaseStatePath = Join-Path $TestDrive 'phase-state.json'

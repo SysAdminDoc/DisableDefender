@@ -32,13 +32,6 @@ Actionable work beyond v0.0.18. Completed work is removed. True blockers live in
 
 ## Research-Driven Additions
 
-- [ ] P1 - Post-Restore verification and repair gate
-  Why: Competitor and community reports cluster around "cannot re-enable Defender" and broken Security UI after disable/remove tools; Restore should prove success instead of only running best-effort steps.
-  Evidence: RESEARCH.md Security, Privacy, and Reliability; Sordum Defender Control recovery note; ionuttbara/windows-defender-remover issues #249/#276; `Public/Invoke-RestoreDefender.ps1`; `Private/SecHealthUI.ps1`.
-  Touches: `Public/Invoke-RestoreDefender.ps1`, `Public/Get-DefenderHealth.ps1`, `Private/SecHealthUI.ps1`, `Tests/DisableDefender.Tests.ps1`, `README.md`.
-  Acceptance: Restore ends with a health summary; failed WinDefend/SecHealthUI/Appx/service checks emit exact repair commands and a non-zero CLI exit code in silent mode.
-  Complexity: M
-
 - [ ] P1 - WinRE/offline servicing mode for protected live systems
   Why: Microsoft and NTLite evidence show live Tamper Protection blocks registry/service edits, while offline images/WinRE avoid WdFilter live protection.
   Evidence: RESEARCH.md Competitive Landscape; Microsoft tamper-protection docs; NTLite offline Defender discussions; `Private\Set-ServiceStart.ps1`; `Private\SafeBoot.ps1`.

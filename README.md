@@ -1,6 +1,6 @@
 # DisableDefender
 
-[![Version](https://img.shields.io/badge/version-0.0.19-blue.svg)](https://github.com/SysAdminDoc/DisableDefender/releases)
+[![Version](https://img.shields.io/badge/version-0.0.20-blue.svg)](https://github.com/SysAdminDoc/DisableDefender/releases)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-0078D6.svg)](https://www.microsoft.com/windows)
 [![PowerShell](https://img.shields.io/badge/powershell-5.1%2B-012456.svg)](https://learn.microsoft.com/powershell)
@@ -55,7 +55,7 @@ Disable confirmation includes a current-vs-target drift preview before execution
 - **PSRemoting guard**: Disable/Remove/Restore refuse PSSession execution unless `-AllowRemoting` is explicit
 - **Restore point throttle awareness**: Windows restore-point interval refusals are logged with the configured cadence instead of a generic warning
 - **Surgical reruns**: `-Only` and `-Skip` phase filters for Policies, MpPreference, Tasks, Services, Appx, DISM, SafeBoot, and ContextMenu
-- **Health mode**: compares current state to Disable/Remove/Restore targets and reports drift for services, policy keys, tasks, Appx, SafeBoot, and MpPreference
+- **Health mode + Restore verification**: compares current state to Disable/Remove/Restore targets and reports drift for services, policy keys, tasks, Appx, SafeBoot, and MpPreference; Restore ends with a health summary and repair commands when drift remains
 - **Module layout**: `DisableDefender.psd1` / `DisableDefender.psm1` with public commands and private helpers for function-level tests
 - **GUI auto-elevate, silent CLI mode, transcript logging, Safe Mode aware**
 
@@ -163,6 +163,7 @@ Everything Disable does, plus:
 - Restores default service start types
 - Restores backed-up registry ACLs when ACL takeover was used
 - Re-registers SecHealthUI from `%ProgramFiles%\WindowsApps`
+- Verifies Restore target health and logs exact repair commands for remaining drift; silent CLI exits non-zero when verification fails
 - If the Security app does not come back: `sfc /scannow` then `DISM /Online /Cleanup-Image /RestoreHealth`
 
 ## Firewall preservation (explicit guarantee)

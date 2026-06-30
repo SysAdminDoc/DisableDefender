@@ -1,3 +1,89 @@
+function ConvertTo-ServiceConfigStartToken {
+    param([AllowNull()][string]$StartType)
+
+    switch ($StartType) {
+        'Boot'      { return 'boot' }
+        'System'    { return 'system' }
+        'Automatic' { return 'auto' }
+        'Manual'    { return 'demand' }
+        'Disabled'  { return 'disabled' }
+        default     { return 'demand' }
+    }
+}
+
+function Get-RestoreRepairCommands {
+    param(
+        [Parameter(Mandatory)]$Item
+    )
+
+    switch ($Item.Category) {
+        'Service' {
+            $startToken = ConvertTo-ServiceConfigStartToken -StartType $Item.Expected
+            return @(
+                "sc.exe config $($Item.Name) start= $startToken",
+                'powershell -ExecutionPolicy Bypass -File .\DisableDefender.ps1 -Mode Restore -Only Services -NoReboot'
+            )
+        }
+        'Appx' {
+            return @(
+                'sfc /scannow',
+                'DISM /Online /Cleanup-Image /RestoreHealth',
+                'powershell -ExecutionPolicy Bypass -File .\DisableDefender.ps1 -Mode Restore -Only Appx -NoReboot'
+            )
+        }
+        'MpPreference' {
+            return @('powershell -ExecutionPolicy Bypass -File .\DisableDefender.ps1 -Mode Restore -Only MpPreference -NoReboot')
+        }
+        'Task' {
+            return @(
+                "schtasks.exe /Change /TN `"$($Item.Name)`" /Enable",
+                'powershell -ExecutionPolicy Bypass -File .\DisableDefender.ps1 -Mode Restore -Only Tasks -NoReboot'
+            )
+        }
+        'Policy' {
+            return @('powershell -ExecutionPolicy Bypass -File .\DisableDefender.ps1 -Mode Restore -Only Policies -NoReboot')
+        }
+        default {
+            return @(
+                'powershell -ExecutionPolicy Bypass -File .\DisableDefender.ps1 -Mode Restore -NoReboot',
+                'DISM /Online /Cleanup-Image /RestoreHealth'
+            )
+        }
+    }
+}
+
+function Invoke-RestoreVerification {
+    $health = Get-DefenderHealth -Target Restore
+    $summary = $health.Summary
+    $failed = @($health.Items | Where-Object { $_.Status -ne 'OK' })
+    $level = if ($failed.Count -eq 0) { 'OK' } else { 'WARN' }
+    Write-Log ("Restore verification: OK={0} Drift={1} Unknown={2} Total={3}" -f $summary.OK, $summary.Drift, $summary.Unknown, $summary.Total) $level
+
+    if ($failed.Count -eq 0) {
+        return $health
+    }
+
+    $repairCommands = New-Object System.Collections.ArrayList
+    foreach ($item in $failed) {
+        Write-Log ("Restore verification issue: [{0}] {1} expected {2}, actual {3}" -f $item.Category, $item.Name, $item.Expected, $item.Actual) WARN
+        foreach ($command in (Get-RestoreRepairCommands -Item $item)) {
+            if ($repairCommands -notcontains $command) {
+                [void]$repairCommands.Add($command)
+            }
+        }
+    }
+
+    foreach ($command in $repairCommands) {
+        Write-Log "Repair command: $command" WARN
+    }
+
+    if ($script:SilentMode) {
+        throw "Restore verification failed with $($failed.Count) drift/unknown item(s). See repair commands in the log."
+    }
+
+    return $health
+}
+
 function Invoke-RestoreDefender {
     <#
     .SYNOPSIS
@@ -49,6 +135,7 @@ function Invoke-RestoreDefender {
             New-DefenderPhase -Name 'Firewall postflight' -Key 'FirewallPostflight' -Action { Assert-FirewallSafety -Stage post }
         )
         Invoke-DefenderPhasePlan -Mode Restore -Phases $phases -Only $Only -Skip $Skip
+        Invoke-RestoreVerification | Out-Null
         Write-Log "Restore complete. Reboot recommended. If Defender does not come back: sfc /scannow then DISM /Online /Cleanup-Image /RestoreHealth." OK
     } finally {
         $script:RestoreManifestReplayMode = $previousReplayMode
