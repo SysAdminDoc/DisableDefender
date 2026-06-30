@@ -1,7 +1,7 @@
 #Requires -Version 5.1
 #Requires -RunAsAdministrator
 <#
-    DisableDefender v0.0.20
+    DisableDefender v0.0.21
     CLI launcher for the DisableDefender PowerShell module.
 
     DOES NOT touch the Windows Firewall. Firewall services (mpssvc, BFE) and the

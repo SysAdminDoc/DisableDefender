@@ -16,6 +16,120 @@ function Test-RestoreManifestRecording {
     return [bool]$script:RestoreManifestActive
 }
 
+function Get-RestoreManifestActionSchema {
+    return @{
+        RemoveRegistryValue    = @('Path','Name')
+        RestoreRegistryValue   = @('Path','Name','Kind','Value')
+        RestoreRegistryTree    = @('Path','Tree')
+        SetServiceStart        = @('Service','State')
+        StartService           = @('Service')
+        SetScheduledTaskState  = @('TaskPath','Enabled')
+        SetMpPreference        = @('Name','Value')
+        RemoveMpPreferenceValue = @('Parameter','Value')
+        RestoreSecHealthUI     = @()
+        DismRestoreHealth      = @('PackageName')
+    }
+}
+
+function Test-RestoreManifestProperty {
+    param(
+        [AllowNull()]$InputObject,
+        [Parameter(Mandatory)][string]$Name
+    )
+
+    if ($null -eq $InputObject) { return $false }
+    return @($InputObject.PSObject.Properties.Name) -contains $Name
+}
+
+function Assert-RestoreManifestEntry {
+    param(
+        [Parameter(Mandatory)]$Entry,
+        [Parameter(Mandatory)][int]$LineNumber
+    )
+
+    foreach ($property in @('SchemaVersion','RunId','Sequence','Timestamp','Mode','Phase','Action','Target','Data')) {
+        if (-not (Test-RestoreManifestProperty -InputObject $Entry -Name $property)) {
+            throw "Restore manifest line $LineNumber is missing $property."
+        }
+    }
+
+    if ([int]$Entry.SchemaVersion -ne 1) {
+        throw "Restore manifest line $LineNumber has unsupported schema version $($Entry.SchemaVersion)."
+    }
+
+    try { [void][guid]$Entry.RunId } catch {
+        throw "Restore manifest line $LineNumber has invalid RunId '$($Entry.RunId)'."
+    }
+
+    $sequence = 0
+    if (-not [int]::TryParse([string]$Entry.Sequence, [ref]$sequence) -or $sequence -lt 1) {
+        throw "Restore manifest line $LineNumber has invalid Sequence '$($Entry.Sequence)'."
+    }
+
+    $timestamp = [datetime]::MinValue
+    if (-not [datetime]::TryParse(
+            [string]$Entry.Timestamp,
+            [Globalization.CultureInfo]::InvariantCulture,
+            [Globalization.DateTimeStyles]::RoundtripKind,
+            [ref]$timestamp)) {
+        throw "Restore manifest line $LineNumber has invalid Timestamp '$($Entry.Timestamp)'."
+    }
+
+    if (@('Disable','Remove') -notcontains [string]$Entry.Mode) {
+        throw "Restore manifest line $LineNumber has invalid Mode '$($Entry.Mode)'."
+    }
+
+    foreach ($property in @('Phase','Action','Target')) {
+        if ([string]::IsNullOrWhiteSpace([string]$Entry.$property)) {
+            throw "Restore manifest line $LineNumber has empty $property."
+        }
+    }
+
+    $schema = Get-RestoreManifestActionSchema
+    if (-not $schema.ContainsKey([string]$Entry.Action)) {
+        throw "Restore manifest line $LineNumber uses unexpected action '$($Entry.Action)'."
+    }
+
+    foreach ($property in @($schema[[string]$Entry.Action])) {
+        if (-not (Test-RestoreManifestProperty -InputObject $Entry.Data -Name $property)) {
+            throw "Restore manifest line $LineNumber action '$($Entry.Action)' is missing Data.$property."
+        }
+    }
+
+    if ($Entry.Action -eq 'SetServiceStart' -and @('Boot','System','Automatic','Manual','Disabled') -notcontains [string]$Entry.Data.State) {
+        throw "Restore manifest line $LineNumber has invalid service State '$($Entry.Data.State)'."
+    }
+
+    if ($Entry.Action -eq 'RestoreRegistryValue') {
+        try { [void][Enum]::Parse([Microsoft.Win32.RegistryValueKind], [string]$Entry.Data.Kind, $true) } catch {
+            throw "Restore manifest line $LineNumber has invalid registry Kind '$($Entry.Data.Kind)'."
+        }
+    }
+
+    return $true
+}
+
+function Get-RestoreManifestDigest {
+    param(
+        [Parameter(Mandatory)][string]$Path
+    )
+
+    $stream = $null
+    $sha256 = $null
+    try {
+        $stream = [System.IO.File]::OpenRead((Resolve-Path -LiteralPath $Path).Path)
+        $sha256 = [System.Security.Cryptography.SHA256]::Create()
+        $hash = $sha256.ComputeHash($stream)
+        return [BitConverter]::ToString($hash).Replace('-', '').ToLowerInvariant()
+    } catch {
+        Write-Log "Unable to compute restore manifest digest: $($_.Exception.Message)" WARN
+        return 'unavailable'
+    } finally {
+        if ($stream) { $stream.Dispose() }
+        if ($sha256) { $sha256.Dispose() }
+    }
+}
+
 function Start-RestoreManifest {
     param(
         [Parameter(Mandatory)][ValidateSet('Disable','Remove')][string]$Mode
@@ -88,12 +202,17 @@ function Read-RestoreManifestEntries {
     if (-not (Test-Path -LiteralPath $path)) { return @() }
 
     $entries = New-Object System.Collections.ArrayList
+    $lineNumber = 0
     foreach ($line in (Get-Content -LiteralPath $path -ErrorAction SilentlyContinue)) {
+        $lineNumber++
         if ([string]::IsNullOrWhiteSpace($line)) { continue }
         try {
-            [void]$entries.Add(($line | ConvertFrom-Json))
+            $entry = $line | ConvertFrom-Json
+            Assert-RestoreManifestEntry -Entry $entry -LineNumber $lineNumber | Out-Null
+            [void]$entries.Add($entry)
         } catch {
-            Write-Log "Skipping invalid restore manifest line: $($_.Exception.Message)" WARN
+            Write-Log "Refusing restore manifest line ${lineNumber}: $($_.Exception.Message)" ERROR
+            throw
         }
     }
     return @($entries)
@@ -270,12 +389,17 @@ function Invoke-RestoreManifestEntry {
 }
 
 function Invoke-RestoreManifest {
+    $path = Get-RestoreManifestPath
     $entries = @(Read-RestoreManifestEntries)
     if ($entries.Count -eq 0) {
         Write-Log "No restore manifest entries found; falling back to deterministic restore steps." WARN
         return $true
     }
 
+    $digest = Get-RestoreManifestDigest -Path $path
+    $runIds = @(($entries | ForEach-Object { $_.RunId }) | Sort-Object -Unique)
+    $runLabel = if ($runIds.Count -eq 0) { 'none' } else { $runIds -join ',' }
+    Write-Log ("Restore manifest integrity: RunIds={0} Entries={1} SHA256={2}" -f $runLabel, $entries.Count, $digest) INFO
     Write-Log "Replaying $($entries.Count) restore manifest entries in reverse order..." INFO
     $failures = 0
     $script:RestoreManifestReplayMode = $true
@@ -295,11 +419,10 @@ function Invoke-RestoreManifest {
     }
 
     if ($failures -eq 0) {
-        $path = Get-RestoreManifestPath
         if (Test-Path -LiteralPath $path) {
             $archive = Join-Path (Split-Path -Parent $path) ("restore-manifest.restored.{0}.jsonl" -f (Get-Date -Format 'yyyyMMddHHmmss'))
             Move-Item -LiteralPath $path -Destination $archive -Force
-            Write-Log "Archived replayed restore manifest to $archive" INFO
+            Write-Log ("Archived replayed restore manifest to {0} (RunIds={1}; Entries={2}; SHA256={3})" -f $archive, $runLabel, $entries.Count, $digest) INFO
         }
         return $true
     }

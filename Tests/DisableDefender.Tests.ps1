@@ -509,6 +509,66 @@ InModuleScope DisableDefender {
             $entries[0].Action | Should -Be 'RemoveRegistryValue'
             $entries[0].Data.Name | Should -Be 'MissingValue'
         }
+
+        It 'logs manifest integrity markers before replay and when archiving' {
+            Start-RestoreManifest -Mode Disable
+            Write-RestoreManifestEntry -Phase 'Services' -Action 'SetServiceStart' -Target 'WinDefend' -Data ([ordered]@{
+                Service = 'WinDefend'
+                State   = 'Automatic'
+            })
+            Stop-RestoreManifest
+
+            $script:ManifestReplayLogs = @()
+            Mock Set-ServiceStart { return $true }
+            Mock Write-Log {
+                param($Message, $Level)
+                $script:ManifestReplayLogs += "$Level|$Message"
+            }
+
+            Invoke-RestoreManifest | Should -Be $true
+
+            $joined = $script:ManifestReplayLogs -join "`n"
+            $joined | Should -Match 'INFO\|Restore manifest integrity: RunIds=[0-9a-f-]+ Entries=1 SHA256=[0-9a-f]{64}'
+            $joined | Should -Match 'INFO\|Archived replayed restore manifest .+RunIds=[0-9a-f-]+; Entries=1; SHA256=[0-9a-f]{64}'
+        }
+
+        It 'refuses unexpected actions before replay' {
+            $entry = [ordered]@{
+                SchemaVersion = 1
+                RunId         = [guid]::NewGuid().ToString()
+                Sequence      = 1
+                Timestamp     = (Get-Date).ToString('o')
+                Mode          = 'Disable'
+                Phase         = 'Services'
+                Action        = 'UnexpectedAction'
+                Target        = 'WinDefend'
+                Data          = [ordered]@{ Service = 'WinDefend' }
+            }
+            $entry | ConvertTo-Json -Depth 8 -Compress | Set-Content -LiteralPath $script:RestoreManifestPath
+            Mock Set-ServiceStart { throw 'should not replay' }
+
+            { Invoke-RestoreManifest } | Should -Throw -ExpectedMessage '*unexpected action*'
+            Should -Invoke Set-ServiceStart -Times 0 -Exactly
+        }
+
+        It 'refuses manifest entries missing required action fields' {
+            $entry = [ordered]@{
+                SchemaVersion = 1
+                RunId         = [guid]::NewGuid().ToString()
+                Sequence      = 1
+                Timestamp     = (Get-Date).ToString('o')
+                Mode          = 'Disable'
+                Phase         = 'Services'
+                Action        = 'SetServiceStart'
+                Target        = 'WinDefend'
+                Data          = [ordered]@{ Service = 'WinDefend' }
+            }
+            $entry | ConvertTo-Json -Depth 8 -Compress | Set-Content -LiteralPath $script:RestoreManifestPath
+            Mock Set-ServiceStart { throw 'should not replay' }
+
+            { Invoke-RestoreManifest } | Should -Throw -ExpectedMessage '*missing Data.State*'
+            Should -Invoke Set-ServiceStart -Times 0 -Exactly
+        }
     }
 
     Describe 'Restore verification' {

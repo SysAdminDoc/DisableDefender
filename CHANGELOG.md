@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.0.21 - 2026-06-30
+
+### Added
+- Restore manifest schema validation for every replay entry.
+- Restore manifest integrity logs with run IDs, entry count, and SHA256 digest before replay and archive.
+- Pester coverage for refused unexpected actions and malformed action data.
+
+### Changed
+- Restore now refuses unknown or malformed manifest actions instead of warning through replay.
+- Version metadata is aligned to `0.0.21` across the manifest, scripts, README badge, and changelog.
+
 ## v0.0.20 - 2026-06-28
 
 ### Added

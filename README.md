@@ -1,6 +1,6 @@
 # DisableDefender
 
-[![Version](https://img.shields.io/badge/version-0.0.20-blue.svg)](https://github.com/SysAdminDoc/DisableDefender/releases)
+[![Version](https://img.shields.io/badge/version-0.0.21-blue.svg)](https://github.com/SysAdminDoc/DisableDefender/releases)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-0078D6.svg)](https://www.microsoft.com/windows)
 [![PowerShell](https://img.shields.io/badge/powershell-5.1%2B-012456.svg)](https://learn.microsoft.com/powershell)
@@ -48,7 +48,7 @@ Disable confirmation includes a current-vs-target drift preview before execution
 - **Appx removal**: SecHealthUI deprovision with `NonRemovableAppPolicy` override
 - **SafeBoot trap** (Remove mode): nukes `SafeBoot\{Minimal,Network}\WinDefend` so the service can't load even in Safe Mode
 - **Restore point** before any destructive op (opt-out with `-NoRestorePoint`)
-- **Replay restore manifest**: Disable/Remove record JSONL undo entries and Restore replays them in reverse before deterministic cleanup
+- **Replay restore manifest**: Disable/Remove record validated JSONL undo entries and Restore logs run IDs, entry count, and SHA256 before reverse-order replay
 - **Atomic phase boundaries**: each mode records phase status to `phase-state.json`; failures log partial state plus resume/rollback recovery choices
 - **Per-phase firewall guard**: every executed phase checks firewall services and profiles before and after running
 - **Known-bad Remove gate**: domain-joined machines are refused unless `-Force` is passed and emit JSONL tripwires
@@ -156,7 +156,7 @@ Everything Disable does, plus:
 - **Best run from Safe Mode** for service registry key edits to stick
 
 ### Restore (undo)
-- Replays `%ProgramData%\DisableDefender\restore-manifest.jsonl` in reverse order when present
+- Validates and replays `%ProgramData%\DisableDefender\restore-manifest.jsonl` in reverse order when present, with run ID / entry count / SHA256 integrity logging
 - Removes all Defender policy keys
 - Resets `MpPreference` flags to default
 - Re-enables scheduled tasks

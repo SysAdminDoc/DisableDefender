@@ -39,13 +39,6 @@ Actionable work beyond v0.0.18. Completed work is removed. True blockers live in
   Acceptance: A `-PrepareOfflineRemove` or equivalent mode creates a one-shot WinRE/offline script bundle that targets an offline Windows volume, logs actions, and refuses to run against the live system root.
   Complexity: L
 
-- [ ] P1 - Restore manifest schema validation and integrity markers
-  Why: The replay manifest controls privileged undo operations from `%ProgramData%`; malformed lines are skipped, but action schema and tamper evidence are not enforced.
-  Evidence: RESEARCH.md Security, Privacy, and Reliability; `Private/ReplayManifest.ps1`; MITRE defense-evasion registry/service tampering technique.
-  Touches: `Private/ReplayManifest.ps1`, `Private/Write-Log.ps1`, `Tests/DisableDefender.Tests.ps1`, `README.md`.
-  Acceptance: Each JSONL entry validates against an allow-list of actions/fields/schema versions; unexpected actions are refused; manifest archive records include run id, entry count, and a digest logged before replay.
-  Complexity: M
-
 - [ ] P1 - Feature-update drift detector and reapply plan
   Why: Defender-removal competitors repeatedly break after Windows feature updates, especially 25H2/26H-era changes; DisableDefender should detect changed surfaces before hard-coded assumptions fail.
   Evidence: RESEARCH.md Competitive Landscape; ionuttbara/windows-defender-remover issues #263/#270; Microsoft Defender Core service docs; existing ROADMAP 26H1/26H2 tracking item.
