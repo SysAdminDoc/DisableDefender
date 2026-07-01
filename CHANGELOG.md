@@ -1,5 +1,35 @@
 # Changelog
 
+## v0.0.28 - 2026-06-30
+
+### Added
+- WinRE/offline servicing mode via `New-OfflineRemoveBundle` and CLI `-Mode PrepareOffline`.
+- Self-contained `Invoke-OfflineDefenderRemove.ps1` generator that targets offline Windows volumes.
+- Offline script loads SOFTWARE and SYSTEM registry hives, applies all Defender policy keys, disables services, removes SafeBoot entries, and disables WMI Autologger telemetry.
+- Live system drive refusal to prevent accidental execution against the booted OS.
+- ControlSet resolution from the offline SYSTEM hive Select key.
+- Firewall refuse-list enforcement in the offline script (same guarantees as live mode).
+- Post-run guidance for completing live-only steps (MpPreference, tasks, Appx, DISM).
+- Pester coverage for bundle generation, script validity, refuse-list embedding, and live-drive refusal.
+
+### Changed
+- Module exports now include `New-OfflineRemoveBundle`.
+- CLI interactive menu adds option 6 for PrepareOffline.
+- Version metadata is aligned to `0.0.28` across the manifest, scripts, README badge, and changelog.
+
+## v0.0.27 - 2026-06-30
+
+### Added
+- Local release builder at `tools/New-DisableDefenderRelease.ps1`.
+- Optional Authenticode signing by certificate thumbprint or PFX path.
+- Release SHA256 sidecar and release metadata JSON.
+- README guidance for Smart App Control behavior, signature verification, and unsigned fallback execution.
+- Pester coverage that builds the local unsigned release zip and verifies release contents.
+
+### Changed
+- Release artifacts now exclude roadmap and research notes from the install zip.
+- Version metadata is aligned to `0.0.27` across the manifest, scripts, README badge, and changelog.
+
 ## v0.0.26 - 2026-06-30
 
 ### Added

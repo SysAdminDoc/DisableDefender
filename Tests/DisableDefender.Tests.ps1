@@ -21,10 +21,37 @@ Describe 'Module manifest' {
             'Invoke-DisableDefender'
             'Invoke-RemoveDefender'
             'Invoke-RestoreDefender'
+            'New-OfflineRemoveBundle'
             'Show-DefenderStatus'
         ) | Sort-Object
         $actual = (Get-Command -Module DisableDefender -CommandType Function).Name | Sort-Object
         $actual | Should -Be $expected
+    }
+}
+
+Describe 'Local release build' {
+    It 'builds an unsigned release zip with hash and metadata' {
+        $version = [string](Test-ModuleManifest -Path $script:ModuleManifest).Version
+        $output = Join-Path $TestDrive 'release'
+        $scriptPath = Join-Path $PSScriptRoot '..\tools\New-DisableDefenderRelease.ps1'
+
+        $metadata = & $scriptPath -Version $version -OutputDirectory $output -SkipSigning
+
+        Test-Path -LiteralPath $metadata.ZipPath | Should -Be $true
+        Test-Path -LiteralPath "$($metadata.ZipPath).sha256" | Should -Be $true
+        Test-Path -LiteralPath (Join-Path $output "DisableDefender-v$version.release.json") | Should -Be $true
+        $metadata.SignatureStatus | Should -Be 'Unsigned'
+
+        Add-Type -AssemblyName System.IO.Compression.FileSystem
+        $zip = [System.IO.Compression.ZipFile]::OpenRead($metadata.ZipPath)
+        try {
+            $entries = @($zip.Entries | ForEach-Object { $_.FullName.Replace('\','/') })
+            $entries | Should -Contain 'tools/New-DisableDefenderRelease.ps1'
+            $entries | Should -Not -Contain 'ROADMAP.md'
+            $entries | Should -Not -Contain 'RESEARCH.md'
+        } finally {
+            $zip.Dispose()
+        }
     }
 }
 
@@ -1089,6 +1116,78 @@ InModuleScope DisableDefender {
             $state.Status | Should -Be 'Failed'
             $state.Phases[0].Status | Should -Be 'Skipped'
             $state.Phases[0].SkipReason | Should -Be 'Skip'
+        }
+    }
+}
+
+InModuleScope DisableDefender {
+    Describe 'New-OfflineRemoveBundle' {
+        BeforeAll {
+            $script:BundleDir = Join-Path $TestDrive 'offline-bundle'
+        }
+
+        It 'generates a valid PowerShell script' {
+            $result = New-OfflineRemoveBundle -OutputDirectory $script:BundleDir
+
+            $result.ScriptPath | Should -Not -BeNullOrEmpty
+            Test-Path -LiteralPath $result.ScriptPath | Should -Be $true
+            $result.Version | Should -Be (Test-ModuleManifest -Path (Join-Path $PSScriptRoot '..\DisableDefender.psd1')).Version.ToString()
+
+            $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile($result.ScriptPath, [ref]$null, [ref]$errors)
+            $errors.Count | Should -Be 0
+        }
+
+        It 'embeds the firewall refuse-list in the generated script' {
+            $result = New-OfflineRemoveBundle -OutputDirectory $script:BundleDir
+            $content = Get-Content -LiteralPath $result.ScriptPath -Raw
+
+            $content | Should -Match 'mpssvc'
+            $content | Should -Match 'BFE'
+            $content | Should -Match 'SharedAccess'
+            $content | Should -Match 'REFUSED firewall'
+        }
+
+        It 'embeds the full Defender service list' {
+            $result = New-OfflineRemoveBundle -OutputDirectory $script:BundleDir
+            $content = Get-Content -LiteralPath $result.ScriptPath -Raw
+
+            $content | Should -Match 'WinDefend'
+            $content | Should -Match 'WdFilter'
+            $content | Should -Match 'WdBoot'
+            $content | Should -Match 'MDCoreSvc'
+            $content | Should -Match 'Sense'
+        }
+
+        It 'includes live system drive refusal logic' {
+            $result = New-OfflineRemoveBundle -OutputDirectory $script:BundleDir
+            $content = Get-Content -LiteralPath $result.ScriptPath -Raw
+
+            $content | Should -Match 'live system drive'
+            $content | Should -Match 'SystemDrive'
+            $content | Should -Match 'offline volumes only'
+        }
+
+        It 'includes all major policy key paths' {
+            $result = New-OfflineRemoveBundle -OutputDirectory $script:BundleDir
+            $content = Get-Content -LiteralPath $result.ScriptPath -Raw
+
+            $content | Should -Match 'DisableAntiSpyware'
+            $content | Should -Match 'DisableRealtimeMonitoring'
+            $content | Should -Match 'DisableBehaviorMonitoring'
+            $content | Should -Match 'SpyNetReporting'
+            $content | Should -Match 'ForceDefenderPassiveMode'
+            $content | Should -Match 'EnableSmartScreen'
+        }
+
+        It 'documents offline limitations' {
+            $result = New-OfflineRemoveBundle -OutputDirectory $script:BundleDir
+            $content = Get-Content -LiteralPath $result.ScriptPath -Raw
+
+            $content | Should -Match 'Set-MpPreference'
+            $content | Should -Match 'Task Scheduler'
+            $content | Should -Match 'Appx'
+            $content | Should -Match 'DISM'
         }
     }
 }

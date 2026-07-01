@@ -1,7 +1,7 @@
 #Requires -Version 5.1
 #Requires -RunAsAdministrator
 <#
-    DisableDefender v0.0.26
+    DisableDefender v0.0.28
     CLI launcher for the DisableDefender PowerShell module.
 
     DOES NOT touch the Windows Firewall. Firewall services (mpssvc, BFE) and the
@@ -10,7 +10,7 @@
 
 [CmdletBinding(SupportsShouldProcess)]
 param(
-    [ValidateSet('Disable','Remove','Restore','Status','Health')]
+    [ValidateSet('Disable','Remove','Restore','Status','Health','PrepareOffline')]
     [string]$Mode,
 
     [switch]$Silent,
@@ -63,6 +63,7 @@ function Show-Menu {
     Write-Host '  [3] Restore  (undo: clear policy, re-enable services, reprovision UI)' -ForegroundColor Green
     Write-Host '  [4] Status   (show current Defender + firewall state)' -ForegroundColor Cyan
     Write-Host '  [5] Health   (compare current state to expected target)' -ForegroundColor Cyan
+    Write-Host '  [6] Prepare Offline (generate WinRE/offline remove script bundle)' -ForegroundColor Magenta
     Write-Host '  [Q] Quit' -ForegroundColor Gray
     Write-Host ''
     $choice = Read-Host 'Select'
@@ -72,13 +73,14 @@ function Show-Menu {
         '3' { return 'Restore' }
         '4' { return 'Status' }
         '5' { return 'Health' }
+        '6' { return 'PrepareOffline' }
         'Q' { return $null }
         default { return $null }
     }
 }
 
 function Invoke-SelectedMode {
-    param([Parameter(Mandatory)][ValidateSet('Disable','Remove','Restore','Status','Health')][string]$SelectedMode)
+    param([Parameter(Mandatory)][ValidateSet('Disable','Remove','Restore','Status','Health','PrepareOffline')][string]$SelectedMode)
 
     $common = @{
         Silent      = [bool]$Silent
@@ -118,6 +120,18 @@ function Invoke-SelectedMode {
                 }
             }
         }
+        'PrepareOffline' {
+            $outputDir = Join-Path $PSScriptRoot 'dist'
+            $bundle = New-OfflineRemoveBundle -OutputDirectory $outputDir
+            Write-Host ''
+            Write-Host 'Offline remove bundle generated:' -ForegroundColor Cyan
+            Write-Host "  Script: $($bundle.ScriptPath)" -ForegroundColor White
+            Write-Host "  Version: $($bundle.Version)" -ForegroundColor Gray
+            Write-Host ''
+            Write-Host 'Usage from WinRE or secondary Windows install:' -ForegroundColor Yellow
+            Write-Host '  .\Invoke-OfflineDefenderRemove.ps1 -TargetVolume D:\' -ForegroundColor White
+            Write-Host ''
+        }
     }
 }
 
@@ -137,7 +151,7 @@ if (-not $Mode) {
 
 try {
     Invoke-SelectedMode -SelectedMode $Mode
-    if ($Mode -ne 'Status') {
+    if ($Mode -ne 'Status' -and $Mode -ne 'PrepareOffline') {
         Show-DefenderStatus -Json:$Json
     }
     if (-not $NoReboot -and -not $WhatIfPreference -and ($Mode -eq 'Disable' -or $Mode -eq 'Remove')) {

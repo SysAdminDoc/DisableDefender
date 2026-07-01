@@ -1,6 +1,6 @@
 # DisableDefender
 
-[![Version](https://img.shields.io/badge/version-0.0.26-blue.svg)](https://github.com/SysAdminDoc/DisableDefender/releases)
+[![Version](https://img.shields.io/badge/version-0.0.28-blue.svg)](https://github.com/SysAdminDoc/DisableDefender/releases)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-0078D6.svg)](https://www.microsoft.com/windows)
 [![PowerShell](https://img.shields.io/badge/powershell-5.1%2B-012456.svg)](https://learn.microsoft.com/powershell)
@@ -58,6 +58,8 @@ Disable confirmation includes a current-vs-target drift preview before execution
 - **Surgical reruns**: `-Only` and `-Skip` phase filters for Policies, MpPreference, Tasks, Services, Appx, DISM, SafeBoot, and ContextMenu
 - **Health mode + Restore verification**: compares current state to Disable/Remove/Restore targets and reports drift for services, policy keys, tasks, Appx, SafeBoot, and MpPreference; Restore ends with a health summary and repair commands when drift remains
 - **Feature-update drift detection**: Disable/Remove record a Defender surface baseline; Health flags changed Windows builds plus unknown Defender-like services, tasks, and packages and prints a reapply plan that preserves firewall and MDE Sense by default
+- **Local release builder**: creates a clean zip, SHA256 file, release metadata JSON, and optional Authenticode signatures when a code-signing certificate is supplied
+- **Offline remove bundle** (`PrepareOffline`): generates a self-contained `Invoke-OfflineDefenderRemove.ps1` that targets an offline Windows volume from WinRE or a secondary OS, bypassing live Tamper Protection by editing dormant registry hives directly; refuses to run against the live system root
 - **Module layout**: `DisableDefender.psd1` / `DisableDefender.psm1` with public commands and private helpers for function-level tests
 - **GUI auto-elevate, silent CLI mode, transcript logging, Safe Mode aware**
 
@@ -129,6 +131,27 @@ Invoke-RestoreDefender
 Invoke-RestoreDefender -ManifestSelection All
 ```
 
+### Offline Remove (WinRE / secondary OS)
+
+When Tamper Protection cannot be toggled off (e.g. managed devices, locked UI), generate a self-contained script that edits registry hives from an offline volume:
+
+```powershell
+# Generate the bundle
+.\DisableDefender.ps1 -Mode PrepareOffline
+
+# Or via the module
+Import-Module .\DisableDefender.psd1
+New-OfflineRemoveBundle -OutputDirectory C:\OfflineBundle
+```
+
+Copy the generated `Invoke-OfflineDefenderRemove.ps1` to a USB drive, boot into WinRE or a secondary Windows install, and run:
+
+```powershell
+.\Invoke-OfflineDefenderRemove.ps1 -TargetVolume D:\
+```
+
+The script loads the offline volume's SOFTWARE and SYSTEM registry hives, applies all Defender policy keys, disables services, removes SafeBoot entries, and disables WMI Autologger telemetry. It refuses to run against the live system drive. After booting the target, run `-Mode Health` and `-Mode Remove -Force -Only MpPreference,Tasks,Appx,DISM` to complete the remaining live-only steps.
+
 ### Parameters
 | Flag | Description |
 |---|---|
@@ -145,6 +168,22 @@ Invoke-RestoreDefender -ManifestSelection All
 | `-ManifestSelection` | Restore manifest selection for `Restore`: `Newest` (default), `All`, or `Active`. Use `All` after repeated Disable/Remove runs when older undo chains must also be replayed. |
 | `-HealthTarget` | Expected target for `-Mode Health`: `Disable`, `Remove`, or `Restore`. |
 | `-LogPath` | Override log path (default `%ProgramData%\DisableDefender\DisableDefender.log`). |
+
+## Local release build and Smart App Control
+
+Build the distributable locally:
+```powershell
+.\tools\New-DisableDefenderRelease.ps1
+```
+
+Build and sign when a code-signing certificate is available:
+```powershell
+.\tools\New-DisableDefenderRelease.ps1 -CertificateThumbprint '<thumbprint>'
+```
+
+The builder creates `dist\DisableDefender-vX.Y.Z.zip`, a `.sha256` file, and `DisableDefender-vX.Y.Z.release.json`. Without a supplied certificate, the artifact is intentionally marked `Unsigned`.
+
+Smart App Control can block unknown, unsigned, or low-reputation apps. See Microsoft’s [Smart App Control FAQ](https://support.microsoft.com/windows/smart-app-control-faq-285ea03d-fa88-4d56-882e-6698afdb7003). PowerShell script signatures use Authenticode; see Microsoft’s [`Set-AuthenticodeSignature`](https://learn.microsoft.com/powershell/module/microsoft.powershell.security/set-authenticodesignature) documentation. If SAC blocks the unsigned zip or launcher, extract manually, review the scripts, unblock the downloaded files if appropriate, and run from an elevated PowerShell session.
 
 ## What each mode does
 

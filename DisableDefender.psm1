@@ -30,7 +30,7 @@ Initialize-DefenderRuntimeDirectory -Path $script:AppDir | Out-Null
 . "$moduleRoot\Private\ContextMenu.ps1"
 . "$moduleRoot\Private\Confirm-Prereqs.ps1"
 
-# Dot-source all public functions
+# Dot-source all public functions (alphabetical)
 . "$moduleRoot\Public\Get-DefenderStatus.ps1"
 . "$moduleRoot\Public\Get-DefenderHealth.ps1"
 . "$moduleRoot\Public\Get-DefenderComponentStatus.ps1"
@@ -38,6 +38,7 @@ Initialize-DefenderRuntimeDirectory -Path $script:AppDir | Out-Null
 . "$moduleRoot\Public\Invoke-DisableDefender.ps1"
 . "$moduleRoot\Public\Invoke-RemoveDefender.ps1"
 . "$moduleRoot\Public\Invoke-RestoreDefender.ps1"
+. "$moduleRoot\Public\New-OfflineRemoveBundle.ps1"
 
 Export-ModuleMember -Function @(
     'Get-DefenderStatus',
@@ -46,5 +47,6 @@ Export-ModuleMember -Function @(
     'Show-DefenderStatus',
     'Invoke-DisableDefender',
     'Invoke-RemoveDefender',
-    'Invoke-RestoreDefender'
+    'Invoke-RestoreDefender',
+    'New-OfflineRemoveBundle'
 )
