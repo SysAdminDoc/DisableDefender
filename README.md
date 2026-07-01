@@ -1,6 +1,6 @@
 # DisableDefender
 
-[![Version](https://img.shields.io/badge/version-0.0.34-blue.svg)](https://github.com/SysAdminDoc/DisableDefender/releases)
+[![Version](https://img.shields.io/badge/version-0.0.35-blue.svg)](https://github.com/SysAdminDoc/DisableDefender/releases)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-0078D6.svg)](https://www.microsoft.com/windows)
 [![PowerShell](https://img.shields.io/badge/powershell-5.1%2B-012456.svg)](https://learn.microsoft.com/powershell)
@@ -294,7 +294,8 @@ v0.0.2 fixed a false-positive where `SharedAccess` (ICS, off by default) tripped
 | Firewall got disabled | Run `-Mode Restore`, or `netsh advfirewall set allprofiles state on` |
 
 ## Log locations
-- `%ProgramData%\DisableDefender\DisableDefender.log`
+- `%ProgramData%\DisableDefender\DisableDefender.log` (human-readable text)
+- `%ProgramData%\DisableDefender\DisableDefender.jsonl` (structured JSONL for SIEM/automation)
 - `%ProgramData%\DisableDefender\transcript.log`
 - `%ProgramData%\DisableDefender\restore-manifest.jsonl`
 - `%ProgramData%\DisableDefender\restore-manifest.*.jsonl`

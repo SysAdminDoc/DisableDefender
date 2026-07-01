@@ -83,6 +83,11 @@ function Export-DefenderSupportBundle {
                 Copy-Item -LiteralPath $logFile -Destination (Join-Path $bundleDir 'DisableDefender.log') -Force
             }
 
+            $jsonlLog = Join-Path $runtimeDir "$script:AppName.jsonl"
+            if (Test-Path -LiteralPath $jsonlLog) {
+                Copy-Item -LiteralPath $jsonlLog -Destination (Join-Path $bundleDir 'DisableDefender.jsonl') -Force
+            }
+
             $transcriptFile = Join-Path $runtimeDir 'transcript.log'
             if (Test-Path -LiteralPath $transcriptFile) {
                 Copy-Item -LiteralPath $transcriptFile -Destination (Join-Path $bundleDir 'transcript.log') -Force

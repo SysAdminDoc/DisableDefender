@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.0.35 - 2026-06-30
+
+### Added
+- Structured JSONL log at `%ProgramData%\DisableDefender\DisableDefender.jsonl` alongside the human-readable text log.
+- Every `Write-Log` call emits a JSON object with `ts` (ISO 8601), `level`, and `msg` for SIEM/automation ingestion.
+- JSONL log included in `Export-DefenderSupportBundle` output.
+
+### Changed
+- Version metadata is aligned to `0.0.35` across the manifest, scripts, README badge, and changelog.
+
 ## v0.0.34 - 2026-06-30
 
 ### Changed

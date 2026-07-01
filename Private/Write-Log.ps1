@@ -9,6 +9,15 @@ function Write-Log {
     $logTarget = if ($script:LogPathOverride) { $script:LogPathOverride }
                  else { Join-Path $script:AppDir "$script:AppName.log" }
     try { Add-Content -LiteralPath $logTarget -Value $line -ErrorAction Stop } catch {}
+    $jsonlTarget = Join-Path $script:AppDir "$script:AppName.jsonl"
+    try {
+        $jsonEntry = [ordered]@{
+            ts    = (Get-Date).ToString('o')
+            level = $Level
+            msg   = $Message
+        } | ConvertTo-Json -Compress
+        Add-Content -LiteralPath $jsonlTarget -Value $jsonEntry -ErrorAction Stop
+    } catch {}
     if ($script:LogCallback) {
         try { & $script:LogCallback -Message $Message -Level $Level } catch {}
     }
