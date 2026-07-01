@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.0.29 - 2026-06-30
+
+### Added
+- Structured CLI JSON error envelope for `-Json` mode with `Ok`, `Mode`, `ExitCode`, `ErrorCode`, `Message`, `FailedPhase`, `PhaseStatePath`, `RepairCommands`, and `Timestamp`.
+- Centralized exit-code contract table covering Tamper Protection (2), Safe Mode (3), Firewall (4), managed device (5), Restore verification (6), phase filter (7), remoting blocked (8), and domain-joined (9).
+- Pester coverage for all error-code mappings and JSON envelope serialization.
+
+### Changed
+- CLI fatal paths now use `Get-DefenderErrorMapping` instead of regex classification.
+- With `-Json`, fatal errors emit a stable machine-readable object instead of a MessageBox or console message.
+- Version metadata is aligned to `0.0.29` across the manifest, scripts, README badge, and changelog.
+
 ## v0.0.28 - 2026-06-30
 
 ### Added

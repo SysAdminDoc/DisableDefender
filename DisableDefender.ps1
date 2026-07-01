@@ -1,7 +1,7 @@
 #Requires -Version 5.1
 #Requires -RunAsAdministrator
 <#
-    DisableDefender v0.0.28
+    DisableDefender v0.0.29
     CLI launcher for the DisableDefender PowerShell module.
 
     DOES NOT touch the Windows Firewall. Firewall services (mpssvc, BFE) and the
@@ -166,12 +166,19 @@ try {
 } catch {
     $msg = $_.Exception.Message
     try { Add-Content -LiteralPath $LogPath -Value "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')] [ERROR] FATAL: $msg" -ErrorAction SilentlyContinue } catch {}
-    $exitCode = 1
-    if ($msg -match 'Tamper Protection') { $exitCode = 2 }
-    elseif ($msg -match 'Safe Mode')     { $exitCode = 3 }
-    elseif ($msg -match 'Firewall')      { $exitCode = 4 }
-    elseif ($msg -match 'managed')       { $exitCode = 5 }
-    if (-not $Silent) {
+    $mapping = Get-DefenderErrorMapping -Message $msg
+    $exitCode = $mapping.ExitCode
+    if ($Json) {
+        $phaseStatePath = Join-Path $script:AppDir 'phase-state.json'
+        $failedPhase = $null
+        if (Test-Path -LiteralPath $phaseStatePath) {
+            try {
+                $phaseState = Get-Content -Raw -LiteralPath $phaseStatePath | ConvertFrom-Json
+                if ($phaseState.FailedPhase) { $failedPhase = $phaseState.FailedPhase }
+            } catch {}
+        }
+        New-DefenderErrorEnvelope -Message $msg -Mode $Mode -FailedPhase $failedPhase -PhaseStatePath $phaseStatePath | ConvertTo-Json -Depth 4
+    } elseif (-not $Silent) {
         Add-Type -AssemblyName PresentationFramework
         [System.Windows.MessageBox]::Show($msg, "$script:AppName error", 'OK', 'Error') | Out-Null
     }

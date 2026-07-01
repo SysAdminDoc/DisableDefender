@@ -28,6 +28,7 @@ Initialize-DefenderRuntimeDirectory -Path $script:AppDir | Out-Null
 . "$moduleRoot\Private\SecHealthUI.ps1"
 . "$moduleRoot\Private\Remove-DefenderPlatformPackages.ps1"
 . "$moduleRoot\Private\ContextMenu.ps1"
+. "$moduleRoot\Private\ErrorContract.ps1"
 . "$moduleRoot\Private\Confirm-Prereqs.ps1"
 
 # Dot-source all public functions (alphabetical)

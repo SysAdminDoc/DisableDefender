@@ -1192,6 +1192,76 @@ InModuleScope DisableDefender {
     }
 }
 
+InModuleScope DisableDefender {
+    Describe 'Error contract exit-code table' {
+        It 'maps Tamper Protection errors to exit code 2' {
+            $mapping = Get-DefenderErrorMapping -Message 'Tamper Protection blocks changes. Disable it manually, then retry.'
+            $mapping.ExitCode | Should -Be 2
+            $mapping.Code | Should -Be 'TAMPER_PROTECTION'
+            $mapping.Repair.Count | Should -BeGreaterThan 0
+        }
+
+        It 'maps Safe Mode errors to exit code 3' {
+            $mapping = Get-DefenderErrorMapping -Message 'Remove mode requires Safe Mode or -Force.'
+            $mapping.ExitCode | Should -Be 3
+            $mapping.Code | Should -Be 'SAFE_MODE_REQUIRED'
+        }
+
+        It 'maps Firewall errors to exit code 4' {
+            $mapping = Get-DefenderErrorMapping -Message 'Firewall integrity check failed at pre stage.'
+            $mapping.ExitCode | Should -Be 4
+            $mapping.Code | Should -Be 'FIREWALL_INTEGRITY'
+        }
+
+        It 'maps managed device errors to exit code 5' {
+            $mapping = Get-DefenderErrorMapping -Message 'This device is managed (Intune/MDM enrolled). Use -Force to proceed anyway.'
+            $mapping.ExitCode | Should -Be 5
+            $mapping.Code | Should -Be 'MANAGED_DEVICE'
+        }
+
+        It 'maps Restore verification errors to exit code 6' {
+            $mapping = Get-DefenderErrorMapping -Message 'Restore verification failed: Drift=3'
+            $mapping.ExitCode | Should -Be 6
+            $mapping.Code | Should -Be 'RESTORE_FAILED'
+        }
+
+        It 'maps phase filter errors to exit code 7' {
+            $mapping = Get-DefenderErrorMapping -Message 'Phase filters selected no runnable phases.'
+            $mapping.ExitCode | Should -Be 7
+            $mapping.Code | Should -Be 'PHASE_FILTER_EMPTY'
+        }
+
+        It 'maps remoting errors to exit code 8' {
+            $mapping = Get-DefenderErrorMapping -Message 'Execution refused in PSRemoting context. Use -AllowRemoting.'
+            $mapping.ExitCode | Should -Be 8
+            $mapping.Code | Should -Be 'REMOTING_BLOCKED'
+        }
+
+        It 'maps unknown errors to exit code 1' {
+            $mapping = Get-DefenderErrorMapping -Message 'Something unexpected happened.'
+            $mapping.ExitCode | Should -Be 1
+            $mapping.Code | Should -Be 'UNKNOWN'
+        }
+
+        It 'produces a stable JSON error envelope' {
+            $envelope = New-DefenderErrorEnvelope -Message 'Tamper Protection blocks changes.' -Mode 'Disable' -FailedPhase 'Prerequisites'
+            $envelope.Ok | Should -Be $false
+            $envelope.Mode | Should -Be 'Disable'
+            $envelope.ExitCode | Should -Be 2
+            $envelope.ErrorCode | Should -Be 'TAMPER_PROTECTION'
+            $envelope.Message | Should -Be 'Tamper Protection blocks changes.'
+            $envelope.FailedPhase | Should -Be 'Prerequisites'
+            $envelope.RepairCommands.Count | Should -BeGreaterThan 0
+            $envelope.Timestamp | Should -Not -BeNullOrEmpty
+
+            $json = $envelope | ConvertTo-Json -Depth 4
+            $parsed = $json | ConvertFrom-Json
+            $parsed.Ok | Should -Be $false
+            $parsed.ErrorCode | Should -Be 'TAMPER_PROTECTION'
+        }
+    }
+}
+
 Describe 'DisableDefender GUI safety wiring' {
     BeforeAll {
         $script:GuiSource = Get-Content -LiteralPath (Join-Path $PSScriptRoot '..\DisableDefender.GUI.ps1') -Raw

@@ -1,6 +1,6 @@
 # DisableDefender
 
-[![Version](https://img.shields.io/badge/version-0.0.28-blue.svg)](https://github.com/SysAdminDoc/DisableDefender/releases)
+[![Version](https://img.shields.io/badge/version-0.0.29-blue.svg)](https://github.com/SysAdminDoc/DisableDefender/releases)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-0078D6.svg)](https://www.microsoft.com/windows)
 [![PowerShell](https://img.shields.io/badge/powershell-5.1%2B-012456.svg)](https://learn.microsoft.com/powershell)
@@ -168,6 +168,36 @@ The script loads the offline volume's SOFTWARE and SYSTEM registry hives, applie
 | `-ManifestSelection` | Restore manifest selection for `Restore`: `Newest` (default), `All`, or `Active`. Use `All` after repeated Disable/Remove runs when older undo chains must also be replayed. |
 | `-HealthTarget` | Expected target for `-Mode Health`: `Disable`, `Remove`, or `Restore`. |
 | `-LogPath` | Override log path (default `%ProgramData%\DisableDefender\DisableDefender.log`). |
+
+## Exit codes
+
+| Code | Meaning | Repair |
+|------|---------|--------|
+| 0 | Success | |
+| 1 | Unknown / unclassified error | Check logs |
+| 2 | Tamper Protection is ON | Toggle off in Windows Security UI |
+| 3 | Safe Mode required for Remove | Boot to Safe Mode or use `-Force` |
+| 4 | Firewall integrity check failed | `netsh advfirewall set allprofiles state on` |
+| 5 | Managed device (Intune/MDM/MDE) | Use `-Force` (may trigger compliance violations) |
+| 6 | Restore verification failed | Run `-Mode Health -HealthTarget Restore` |
+| 7 | Phase filters selected nothing | Check `-Only` / `-Skip` values |
+| 8 | PSRemoting session blocked | Use `-AllowRemoting` |
+| 9 | Domain-joined machine (Remove) | Use `-Force` (may trigger SIEM alerts) |
+
+With `-Json`, fatal errors emit a stable object:
+```json
+{
+  "Ok": false,
+  "Mode": "Disable",
+  "ExitCode": 2,
+  "ErrorCode": "TAMPER_PROTECTION",
+  "Message": "Tamper Protection blocks changes.",
+  "FailedPhase": "Prerequisites",
+  "PhaseStatePath": "C:\\ProgramData\\DisableDefender\\phase-state.json",
+  "RepairCommands": ["Toggle Tamper Protection off in Windows Security UI, then retry."],
+  "Timestamp": "2026-06-30T22:00:00.0000000-04:00"
+}
+```
 
 ## Local release build and Smart App Control
 
