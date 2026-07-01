@@ -8,49 +8,21 @@ Actionable work beyond v0.0.18. Completed work is removed. True blockers live in
 
 ## P2 - CLI And Coverage
 
-- Full CLI parity with GUI: `-Mode Disable|Remove|Restore|Status|Health`, `-Silent`, `-DryRun`, `-NoRestorePoint`, `-NoReboot`, `-Force`, `-LogPath`, `-Json`, `-Only`, `-Skip`.
-- Auto-detect third-party AV registered in Security Center and warn when it is absent after Disable.
 - Track new Windows 26H1/26H2 Defender surfaces as Microsoft ships them.
-- MDE passive-mode handling: when `PassiveMode` is enabled upstream, make sure Disable leaves the MDE sensor intact.
-- Remove `Microsoft.SecHealthUI` with fallback path for Enterprise LTSC where DISM package IDs differ.
-- Detect and handle Windows 11 Smart App Control policy that can force Defender on.
 
 ## P3 - Diagnostics
 
-- Structured JSONL log alongside transcript for SIEM ingestion, local only.
 - ETW subscription for `Microsoft-Windows-Windows Defender` during run to surface silent Defender reactions.
-- `Export-HtmlReport` subcommand that builds a single-file HTML summary of the run.
 
 ## P3 - Optional Tools
 
-- Side-by-side state diff between two snapshots taken weeks apart.
 - Fleet mode (`-ComputerName`) via WinRM with explicit opt-in for batch status collection.
-- Safe Mode bootstrap helper: schedule a one-shot task that boots into Safe Mode, runs `-Mode Remove`, then reboots back to normal.
 - ADMX template that disables Defender via GPO for shops that prefer GPO-first.
 - Integration hook with DefenderShield so the DisableDefender undo manifest wins.
 - "Disable everything except cloud sample submission" preset for users who want cloud reputation lookups but no local scanning.
 
 ## Research-Driven Additions
 
-- [ ] P1 - WinRE/offline servicing mode for protected live systems
-  Why: Microsoft and NTLite evidence show live Tamper Protection blocks registry/service edits, while offline images/WinRE avoid WdFilter live protection.
-  Evidence: RESEARCH.md Competitive Landscape; Microsoft tamper-protection docs; NTLite offline Defender discussions; `Private\Set-ServiceStart.ps1`; `Private\SafeBoot.ps1`.
-  Touches: `Public/Invoke-RemoveDefender.ps1`, `Private/SafeBoot.ps1`, new functions under `Private/`, `README.md`, `Tests/DisableDefender.Tests.ps1`.
-  Acceptance: A `-PrepareOfflineRemove` or equivalent mode creates a one-shot WinRE/offline script bundle that targets an offline Windows volume, logs actions, and refuses to run against the live system root.
-  Complexity: L
-- [ ] P1 - Signed release and Smart App Control distribution path
-  Why: Smart App Control blocks unknown/unsigned code; Defender tools are especially reputation-sensitive, so unsigned zips/scripts undermine installability and trust.
-  Evidence: RESEARCH.md Sources - Smart App Control FAQ and Microsoft code-signing guidance; es3n1n/defendnot issue #48; `dist/DisableDefender-v0.0.17.zip`; README distribution section.
-  Touches: `DisableDefender.psd1`, `README.md`, release packaging scripts if added, artifact build process.
-  Acceptance: Local release build produces a signed zip or signed launcher where certificate availability permits; README documents SAC behavior, signature verification, and fallback manual script execution.
-  Complexity: L
-
-- [ ] P2 - Pester coverage report and local release-check script
-  Why: Risky registry, replay, GUI classifier, and phase-runner branches are growing faster than measured test coverage.
-  Evidence: RESEARCH.md Architecture Assessment; Pester code coverage docs; existing `Tests/DisableDefender.Tests.ps1`; `PSScriptAnalyzerSettings.psd1`.
-  Touches: `Tests/DisableDefender.Tests.ps1`, optional local release script, `README.md`.
-  Acceptance: A local command runs manifest validation, Pester with coverage, ScriptAnalyzer, GUI/XAML parse, version consistency, and artifact inspection; coverage output identifies untested files without using GitHub Actions.
-  Complexity: M
 
 - [ ] P2 - GUI accessibility and screenshot verification pass
   Why: The WPF GUI is now the primary recommended path, but README still has a screenshot placeholder and there is no UI Automation/accessibility evidence.
@@ -59,19 +31,49 @@ Actionable work beyond v0.0.18. Completed work is removed. True blockers live in
   Acceptance: All actionable controls have accessible names/tooltips, text does not clip at supported window sizes, README screenshot is recaptured from v0.0.18+ GUI, and a local GUI parse/screenshot check is documented.
   Complexity: M
 
-- [ ] P2 - Exportable support bundle
-  Why: Competitor issues show users struggle to explain broken states; DisableDefender already has logs, phase state, manifest, tripwires, and health output that should be bundled for diagnosis.
-  Evidence: RESEARCH.md Security, Privacy, and Reliability; `Private/PhaseRunner.ps1`; `Private/ReplayManifest.ps1`; `%ProgramData%\DisableDefender` paths in README.
-  Touches: `Public/Get-DefenderHealth.ps1`, new public export command, `DisableDefender.psd1`, `DisableDefender.GUI.ps1`, `README.md`, tests.
-  Acceptance: A command exports logs, phase-state, tripwire entries, component status, health summary, Windows build, and optional redacted event-log excerpts into a zip without secrets.
-  Complexity: M
 
-- [ ] P2 - Data-driven Defender policy catalog
-  Why: Policy definitions are duplicated between write logic and health logic, which can drift as Microsoft adds Defender CSP/policy surfaces.
-  Evidence: RESEARCH.md Architecture Assessment; `Private/Set-DefenderPolicy.ps1`; `Public/Get-DefenderHealth.ps1`; Microsoft Defender CSP docs.
-  Touches: `Private/Set-DefenderPolicy.ps1`, `Public/Get-DefenderHealth.ps1`, `Private/Variables.ps1`, tests.
-  Acceptance: A single in-module catalog drives policy writes, health expected values, and README table generation or validation; tests fail if a writable policy lacks a health expectation.
-  Complexity: M
+
+## Audit Findings (2026-06-30)
+
+- [ ] P2 - GUI Write-Log override missing JSONL output
+  Why: When running via GUI, no JSONL entries are written because the GUI overrides Write-Log without the JSONL block.
+  Where: `DisableDefender.GUI.ps1` lines 83-93.
+
+- [ ] P2 - GUI system tray notification on run completion with exit-code color
+  Why: The GUI already has in-app toasts but lacks OS-level notification for background-aware completion.
+  Where: `DisableDefender.GUI.ps1`.
+
+- [ ] P2 - GUI accessibility: AutomationProperties.Name on tiles/buttons, maximize button, status text distinction for colorblind users
+  Why: No screen reader labels, no maximize/restore button, color-only state indicators fail WCAG.
+  Where: `DisableDefender.GUI.ps1` XAML section.
+
+- [ ] P2 - GUI version hardcoded in XAML and file header (v0.0.23 stale)
+  Why: XAML default Text="v0.0.23" shows during initial render; header comment also stale.
+  Where: `DisableDefender.GUI.ps1` lines 3 and 318.
+
+- [ ] P2 - CLI JSON success envelope for Disable/Remove/Restore
+  Why: With -Json, successful operations emit raw status output with no Ok=true wrapper; error path has envelope. Automation cannot parse both consistently.
+  Where: `DisableDefender.ps1` Invoke-SelectedMode.
+
+- [ ] P2 - Invoke-AsSystem still uses cmd.exe despite CHANGELOG v0.0.5 claiming removal
+  Why: Output redirection requires cmd.exe wrapper; CHANGELOG is inaccurate. Low practical risk but misleading documentation.
+  Where: `Private/Invoke-AsSystem.ps1` line 18-19; `CHANGELOG.md` v0.0.5 Security section.
+
+- [ ] P2 - ACL backup uses Import-Clixml (deserialization of untrusted .NET types)
+  Why: If an attacker writes to the hardened runtime directory (race between creation and ACL application), CLIXML allows arbitrary type instantiation at SYSTEM privilege.
+  Where: `Private/Grant-RegKeyControl.ps1` line 80.
+
+- [ ] P3 - Export-DefenderSupportBundle hardcodes health target to Disable
+  Why: After a Remove operation, health shows misleading drift for Remove-only items.
+  Where: `Public/Export-DefenderSupportBundle.ps1` line 61.
+
+- [ ] P3 - Offline bundle generated script: release RegistryKey handles before Dismount
+  Why: PowerShell may hold .NET handles from Get-ItemProperty; hive unload can fail with "access denied."
+  Where: `Public/New-OfflineRemoveBundle.ps1` generated script, Dismount-OfflineHives.
+
+- [ ] P3 - GUI timer/runspace cleanup on window close (EndInvoke not called)
+  Why: Worker AsyncResult without EndInvoke leaks the runspace; exceptions silently swallowed.
+  Where: `DisableDefender.GUI.ps1` window Closed handler.
 
 - [ ] P3 - Portable preset export/import for Defender-adjacent preferences
   Why: O&O ShutUp10++ and privacy tools show value in portable, explainable presets; this project should keep it narrow to Defender AV/MAPS/sample-submission choices.
@@ -79,9 +81,5 @@ Actionable work beyond v0.0.18. Completed work is removed. True blockers live in
   Touches: `Public/Get-DefenderHealth.ps1`, `Private/Set-MpRuntimePrefs.ps1`, `DisableDefender.GUI.ps1`, `README.md`.
   Acceptance: Users can export/import a small JSON preset for supported Defender-adjacent choices; unsupported broad privacy tweaks are rejected with a clear message.
   Complexity: M
-- [ ] P2 - PowerShell App Control and language-mode preflight
-  Why: The GUI and module depend on `Add-Type`, WPF/XAML, dot-sourced functions, and admin registry/service writes; App Control or Constrained Language can fail before the user gets an actionable Defender-specific error.
-  Evidence: RESEARCH.md Security, Privacy, and Reliability; `DisableDefender.GUI.ps1`; `Private/Confirm-Prereqs.ps1`; Microsoft PowerShell language-mode and App Control docs.
-  Touches: `Private/Confirm-Prereqs.ps1`, `DisableDefender.GUI.ps1`, `DisableDefender.ps1`, `Public/Invoke-DisableDefender.ps1`, `Public/Invoke-RemoveDefender.ps1`, `Public/Invoke-RestoreDefender.ps1`, `Tests/DisableDefender.Tests.ps1`, `README.md`.
-  Acceptance: CLI and GUI report FullLanguage/ConstrainedLanguage/App Control status before destructive phases; unsupported language modes fail with signed/offline remediation guidance; tests cover FullLanguage, ConstrainedLanguage, and unknown policy states.
-  Complexity: M
+
+
