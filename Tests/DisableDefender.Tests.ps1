@@ -1194,6 +1194,32 @@ InModuleScope DisableDefender {
 }
 
 InModuleScope DisableDefender {
+    Describe 'Data-driven policy catalog' {
+        It 'catalog is the single source for both write and health' {
+            $catalog = @(Get-DefenderPolicyCatalog)
+            $health  = @(Get-ExpectedPolicyValues)
+
+            $catalog.Count | Should -BeGreaterThan 30
+            $catalog.Count | Should -Be $health.Count
+
+            for ($i = 0; $i -lt $catalog.Count; $i++) {
+                $catalog[$i].Path | Should -Be $health[$i].Path
+                $catalog[$i].Name | Should -Be $health[$i].Name
+                $catalog[$i].Value | Should -Be $health[$i].Value
+            }
+        }
+
+        It 'every catalog entry has Path, Name, and Value' {
+            foreach ($entry in Get-DefenderPolicyCatalog) {
+                $entry.Path | Should -Not -BeNullOrEmpty
+                $entry.Name | Should -Not -BeNullOrEmpty
+                $entry.ContainsKey('Value') | Should -Be $true
+            }
+        }
+    }
+}
+
+InModuleScope DisableDefender {
     Describe 'Third-party AV detection' {
         It 'returns empty when only Windows Defender is registered' {
             Mock Get-CimInstance {

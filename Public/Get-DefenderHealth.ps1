@@ -64,59 +64,7 @@ function Get-ServiceStartForHealth {
 }
 
 function Get-ExpectedPolicyValues {
-    $loggerRoot = 'HKLM:\SYSTEM\CurrentControlSet\Control\WMI\Autologger'
-    $bfpRoot = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender\Features\BehavioralNetworkBlocks\BruteForceProtection'
-    $repRoot = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender\Features\BehavioralNetworkBlocks\RemoteEncryptionProtection'
-
-    return @(
-        @{ Path = $script:PolicyRoot; Name = 'DisableAntiSpyware'; Value = 1 }
-        @{ Path = $script:PolicyRoot; Name = 'DisableAntiVirus'; Value = 1 }
-        @{ Path = $script:PolicyRoot; Name = 'DisableRoutinelyTakingAction'; Value = 1 }
-        @{ Path = $script:PolicyRoot; Name = 'DisableSpecialRunningModes'; Value = 1 }
-        @{ Path = $script:PolicyRoot; Name = 'ServiceKeepAlive'; Value = 0 }
-        @{ Path = $script:PolicyRoot; Name = 'AllowFastServiceStartup'; Value = 0 }
-        @{ Path = $script:PolicyRoot; Name = 'DisableLocalAdminMerge'; Value = 1 }
-        @{ Path = $script:PolicyRoot; Name = 'PUAProtection'; Value = 0 }
-        @{ Path = $script:RealTimeRoot; Name = 'DisableRealtimeMonitoring'; Value = 1 }
-        @{ Path = $script:RealTimeRoot; Name = 'DisableBehaviorMonitoring'; Value = 1 }
-        @{ Path = $script:RealTimeRoot; Name = 'DisableOnAccessProtection'; Value = 1 }
-        @{ Path = $script:RealTimeRoot; Name = 'DisableScanOnRealtimeEnable'; Value = 1 }
-        @{ Path = $script:RealTimeRoot; Name = 'DisableIOAVProtection'; Value = 1 }
-        @{ Path = $script:RealTimeRoot; Name = 'DisableRawWriteNotification'; Value = 1 }
-        @{ Path = $script:RealTimeRoot; Name = 'DisableIntrusionPreventionSystem'; Value = 1 }
-        @{ Path = $script:RealTimeRoot; Name = 'DisableInformationProtectionControl'; Value = 1 }
-        @{ Path = $script:RealTimeRoot; Name = 'LocalSettingOverrideDisableRealtimeMonitoring'; Value = 1 }
-        @{ Path = $script:SpynetRoot; Name = 'SpyNetReporting'; Value = 0 }
-        @{ Path = $script:SpynetRoot; Name = 'SubmitSamplesConsent'; Value = 2 }
-        @{ Path = $script:SpynetRoot; Name = 'DisableBlockAtFirstSeen'; Value = 1 }
-        @{ Path = $script:SpynetRoot; Name = 'LocalSettingOverrideSpynetReporting'; Value = 0 }
-        @{ Path = $script:MpEngineRoot; Name = 'MpEnablePus'; Value = 0 }
-        @{ Path = $script:MpEngineRoot; Name = 'EnableFileHashComputation'; Value = 0 }
-        @{ Path = $script:MpEngineRoot; Name = 'MpCloudBlockLevel'; Value = 0 }
-        @{ Path = $script:MpEngineRoot; Name = 'MpBafsExtendedTimeout'; Value = 0 }
-        @{ Path = $script:NISRoot; Name = 'DisableProtocolRecognition'; Value = 1 }
-        @{ Path = $script:NISIPSRoot; Name = 'DisableSignatureRetirement'; Value = 1 }
-        @{ Path = $script:NISIPSRoot; Name = 'ThrottleDetectionEventsRate'; Value = 10000000 }
-        @{ Path = $script:SignatureRoot; Name = 'ForceUpdateFromMU'; Value = 0 }
-        @{ Path = $script:SignatureRoot; Name = 'DisableScheduledSignatureUpdateOnBattery'; Value = 1 }
-        @{ Path = $script:SignatureRoot; Name = 'RealtimeSignatureDelivery'; Value = 0 }
-        @{ Path = $script:SignatureRoot; Name = 'DisableUpdateOnStartupWithoutEngine'; Value = 1 }
-        @{ Path = $script:ScanRoot; Name = 'DisableRemovableDriveScanning'; Value = 1 }
-        @{ Path = $script:ScanRoot; Name = 'DisableArchiveScanning'; Value = 1 }
-        @{ Path = $script:ScanRoot; Name = 'DisableScanningMappedNetworkDrivesForFullScan'; Value = 1 }
-        @{ Path = $script:ScanRoot; Name = 'DisableScanningNetworkFiles'; Value = 1 }
-        @{ Path = $script:UXRoot; Name = 'Notification_Suppress'; Value = 1 }
-        @{ Path = $script:ReportingRoot; Name = 'DisableEnhancedNotifications'; Value = 1 }
-        @{ Path = $script:ATPRoot; Name = 'ForceDefenderPassiveMode'; Value = 1 }
-        @{ Path = $script:SmartScreen; Name = 'EnableSmartScreen'; Value = 0 }
-        @{ Path = $script:MRTRoot; Name = 'DontOfferThroughWUAU'; Value = 1 }
-        @{ Path = $script:MRTRoot; Name = 'DontReportInfectionInformation'; Value = 1 }
-        @{ Path = $script:MsAntimalware; Name = 'ServiceKeepAlive'; Value = 0 }
-        @{ Path = (Join-Path $loggerRoot 'DefenderApiLogger'); Name = 'Start'; Value = 0 }
-        @{ Path = (Join-Path $loggerRoot 'DefenderAuditLogger'); Name = 'Start'; Value = 0 }
-        @{ Path = $bfpRoot; Name = 'BruteForceProtectionConfiguredState'; Value = 4 }
-        @{ Path = $repRoot; Name = 'RemoteEncryptionProtectionConfiguredState'; Value = 4 }
-    )
+    return @(Get-DefenderPolicyCatalog)
 }
 
 function Add-PolicyHealthItems {

@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.0.34 - 2026-06-30
+
+### Changed
+- Policy definitions consolidated into `Get-DefenderPolicyCatalog` as single source of truth for both writes and health checks.
+- `Set-DefenderPolicy` now iterates the catalog instead of inline `Set-RegValue` calls.
+- `Get-ExpectedPolicyValues` delegates to the same catalog, eliminating drift risk.
+- Pester test verifies every catalog entry appears in both write and health paths.
+- Version metadata is aligned to `0.0.34` across the manifest, scripts, README badge, and changelog.
+
 ## v0.0.33 - 2026-06-30
 
 ### Added
