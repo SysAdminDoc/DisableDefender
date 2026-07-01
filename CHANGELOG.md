@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.0.32 - 2026-06-30
+
+### Added
+- Local release-readiness checker at `tools/Test-ReleaseReadiness.ps1`.
+- Checks: manifest validation, module import, version consistency across 5 locations, Pester tests with optional code coverage, ScriptAnalyzer (when installed), GUI/XAML parse, and release artifact inspection.
+- Coverage output identifies untested files when `-SkipCoverage` is not passed.
+
+### Changed
+- Version metadata is aligned to `0.0.32` across the manifest, scripts, README badge, and changelog.
+
 ## v0.0.31 - 2026-06-30
 
 ### Added
