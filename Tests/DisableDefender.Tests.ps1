@@ -15,6 +15,7 @@ Describe 'Module manifest' {
 
     It 'exports only public commands' {
         $expected = @(
+            'Export-DefenderHtmlReport'
             'Export-DefenderSupportBundle'
             'Get-DefenderComponentStatus'
             'Get-DefenderHealth'
@@ -1189,6 +1190,41 @@ InModuleScope DisableDefender {
             $content | Should -Match 'Task Scheduler'
             $content | Should -Match 'Appx'
             $content | Should -Match 'DISM'
+        }
+    }
+}
+
+InModuleScope DisableDefender {
+    Describe 'Export-DefenderHtmlReport' {
+        It 'produces a valid HTML file with health data' {
+            Mock Get-DefenderHealth {
+                [ordered]@{
+                    Target  = 'Disable'
+                    Summary = [ordered]@{ OK = 2; Drift = 1; Unknown = 0; Total = 3 }
+                    Items   = @(
+                        [PSCustomObject]@{ Category = 'Service'; Name = 'WinDefend'; Expected = 'Disabled'; Actual = 'Disabled'; Status = 'OK' },
+                        [PSCustomObject]@{ Category = 'Policy'; Name = 'DisableAntiSpyware'; Expected = '1'; Actual = '1'; Status = 'OK' },
+                        [PSCustomObject]@{ Category = 'Task'; Name = 'Scheduled Scan'; Expected = 'Disabled'; Actual = 'Ready'; Status = 'Drift' }
+                    )
+                }
+            }
+            Mock Get-DefenderComponentStatus {
+                @([PSCustomObject]@{ Name = 'MsMpEng'; Service = 'WinDefend'; Status = 'Stopped'; PPLStatus = 'None' })
+            }
+
+            $reportPath = Join-Path $TestDrive 'report.html'
+            $result = Export-DefenderHtmlReport -OutputPath $reportPath
+
+            $result.ReportPath | Should -Be $reportPath
+            Test-Path -LiteralPath $reportPath | Should -Be $true
+
+            $content = Get-Content -LiteralPath $reportPath -Raw
+            $content | Should -Match '<!DOCTYPE html>'
+            $content | Should -Match 'DisableDefender Report'
+            $content | Should -Match 'OK=2'
+            $content | Should -Match 'Drift=1'
+            $content | Should -Match 'WinDefend'
+            $content | Should -Match 'MsMpEng'
         }
     }
 }

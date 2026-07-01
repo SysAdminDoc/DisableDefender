@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.0.37 - 2026-06-30
+
+### Added
+- `Export-DefenderHtmlReport` public command: single-file HTML summary with health detail, component status, system info, and Catppuccin Mocha dark styling.
+- Pester coverage for HTML report generation and content validation.
+
+### Changed
+- Module exports now include `Export-DefenderHtmlReport`.
+- Version metadata is aligned to `0.0.37` across the manifest, scripts, README badge, and changelog.
+
 ## v0.0.36 - 2026-06-30
 
 ### Added

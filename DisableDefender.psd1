@@ -1,6 +1,6 @@
 @{
     RootModule        = 'DisableDefender.psm1'
-    ModuleVersion     = '0.0.36'
+    ModuleVersion     = '0.0.37'
     GUID              = 'a7e3f8d1-4b2c-4e9a-b5d6-1c8f2a3e4d5b'
     Author            = 'SysAdminDoc'
     CompanyName       = 'SysAdminDoc'
@@ -19,6 +19,7 @@
         'Invoke-RestoreDefender'
         'New-OfflineRemoveBundle'
         'Export-DefenderSupportBundle'
+        'Export-DefenderHtmlReport'
     )
 
     CmdletsToExport   = @()
@@ -30,7 +31,7 @@
             Tags         = @('Defender', 'Security', 'Windows', 'Disable', 'Remove', 'Restore', 'Firewall')
             LicenseUri   = 'https://github.com/SysAdminDoc/DisableDefender/blob/main/LICENSE'
             ProjectUri   = 'https://github.com/SysAdminDoc/DisableDefender'
-            ReleaseNotes = 'v0.0.36: SecHealthUI LTSC fallback and DISM LTSC package patterns.'
+            ReleaseNotes = 'v0.0.37: Export-DefenderHtmlReport single-file HTML summary.'
         }
     }
 }

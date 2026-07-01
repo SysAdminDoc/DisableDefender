@@ -1,6 +1,6 @@
 # DisableDefender
 
-[![Version](https://img.shields.io/badge/version-0.0.36-blue.svg)](https://github.com/SysAdminDoc/DisableDefender/releases)
+[![Version](https://img.shields.io/badge/version-0.0.37-blue.svg)](https://github.com/SysAdminDoc/DisableDefender/releases)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-0078D6.svg)](https://www.microsoft.com/windows)
 [![PowerShell](https://img.shields.io/badge/powershell-5.1%2B-012456.svg)](https://learn.microsoft.com/powershell)
@@ -134,6 +134,10 @@ Invoke-RestoreDefender -ManifestSelection All
 # Export diagnostic bundle
 Export-DefenderSupportBundle -OutputDirectory C:\Support
 Export-DefenderSupportBundle -IncludeEventLog
+
+# Generate single-file HTML report
+Export-DefenderHtmlReport
+Export-DefenderHtmlReport -OutputPath C:\Reports\defender.html -HealthTarget Remove
 ```
 
 ### Offline Remove (WinRE / secondary OS)

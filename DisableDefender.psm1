@@ -41,6 +41,7 @@ Initialize-DefenderRuntimeDirectory -Path $script:AppDir | Out-Null
 . "$moduleRoot\Public\Invoke-RestoreDefender.ps1"
 . "$moduleRoot\Public\New-OfflineRemoveBundle.ps1"
 . "$moduleRoot\Public\Export-DefenderSupportBundle.ps1"
+. "$moduleRoot\Public\Export-DefenderHtmlReport.ps1"
 
 Export-ModuleMember -Function @(
     'Get-DefenderStatus',
@@ -51,5 +52,6 @@ Export-ModuleMember -Function @(
     'Invoke-RemoveDefender',
     'Invoke-RestoreDefender',
     'New-OfflineRemoveBundle',
-    'Export-DefenderSupportBundle'
+    'Export-DefenderSupportBundle',
+    'Export-DefenderHtmlReport'
 )
