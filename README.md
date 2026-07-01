@@ -1,6 +1,6 @@
 # DisableDefender
 
-[![Version](https://img.shields.io/badge/version-0.0.30-blue.svg)](https://github.com/SysAdminDoc/DisableDefender/releases)
+[![Version](https://img.shields.io/badge/version-0.0.31-blue.svg)](https://github.com/SysAdminDoc/DisableDefender/releases)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-0078D6.svg)](https://www.microsoft.com/windows)
 [![PowerShell](https://img.shields.io/badge/powershell-5.1%2B-012456.svg)](https://learn.microsoft.com/powershell)
@@ -59,6 +59,7 @@ Disable confirmation includes a current-vs-target drift preview before execution
 - **Health mode + Restore verification**: compares current state to Disable/Remove/Restore targets and reports drift for services, policy keys, tasks, Appx, SafeBoot, and MpPreference; Restore ends with a health summary and repair commands when drift remains
 - **Feature-update drift detection**: Disable/Remove record a Defender surface baseline; Health flags changed Windows builds plus unknown Defender-like services, tasks, and packages and prints a reapply plan that preserves firewall and MDE Sense by default
 - **Local release builder**: creates a clean zip, SHA256 file, release metadata JSON, and optional Authenticode signatures when a code-signing certificate is supplied
+- **Support bundle export**: `Export-DefenderSupportBundle` collects logs, phase-state, tripwires, component status, health summary, Windows build info, and optional redacted Defender event-log excerpts into a diagnostic zip without secrets
 - **Offline remove bundle** (`PrepareOffline`): generates a self-contained `Invoke-OfflineDefenderRemove.ps1` that targets an offline Windows volume from WinRE or a secondary OS, bypassing live Tamper Protection by editing dormant registry hives directly; refuses to run against the live system root
 - **Module layout**: `DisableDefender.psd1` / `DisableDefender.psm1` with public commands and private helpers for function-level tests
 - **GUI auto-elevate, silent CLI mode, transcript logging, Safe Mode aware**
@@ -129,6 +130,10 @@ Get-DefenderHealth -Target Disable
 Invoke-DisableDefender -Force -NoRestorePoint
 Invoke-RestoreDefender
 Invoke-RestoreDefender -ManifestSelection All
+
+# Export diagnostic bundle
+Export-DefenderSupportBundle -OutputDirectory C:\Support
+Export-DefenderSupportBundle -IncludeEventLog
 ```
 
 ### Offline Remove (WinRE / secondary OS)

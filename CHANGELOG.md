@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.0.31 - 2026-06-30
+
+### Added
+- `Export-DefenderSupportBundle` public command for diagnostic zip export.
+- Support bundle collects logs, phase-state, tripwires, component status, health summary, surface baseline, and Windows build info.
+- Optional `-IncludeEventLog` flag for redacted Defender event-log excerpts (file paths scrubbed).
+- Secrets excluded by design: no restore manifests, ACL backups, or registry value snapshots.
+- Pester coverage for bundle zip contents and secret exclusion.
+
+### Changed
+- Module exports now include `Export-DefenderSupportBundle`.
+- Version metadata is aligned to `0.0.31` across the manifest, scripts, README badge, and changelog.
+
 ## v0.0.30 - 2026-06-30
 
 ### Added

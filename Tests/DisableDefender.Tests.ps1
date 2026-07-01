@@ -15,6 +15,7 @@ Describe 'Module manifest' {
 
     It 'exports only public commands' {
         $expected = @(
+            'Export-DefenderSupportBundle'
             'Get-DefenderComponentStatus'
             'Get-DefenderHealth'
             'Get-DefenderStatus'
@@ -1188,6 +1189,56 @@ InModuleScope DisableDefender {
             $content | Should -Match 'Task Scheduler'
             $content | Should -Match 'Appx'
             $content | Should -Match 'DISM'
+        }
+    }
+}
+
+InModuleScope DisableDefender {
+    Describe 'Export-DefenderSupportBundle' {
+        It 'produces a zip with summary and health data' {
+            Mock Get-DefenderHealth {
+                [ordered]@{
+                    Target  = 'Disable'
+                    Summary = [ordered]@{ OK = 1; Drift = 0; Unknown = 0; Total = 1 }
+                    Items   = @([PSCustomObject]@{ Category = 'Service'; Name = 'WinDefend'; Expected = 'Disabled'; Actual = 'Disabled'; Status = 'OK' })
+                }
+            }
+            Mock Get-DefenderComponentStatus {
+                @([PSCustomObject]@{ Name = 'MsMpEng'; Service = 'WinDefend'; Status = 'Stopped' })
+            }
+
+            $result = Export-DefenderSupportBundle -OutputDirectory $TestDrive
+
+            $result.ZipPath | Should -Not -BeNullOrEmpty
+            Test-Path -LiteralPath $result.ZipPath | Should -Be $true
+
+            Add-Type -AssemblyName System.IO.Compression.FileSystem
+            $zip = [System.IO.Compression.ZipFile]::OpenRead($result.ZipPath)
+            try {
+                $entries = @($zip.Entries | ForEach-Object { $_.Name })
+                $entries | Should -Contain 'summary.json'
+                $entries | Should -Contain 'health.json'
+                $entries | Should -Contain 'components.json'
+            } finally {
+                $zip.Dispose()
+            }
+        }
+
+        It 'excludes restore manifests and ACL backups from the bundle' {
+            Mock Get-DefenderHealth { [ordered]@{ Target = 'Disable'; Summary = [ordered]@{ OK = 0; Drift = 0; Unknown = 0; Total = 0 }; Items = @() } }
+            Mock Get-DefenderComponentStatus { @() }
+
+            $result = Export-DefenderSupportBundle -OutputDirectory $TestDrive
+
+            Add-Type -AssemblyName System.IO.Compression.FileSystem
+            $zip = [System.IO.Compression.ZipFile]::OpenRead($result.ZipPath)
+            try {
+                $entries = @($zip.Entries | ForEach-Object { $_.Name })
+                $entries | Should -Not -Contain 'restore-manifest.jsonl'
+                $entries | Should -Not -Contain 'acl-backup.clixml'
+            } finally {
+                $zip.Dispose()
+            }
         }
     }
 }
