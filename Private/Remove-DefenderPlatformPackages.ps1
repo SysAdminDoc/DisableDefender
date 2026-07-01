@@ -6,9 +6,12 @@ function Remove-DefenderPlatformPackages {
     $pkgs = @()
     try {
         $pkgs = (dism.exe /Online /Get-Packages /Format:Table 2>&1) -split "`n" |
-                Where-Object { $_ -match 'Windows-Defender|SecurityClient' } |
+                Where-Object { $_ -match 'Windows-Defender|SecurityClient|Defender-Features|Defender-AM-Default' } |
                 ForEach-Object { ($_ -split '\|')[0].Trim() }
     } catch {}
+    if ($pkgs.Count -eq 0) {
+        Write-Log "No Defender DISM packages found (LTSC/Server Core or already removed)." DEBUG
+    }
     foreach ($p in $pkgs) {
         if ([string]::IsNullOrWhiteSpace($p)) { continue }
         if ($WhatIfPreference) { Write-Log "WhatIf: would DISM remove $p" INFO; continue }

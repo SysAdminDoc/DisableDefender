@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.0.36 - 2026-06-30
+
+### Added
+- SecHealthUI LTSC/variant fallback: wildcard Appx search when exact `Microsoft.SecHealthUI` name is absent, multiple deprovisioning marker paths, and graceful degradation on Server Core where Appx cmdlets are unavailable.
+- DISM package removal now matches `Defender-Features` and `Defender-AM-Default` patterns for LTSC editions.
+- Restore-SecHealthUI searches for `*SecHealthUI*` manifests and clears all known deprovisioning markers.
+
+### Changed
+- Version metadata is aligned to `0.0.36` across the manifest, scripts, README badge, and changelog.
+
 ## v0.0.35 - 2026-06-30
 
 ### Added
