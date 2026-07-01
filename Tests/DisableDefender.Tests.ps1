@@ -15,6 +15,7 @@ Describe 'Module manifest' {
 
     It 'exports only public commands' {
         $expected = @(
+            'Compare-DefenderSnapshots'
             'Export-DefenderHtmlReport'
             'Export-DefenderSupportBundle'
             'Get-DefenderComponentStatus'
@@ -25,6 +26,7 @@ Describe 'Module manifest' {
             'Invoke-RestoreDefender'
             'Invoke-SafeModeRemove'
             'New-OfflineRemoveBundle'
+            'Save-DefenderSnapshot'
             'Show-DefenderStatus'
         ) | Sort-Object
         $actual = (Get-Command -Module DisableDefender -CommandType Function).Name | Sort-Object
@@ -1191,6 +1193,45 @@ InModuleScope DisableDefender {
             $content | Should -Match 'Task Scheduler'
             $content | Should -Match 'Appx'
             $content | Should -Match 'DISM'
+        }
+    }
+}
+
+InModuleScope DisableDefender {
+    Describe 'Compare-DefenderSnapshots' {
+        It 'detects changes between two snapshots' {
+            $baseline = [ordered]@{
+                SchemaVersion = 1
+                Timestamp = '2026-06-01T00:00:00.0000000-04:00'
+                Version = '0.0.39'
+                HealthItems = @(
+                    [ordered]@{ Category = 'Service'; Name = 'WinDefend'; Expected = 'Disabled'; Actual = 'Disabled'; Status = 'OK' },
+                    [ordered]@{ Category = 'Policy'; Name = 'DisableAntiSpyware'; Expected = '1'; Actual = '1'; Status = 'OK' }
+                )
+            }
+            $current = [ordered]@{
+                SchemaVersion = 1
+                Timestamp = '2026-06-30T00:00:00.0000000-04:00'
+                Version = '0.0.39'
+                HealthItems = @(
+                    [ordered]@{ Category = 'Service'; Name = 'WinDefend'; Expected = 'Disabled'; Actual = 'Automatic'; Status = 'Drift' },
+                    [ordered]@{ Category = 'Policy'; Name = 'DisableAntiSpyware'; Expected = '1'; Actual = '1'; Status = 'OK' },
+                    [ordered]@{ Category = 'Policy'; Name = 'NewPolicy'; Expected = '1'; Actual = 'absent'; Status = 'Drift' }
+                )
+            }
+
+            $baseFile = Join-Path $TestDrive 'baseline.json'
+            $currFile = Join-Path $TestDrive 'current.json'
+            $baseline | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $baseFile -Encoding UTF8
+            $current | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $currFile -Encoding UTF8
+
+            $result = Compare-DefenderSnapshots -BaselinePath $baseFile -CurrentPath $currFile
+
+            $result.ChangedCount | Should -Be 2
+            $changed = $result.Diffs | Where-Object { $_.Change -eq 'Changed' }
+            $changed.Name | Should -Contain 'WinDefend'
+            $added = $result.Diffs | Where-Object { $_.Change -eq 'Added' }
+            $added.Name | Should -Contain 'NewPolicy'
         }
     }
 }

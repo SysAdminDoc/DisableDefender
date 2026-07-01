@@ -1,6 +1,6 @@
 # DisableDefender
 
-[![Version](https://img.shields.io/badge/version-0.0.38-blue.svg)](https://github.com/SysAdminDoc/DisableDefender/releases)
+[![Version](https://img.shields.io/badge/version-0.0.39-blue.svg)](https://github.com/SysAdminDoc/DisableDefender/releases)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-0078D6.svg)](https://www.microsoft.com/windows)
 [![PowerShell](https://img.shields.io/badge/powershell-5.1%2B-012456.svg)](https://learn.microsoft.com/powershell)
@@ -143,6 +143,12 @@ Export-DefenderHtmlReport -OutputPath C:\Reports\defender.html -HealthTarget Rem
 # Automated Safe Mode Remove (reboot -> Remove -> reboot back)
 Invoke-SafeModeRemove
 Invoke-SafeModeRemove -IncludeMDE -DelaySeconds 30
+
+# Save a state snapshot, then compare later
+Save-DefenderSnapshot -OutputPath C:\Snapshots\before.json
+# ... weeks pass, a feature update lands ...
+Compare-DefenderSnapshots -BaselinePath C:\Snapshots\before.json
+Compare-DefenderSnapshots -BaselinePath before.json -CurrentPath after.json -Json
 ```
 
 ### Offline Remove (WinRE / secondary OS)

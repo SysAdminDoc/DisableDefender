@@ -43,6 +43,7 @@ Initialize-DefenderRuntimeDirectory -Path $script:AppDir | Out-Null
 . "$moduleRoot\Public\New-OfflineRemoveBundle.ps1"
 . "$moduleRoot\Public\Export-DefenderSupportBundle.ps1"
 . "$moduleRoot\Public\Export-DefenderHtmlReport.ps1"
+. "$moduleRoot\Public\Compare-DefenderSnapshots.ps1"
 
 Export-ModuleMember -Function @(
     'Get-DefenderStatus',
@@ -55,5 +56,7 @@ Export-ModuleMember -Function @(
     'Invoke-SafeModeRemove',
     'New-OfflineRemoveBundle',
     'Export-DefenderSupportBundle',
-    'Export-DefenderHtmlReport'
+    'Export-DefenderHtmlReport',
+    'Save-DefenderSnapshot',
+    'Compare-DefenderSnapshots'
 )

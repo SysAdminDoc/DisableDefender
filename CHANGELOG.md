@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.0.39 - 2026-06-30
+
+### Added
+- `Save-DefenderSnapshot` and `Compare-DefenderSnapshots` for side-by-side state diff between snapshots taken weeks apart.
+- Snapshot comparison detects changed, added, and removed health items with before/after values.
+- JSON output via `-Json` flag for automation.
+- Pester coverage for snapshot diff change detection.
+
+### Changed
+- Module exports now include `Save-DefenderSnapshot` and `Compare-DefenderSnapshots`.
+- Version metadata is aligned to `0.0.39` across the manifest, scripts, README badge, and changelog.
+
 ## v0.0.38 - 2026-06-30
 
 ### Added
