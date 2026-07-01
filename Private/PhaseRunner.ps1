@@ -20,7 +20,9 @@ function Save-DefenderPhaseState {
     $path = Get-DefenderPhaseStatePath
     Assert-DefenderRuntimeDirectory -Path (Split-Path -Parent $path)
     $State.Updated = (Get-Date).ToString('o')
-    $State | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $path -Encoding UTF8
+    $tmpPath = "$path.tmp"
+    $State | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $tmpPath -Encoding UTF8
+    Move-Item -LiteralPath $tmpPath -Destination $path -Force
 }
 
 function Get-DefenderPartialState {

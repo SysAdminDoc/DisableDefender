@@ -75,7 +75,10 @@ function Show-Menu {
         '5' { return 'Health' }
         '6' { return 'PrepareOffline' }
         'Q' { return $null }
-        default { return $null }
+        default {
+            Write-Host "  Invalid selection: '$choice'" -ForegroundColor Yellow
+            return $null
+        }
     }
 }
 

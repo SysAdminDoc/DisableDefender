@@ -22,8 +22,8 @@ function Invoke-AsSystem {
         Register-ScheduledTask -TaskName $taskName -Action $action -Principal $principal -Settings $settings -Force -ErrorAction Stop | Out-Null
         Start-ScheduledTask -TaskName $taskName -ErrorAction Stop
         $lastResult = $null
-        for ($i=0; $i -lt 20; $i++) {
-            Start-Sleep -Milliseconds 300
+        for ($i=0; $i -lt 120; $i++) {
+            Start-Sleep -Milliseconds 500
             $info = Get-ScheduledTaskInfo -TaskName $taskName -ErrorAction SilentlyContinue
             if ($info) {
                 $lastResult = [int]$info.LastTaskResult
