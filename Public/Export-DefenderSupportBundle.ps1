@@ -66,6 +66,7 @@ function Export-DefenderSupportBundle {
             $health | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $bundleDir 'health.json') -Encoding UTF8
         } catch {
             $summary.Health = "Error: $($_.Exception.Message)"
+            Write-Log "Support bundle: health collection failed: $($_.Exception.Message)" WARN
         }
 
         try {
@@ -74,6 +75,7 @@ function Export-DefenderSupportBundle {
             $components | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $bundleDir 'components.json') -Encoding UTF8
         } catch {
             $summary.ComponentCount = 0
+            Write-Log "Support bundle: component collection failed: $($_.Exception.Message)" WARN
         }
 
         $runtimeDir = $script:AppDir

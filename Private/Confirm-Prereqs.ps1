@@ -27,7 +27,6 @@ function Test-AppControlPolicy {
 
 function Confirm-LanguageAndAppControl {
     $langMode = Test-LanguageMode
-    Write-Log "PowerShell language mode: $langMode" INFO
 
     $sacStatus = Test-AppControlPolicy
     if ($sacStatus -ne 'Off') {
@@ -35,13 +34,13 @@ function Confirm-LanguageAndAppControl {
     }
 
     if ($langMode -eq 'ConstrainedLanguage') {
-        Write-Log "ConstrainedLanguage mode blocks Add-Type, WPF/XAML, and .NET interop required by this tool." ERROR
+        Write-Log "PowerShell language mode: ConstrainedLanguage -- blocks Add-Type, WPF/XAML, and .NET interop." ERROR
         Write-Log "Remediation: run from FullLanguage mode, sign the scripts with a trusted certificate, or use the offline remove bundle (New-OfflineRemoveBundle) which operates on registry hives directly." WARN
         if (-not $script:ForceMode) {
             throw "ConstrainedLanguage mode is not supported. Use -Force to attempt anyway (may fail on Add-Type/WPF operations)."
         }
     } elseif ($langMode -ne 'FullLanguage') {
-        Write-Log "Unexpected PowerShell language mode: $langMode. This tool requires FullLanguage." WARN
+        Write-Log "PowerShell language mode: $langMode -- unsupported, this tool requires FullLanguage." WARN
         if (-not $script:ForceMode) {
             throw "PowerShell language mode '$langMode' is not supported. Use -Force to attempt anyway."
         }
@@ -97,11 +96,16 @@ function Confirm-Prereqs {
     } else {
         Write-Log "Tamper Protection is OFF." OK
     }
-    $safe = (Get-CimInstance Win32_ComputerSystem).BootupState
-    if ($safe -like '*Fail-safe*') {
-        Write-Log "Running in Safe Mode - service registry edits should succeed." OK
-        $script:InSafeMode = $true
-    } else {
+    try {
+        $safe = (Get-CimInstance Win32_ComputerSystem -ErrorAction Stop).BootupState
+        if ($safe -like '*Fail-safe*') {
+            Write-Log "Running in Safe Mode - service registry edits should succeed." OK
+            $script:InSafeMode = $true
+        } else {
+            $script:InSafeMode = $false
+        }
+    } catch {
+        Write-Log "Could not determine boot state (WMI unavailable). Assuming normal boot." WARN
         $script:InSafeMode = $false
     }
 

@@ -68,7 +68,7 @@ try {
 
     try {
         $action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument "-NoProfile -ExecutionPolicy Bypass -EncodedCommand $encodedScript"
-        $trigger = New-ScheduledTaskTrigger -AtLogOn
+        $trigger = New-ScheduledTaskTrigger -AtStartup
         $principal = New-ScheduledTaskPrincipal -UserId 'S-1-5-18' -RunLevel Highest
         $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable
         Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Force -ErrorAction Stop | Out-Null
@@ -87,6 +87,7 @@ try {
         throw "bcdedit safeboot failed: $result"
     }
     Write-Log "bcdedit safeboot minimal set. Rebooting in $DelaySeconds seconds..." WARN
+    shutdown.exe /r /t $DelaySeconds /c "$script:AppName: rebooting into Safe Mode for Defender Remove" | Out-Null
 
     return [PSCustomObject]@{
         TaskName      = $taskName

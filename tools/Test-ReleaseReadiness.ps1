@@ -121,7 +121,7 @@ try {
             )
             $config.CodeCoverage.Path = $coveragePaths
             $config.CodeCoverage.OutputFormat = 'JaCoCo'
-            $config.CodeCoverage.OutputPath = Join-Path $repoRoot 'coverage.xml'
+            $config.CodeCoverage.OutputPath = Join-Path $env:TEMP 'DisableDefender-coverage.xml'
         }
 
         $results = Invoke-Pester -Configuration $config

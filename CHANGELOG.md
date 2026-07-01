@@ -1,5 +1,24 @@
 # Changelog
 
+## v0.0.40 - 2026-06-30
+
+### Fixed
+- Invoke-SafeModeRemove never actually rebooted: added missing shutdown.exe call. Changed AtLogOn trigger to AtStartup for reliable Safe Mode task execution.
+- Export-DefenderHtmlReport: HTML-encoded all health item and component values (stored XSS prevention). Fixed wrong component property name (Status -> RuntimeStatus). Fixed null-health crash with graceful fallback text. Changed word-break from break-all to overflow-wrap for readable registry paths.
+- Write-Log: unified timestamp capture (single Get-Date call) so text and JSONL logs never diverge. Cached runtime directory check to avoid ACL inspection on every log line. JSONL now respects LogPathOverride directory.
+- Set-RunOptions: reset RuntimeDirectoryVerified cache when log path changes between runs.
+- Confirm-LanguageAndAppControl: removed duplicate language-mode log message.
+- Confirm-Prereqs: wrapped SafeMode CIM query in error handler to prevent unhandled WMI failures from aborting the entire operation.
+- Compare-DefenderSnapshots: added schema validation for baseline/current HealthItems to prevent NullReferenceException on arbitrary JSON input.
+- Export-DefenderSupportBundle: now logs warnings when health or component collection fails instead of silently returning incomplete bundles.
+- Register-RegistryValueUndo: empty catch block replaced with WARN-level log so original value read failures are visible instead of silently recording remove-on-restore.
+- CLI: Show-DefenderStatus no longer called after Restore/Health modes, preventing double JSON output that broke automation output contracts.
+- Test-ReleaseReadiness: coverage.xml now written to TEMP instead of polluting repo root.
+- README: fixed stale -Mode parameter table (added PrepareOffline), fixed -Json description (applies to Status, Health, and errors), updated interactive menu description to include all 6 options.
+
+### Changed
+- Version metadata is aligned to `0.0.40` across the manifest, scripts, README badge, and changelog.
+
 ## v0.0.39 - 2026-06-30
 
 ### Added

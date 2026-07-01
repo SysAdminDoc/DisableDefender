@@ -330,7 +330,9 @@ function Register-RegistryValueUndo {
                 return
             }
         }
-    } catch {}
+    } catch {
+        Write-Log "Could not read original value at ${Path}\${Name} (will record as remove-on-restore): $_" WARN
+    }
 
     Write-RestoreManifestEntry -Phase $Phase -Action 'RemoveRegistryValue' -Target "$Path\$Name" -Data ([ordered]@{
         Path = $Path

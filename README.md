@@ -1,6 +1,6 @@
 # DisableDefender
 
-[![Version](https://img.shields.io/badge/version-0.0.39-blue.svg)](https://github.com/SysAdminDoc/DisableDefender/releases)
+[![Version](https://img.shields.io/badge/version-0.0.40-blue.svg)](https://github.com/SysAdminDoc/DisableDefender/releases)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-0078D6.svg)](https://www.microsoft.com/windows)
 [![PowerShell](https://img.shields.io/badge/powershell-5.1%2B-012456.svg)](https://learn.microsoft.com/powershell)
@@ -86,7 +86,7 @@ Or double-click `DisableDefender.GUI.bat`. Auto-elevates to Administrator.
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\DisableDefender.ps1
 ```
-A menu appears with Disable / Remove / Restore / Status.
+A menu appears with Disable / Remove / Restore / Status / Health / Prepare Offline.
 
 ### CLI
 ```powershell
@@ -175,14 +175,14 @@ The script loads the offline volume's SOFTWARE and SYSTEM registry hives, applie
 ### Parameters
 | Flag | Description |
 |---|---|
-| `-Mode` | `Disable` / `Remove` / `Restore` / `Status` / `Health` |
+| `-Mode` | `Disable` / `Remove` / `Restore` / `Status` / `Health` / `PrepareOffline` |
 | `-Silent` | No console output, no prompts. Requires `-Mode`. |
 | `-NoRestorePoint` | Skip System Restore checkpoint. |
 | `-NoReboot` | Don't auto-reboot at end. |
 | `-Force` | Bypass Tamper Protection / managed-device / Safe Mode abort gates. GUI users must explicitly select the override checkbox. |
 | `-AllowRemoting` | Allow Disable/Remove/Restore inside PSRemoting or PSSession contexts. |
 | `-IncludeMDE` | Also target the MDE `Sense` service. Disabled by default to preserve enterprise EDR visibility. |
-| `-Json` | Emit JSON for `Status`. |
+| `-Json` | Emit JSON output. Applies to `Status`, `Health`, and error envelopes. |
 | `-Only` | Run only matching phase keys. Common keys: `Policies`, `MpPreference`, `Tasks`, `Services`, `Appx`, `DISM`, `SafeBoot`, `ContextMenu`. |
 | `-Skip` | Skip matching phase keys while running the rest of the selected mode. |
 | `-ManifestSelection` | Restore manifest selection for `Restore`: `Newest` (default), `All`, or `Active`. Use `All` after repeated Disable/Remove runs when older undo chains must also be replayed. |

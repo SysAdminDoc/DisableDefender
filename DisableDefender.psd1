@@ -1,6 +1,6 @@
 @{
     RootModule        = 'DisableDefender.psm1'
-    ModuleVersion     = '0.0.39'
+    ModuleVersion     = '0.0.40'
     GUID              = 'a7e3f8d1-4b2c-4e9a-b5d6-1c8f2a3e4d5b'
     Author            = 'SysAdminDoc'
     CompanyName       = 'SysAdminDoc'
@@ -34,7 +34,7 @@
             Tags         = @('Defender', 'Security', 'Windows', 'Disable', 'Remove', 'Restore', 'Firewall')
             LicenseUri   = 'https://github.com/SysAdminDoc/DisableDefender/blob/main/LICENSE'
             ProjectUri   = 'https://github.com/SysAdminDoc/DisableDefender'
-            ReleaseNotes = 'v0.0.39: Side-by-side state diff between Defender snapshots.'
+            ReleaseNotes = 'v0.0.40: Deep engineering audit -- correctness, safety, and UX hardening.'
         }
     }
 }

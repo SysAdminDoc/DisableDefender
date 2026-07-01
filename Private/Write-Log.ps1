@@ -3,16 +3,22 @@ function Write-Log {
         [Parameter(Mandatory)][string]$Message,
         [ValidateSet('INFO','WARN','ERROR','OK','DEBUG')][string]$Level = 'INFO'
     )
-    $stamp = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
+    $now = Get-Date
+    $stamp = $now.ToString('yyyy-MM-dd HH:mm:ss')
     $line  = "[$stamp] [$Level] $Message"
-    Assert-DefenderRuntimeDirectory
+    if (-not $script:RuntimeDirectoryVerified) {
+        Assert-DefenderRuntimeDirectory
+        $script:RuntimeDirectoryVerified = $true
+    }
     $logTarget = if ($script:LogPathOverride) { $script:LogPathOverride }
                  else { Join-Path $script:AppDir "$script:AppName.log" }
     try { Add-Content -LiteralPath $logTarget -Value $line -ErrorAction Stop } catch {}
-    $jsonlTarget = Join-Path $script:AppDir "$script:AppName.jsonl"
+    $jsonlDir = if ($script:LogPathOverride) { Split-Path -Parent $script:LogPathOverride }
+                else { $script:AppDir }
+    $jsonlTarget = Join-Path $jsonlDir "$script:AppName.jsonl"
     try {
         $jsonEntry = [ordered]@{
-            ts    = (Get-Date).ToString('o')
+            ts    = $now.ToString('o')
             level = $Level
             msg   = $Message
         } | ConvertTo-Json -Compress
@@ -61,4 +67,5 @@ function Set-RunOptions {
     $script:SilentMode = [bool]$Silent
     $script:LogPathOverride = if ([string]::IsNullOrWhiteSpace($LogPath)) { $null } else { $LogPath }
     $script:LogCallback = $LogCallback
+    $script:RuntimeDirectoryVerified = $false
 }

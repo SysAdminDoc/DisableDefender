@@ -101,6 +101,9 @@ function Compare-DefenderSnapshots {
         throw "Baseline snapshot not found: $BaselinePath"
     }
     $baseline = Get-Content -Raw -LiteralPath $BaselinePath | ConvertFrom-Json
+    if ($null -eq $baseline.HealthItems) {
+        throw "Baseline snapshot is missing HealthItems: $BaselinePath"
+    }
 
     $current = $null
     if ($CurrentPath) {
@@ -108,6 +111,9 @@ function Compare-DefenderSnapshots {
             throw "Current snapshot not found: $CurrentPath"
         }
         $current = Get-Content -Raw -LiteralPath $CurrentPath | ConvertFrom-Json
+        if ($null -eq $current.HealthItems) {
+            throw "Current snapshot is missing HealthItems: $CurrentPath"
+        }
     } else {
         $tempPath = Join-Path $env:TEMP "dd-snapshot-compare-$([guid]::NewGuid().ToString('N')).json"
         try {

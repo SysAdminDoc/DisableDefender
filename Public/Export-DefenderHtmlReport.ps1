@@ -56,25 +56,32 @@ function Export-DefenderHtmlReport {
                 'Unknown' { 'row-unknown' }
                 default   { '' }
             }
-            $statusRows += "<tr class=`"$rowClass`"><td>$($item.Category)</td><td>$($item.Name)</td><td>$($item.Expected)</td><td>$($item.Actual)</td><td>$($item.Status)</td></tr>`n"
+            $cat = [System.Net.WebUtility]::HtmlEncode([string]$item.Category)
+            $name = [System.Net.WebUtility]::HtmlEncode([string]$item.Name)
+            $exp = [System.Net.WebUtility]::HtmlEncode([string]$item.Expected)
+            $act = [System.Net.WebUtility]::HtmlEncode([string]$item.Actual)
+            $st = [System.Net.WebUtility]::HtmlEncode([string]$item.Status)
+            $statusRows += "<tr class=`"$rowClass`"><td>$cat</td><td>$name</td><td>$exp</td><td>$act</td><td>$st</td></tr>`n"
         }
     }
 
     $componentRows = ''
     foreach ($c in $components) {
-        $componentRows += "<tr><td>$($c.Name)</td><td>$($c.Service)</td><td>$($c.Status)</td>"
-        if ($c.PSObject.Properties.Name -contains 'PPLStatus') {
-            $componentRows += "<td>$($c.PPLStatus)</td>"
-        } else {
-            $componentRows += "<td></td>"
-        }
-        $componentRows += "</tr>`n"
+        $cName = [System.Net.WebUtility]::HtmlEncode([string]$c.Name)
+        $cSvc = [System.Net.WebUtility]::HtmlEncode([string]$c.Service)
+        $cRuntime = [System.Net.WebUtility]::HtmlEncode([string]$c.RuntimeStatus)
+        $cPpl = if ($c.PSObject.Properties.Name -contains 'PPLStatus') {
+            [System.Net.WebUtility]::HtmlEncode([string]$c.PPLStatus)
+        } else { '' }
+        $componentRows += "<tr><td>$cName</td><td>$cSvc</td><td>$cRuntime</td><td>$cPpl</td></tr>`n"
     }
 
     $summaryText = ''
+    $summaryHtml = 'Health data unavailable.'
     if ($health -and $health.Summary) {
         $s = $health.Summary
         $summaryText = "OK=$($s.OK) Drift=$($s.Drift) Unknown=$($s.Unknown) Total=$($s.Total)"
+        $summaryHtml = "Health summary: <span class=`"ok`">OK=$($s.OK)</span> <span class=`"drift`">Drift=$($s.Drift)</span> <span class=`"unknown`">Unknown=$($s.Unknown)</span> Total=$($s.Total)"
     }
 
     $html = @"
@@ -94,7 +101,7 @@ function Export-DefenderHtmlReport {
   .summary .ok { color: #a6e3a1; } .summary .drift { color: #f38ba8; } .summary .unknown { color: #fab387; }
   table { width: 100%; border-collapse: collapse; margin: 8px 0; }
   th { background: #313244; color: #89b4fa; text-align: left; padding: 8px 10px; font-weight: 600; }
-  td { padding: 6px 10px; border-bottom: 1px solid #313244; font-size: 0.9em; word-break: break-all; }
+  td { padding: 6px 10px; border-bottom: 1px solid #313244; font-size: 0.9em; overflow-wrap: anywhere; }
   .row-ok td:last-child { color: #a6e3a1; }
   .row-drift td:last-child { color: #f38ba8; font-weight: 600; }
   .row-unknown td:last-child { color: #fab387; }
@@ -109,10 +116,7 @@ function Export-DefenderHtmlReport {
 </div>
 
 <div class="summary">
-  Health summary: <span class="ok">OK=$($health.Summary.OK)</span>
-  <span class="drift">Drift=$($health.Summary.Drift)</span>
-  <span class="unknown">Unknown=$($health.Summary.Unknown)</span>
-  Total=$($health.Summary.Total)
+  $summaryHtml
 </div>
 
 <h2>Health Detail</h2>
