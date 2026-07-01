@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.0.33 - 2026-06-30
+
+### Added
+- Third-party AV detection via Security Center WMI; warns when no alternative AV is registered after Disable.
+- Smart App Control re-enable warning when SAC is enforcing (may restore Defender after reboot or feature update).
+- MDE passive-mode detection via `ForceDefenderPassiveMode` policy and `AMRunningMode`; logs Sense preservation notice.
+- Pester coverage for third-party AV filtering and MDE passive-mode detection.
+
+### Changed
+- Prerequisites phase now reports registered third-party AV products and absence of AV protection.
+- Version metadata is aligned to `0.0.33` across the manifest, scripts, README badge, and changelog.
+
 ## v0.0.32 - 2026-06-30
 
 ### Added

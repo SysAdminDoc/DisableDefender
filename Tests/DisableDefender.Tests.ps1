@@ -1194,6 +1194,48 @@ InModuleScope DisableDefender {
 }
 
 InModuleScope DisableDefender {
+    Describe 'Third-party AV detection' {
+        It 'returns empty when only Windows Defender is registered' {
+            Mock Get-CimInstance {
+                @([PSCustomObject]@{ displayName = 'Windows Defender' })
+            } -ParameterFilter { $ClassName -eq 'AntiVirusProduct' }
+
+            $result = @(Get-RegisteredAntiVirusProducts)
+            $result.Count | Should -Be 0
+        }
+
+        It 'returns third-party AV products' {
+            Mock Get-CimInstance {
+                @(
+                    [PSCustomObject]@{ displayName = 'Windows Defender' },
+                    [PSCustomObject]@{ displayName = 'Norton Security' }
+                )
+            } -ParameterFilter { $ClassName -eq 'AntiVirusProduct' }
+
+            $result = @(Get-RegisteredAntiVirusProducts)
+            $result.Count | Should -Be 1
+            $result[0].displayName | Should -Be 'Norton Security'
+        }
+    }
+
+    Describe 'MDE passive-mode detection' {
+        It 'returns true when ForceDefenderPassiveMode policy is set' {
+            Mock Test-Path { $true }
+            Mock Get-ItemProperty { [PSCustomObject]@{ ForceDefenderPassiveMode = 1 } }
+
+            Test-MdePassiveMode | Should -Be $true
+        }
+
+        It 'returns false when no passive-mode indicators exist' {
+            Mock Test-Path { $false }
+            Mock Get-MpComputerStatus { throw 'Not available' }
+
+            Test-MdePassiveMode | Should -Be $false
+        }
+    }
+}
+
+InModuleScope DisableDefender {
     Describe 'Export-DefenderSupportBundle' {
         It 'produces a zip with summary and health data' {
             Mock Get-DefenderHealth {

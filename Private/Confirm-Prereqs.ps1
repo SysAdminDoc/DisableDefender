@@ -50,6 +50,30 @@ function Confirm-LanguageAndAppControl {
     }
 }
 
+function Get-RegisteredAntiVirusProducts {
+    try {
+        $products = @(Get-CimInstance -Namespace 'root/SecurityCenter2' -ClassName 'AntiVirusProduct' -ErrorAction Stop)
+        return @($products | Where-Object { $_.displayName -notmatch 'Windows Defender|Microsoft Defender' })
+    } catch {
+        return @()
+    }
+}
+
+function Test-MdePassiveMode {
+    try {
+        $passivePath = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows Advanced Threat Protection'
+        if (Test-Path -LiteralPath $passivePath) {
+            $val = (Get-ItemProperty -LiteralPath $passivePath -Name 'ForceDefenderPassiveMode' -ErrorAction SilentlyContinue).ForceDefenderPassiveMode
+            if ($val -eq 1) { return $true }
+        }
+    } catch {}
+    try {
+        $mpStatus = Get-MpComputerStatus -ErrorAction Stop
+        if ($mpStatus.AMRunningMode -eq 'Passive Mode') { return $true }
+    } catch {}
+    return $false
+}
+
 function Confirm-Prereqs {
     try {
         $os = Get-CimInstance Win32_OperatingSystem -ErrorAction Stop
@@ -95,5 +119,23 @@ function Confirm-Prereqs {
         if (-not $script:ForceMode) {
             throw "This device is managed ($($managed -join '; ')). Use -Force to proceed anyway."
         }
+    }
+
+    $sacStatus = Test-AppControlPolicy
+    if ($sacStatus -eq 'Enforcing') {
+        Write-Log "Smart App Control is enforcing. It may re-enable Defender components after a reboot or feature update. Consider turning SAC off in Windows Security before disabling Defender." WARN
+    }
+
+    if (Test-MdePassiveMode) {
+        Write-Log "Defender is running in passive mode (MDE/EDR upstream). Sense service will be preserved unless -IncludeMDE is passed." INFO
+    }
+
+    $thirdPartyAV = @(Get-RegisteredAntiVirusProducts)
+    if ($thirdPartyAV.Count -gt 0) {
+        foreach ($av in $thirdPartyAV) {
+            Write-Log "Third-party AV registered: $($av.displayName)" INFO
+        }
+    } else {
+        Write-Log "No third-party AV registered in Security Center. After Disable, this system will have no antivirus protection." WARN
     }
 }
