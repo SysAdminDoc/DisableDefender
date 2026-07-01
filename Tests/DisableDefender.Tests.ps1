@@ -1193,6 +1193,58 @@ InModuleScope DisableDefender {
 }
 
 InModuleScope DisableDefender {
+    Describe 'Language mode and App Control preflight' {
+        BeforeEach {
+            $script:ForceMode = $false
+            Mock Write-Log {}
+        }
+
+        It 'passes in FullLanguage mode' {
+            Mock Test-LanguageMode { 'FullLanguage' }
+            Mock Test-AppControlPolicy { 'Off' }
+
+            { Confirm-LanguageAndAppControl } | Should -Not -Throw
+        }
+
+        It 'blocks ConstrainedLanguage mode without Force' {
+            Mock Test-LanguageMode { 'ConstrainedLanguage' }
+            Mock Test-AppControlPolicy { 'Off' }
+
+            { Confirm-LanguageAndAppControl } | Should -Throw -ExpectedMessage '*ConstrainedLanguage*'
+        }
+
+        It 'allows ConstrainedLanguage mode with Force' {
+            $script:ForceMode = $true
+            Mock Test-LanguageMode { 'ConstrainedLanguage' }
+            Mock Test-AppControlPolicy { 'Off' }
+
+            { Confirm-LanguageAndAppControl } | Should -Not -Throw
+        }
+
+        It 'blocks unknown language modes without Force' {
+            Mock Test-LanguageMode { 'RestrictedLanguage' }
+            Mock Test-AppControlPolicy { 'Off' }
+
+            { Confirm-LanguageAndAppControl } | Should -Throw -ExpectedMessage '*RestrictedLanguage*'
+        }
+
+        It 'logs Smart App Control status when present' {
+            $script:LangLogs = @()
+            Mock Test-LanguageMode { 'FullLanguage' }
+            Mock Test-AppControlPolicy { 'Enforcing' }
+            Mock Write-Log {
+                param($Message, $Level)
+                $script:LangLogs += "$Level|$Message"
+            }
+
+            { Confirm-LanguageAndAppControl } | Should -Not -Throw
+
+            ($script:LangLogs -join "`n") | Should -Match 'WARN\|Smart App Control / App Control: Enforcing'
+        }
+    }
+}
+
+InModuleScope DisableDefender {
     Describe 'Error contract exit-code table' {
         It 'maps Tamper Protection errors to exit code 2' {
             $mapping = Get-DefenderErrorMapping -Message 'Tamper Protection blocks changes. Disable it manually, then retry.'

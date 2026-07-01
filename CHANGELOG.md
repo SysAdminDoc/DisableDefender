@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.0.30 - 2026-06-30
+
+### Added
+- PowerShell language-mode and App Control preflight in `Confirm-Prereqs`.
+- ConstrainedLanguage mode detection with remediation guidance (signing or offline bundle).
+- Smart App Control / App Control for Business status detection and warning.
+- Pester coverage for FullLanguage, ConstrainedLanguage, unknown mode, and SAC status logging.
+
+### Changed
+- Prerequisites phase now checks language mode before Tamper Protection.
+- Version metadata is aligned to `0.0.30` across the manifest, scripts, README badge, and changelog.
+
 ## v0.0.29 - 2026-06-30
 
 ### Added
