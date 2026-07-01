@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.0.38 - 2026-06-30
+
+### Added
+- `Invoke-SafeModeRemove` public command: schedules a one-shot task that boots into Safe Mode, runs `-Mode Remove -Force -Silent`, clears the safeboot BCD flag, and reboots back to normal.
+- Watchdog task registered as fallback to clear the safeboot flag if the Remove script fails.
+- Refuses to schedule if already in Safe Mode (directs user to run Remove directly).
+- Supports `-IncludeMDE`, `-NoRestorePoint`, and `-DelaySeconds` parameters.
+
+### Changed
+- Module exports now include `Invoke-SafeModeRemove`.
+- Version metadata is aligned to `0.0.38` across the manifest, scripts, README badge, and changelog.
+
 ## v0.0.37 - 2026-06-30
 
 ### Added

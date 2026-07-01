@@ -23,6 +23,7 @@ Describe 'Module manifest' {
             'Invoke-DisableDefender'
             'Invoke-RemoveDefender'
             'Invoke-RestoreDefender'
+            'Invoke-SafeModeRemove'
             'New-OfflineRemoveBundle'
             'Show-DefenderStatus'
         ) | Sort-Object

@@ -39,6 +39,7 @@ Initialize-DefenderRuntimeDirectory -Path $script:AppDir | Out-Null
 . "$moduleRoot\Public\Invoke-DisableDefender.ps1"
 . "$moduleRoot\Public\Invoke-RemoveDefender.ps1"
 . "$moduleRoot\Public\Invoke-RestoreDefender.ps1"
+. "$moduleRoot\Public\Invoke-SafeModeRemove.ps1"
 . "$moduleRoot\Public\New-OfflineRemoveBundle.ps1"
 . "$moduleRoot\Public\Export-DefenderSupportBundle.ps1"
 . "$moduleRoot\Public\Export-DefenderHtmlReport.ps1"
@@ -51,6 +52,7 @@ Export-ModuleMember -Function @(
     'Invoke-DisableDefender',
     'Invoke-RemoveDefender',
     'Invoke-RestoreDefender',
+    'Invoke-SafeModeRemove',
     'New-OfflineRemoveBundle',
     'Export-DefenderSupportBundle',
     'Export-DefenderHtmlReport'
