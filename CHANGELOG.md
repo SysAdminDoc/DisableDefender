@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+### Added
+- Reimagined the WPF shell as a safety-first security control center with a command rail, six protection-state cards, component-health and policy-change views, and a compact live-activity panel.
+- Added UI Automation names, keyboard focus treatment, maximize/restore chrome, F5 refresh, and accessible text labels for every status.
+
+### Fixed
+- The GUI now blocks window closure while a privileged operation is active and drains completed runspaces instead of stopping workers abruptly.
+- Minimum-size layouts keep actions, component evidence, and activity output reachable through bounded scrolling instead of overlapping controls.
+- Destructive confirmation defaults keyboard focus to Cancel and separates warning, destructive, and recovery actions visually.
+
 ## v0.0.40 - 2026-06-30
 
 ### Fixed

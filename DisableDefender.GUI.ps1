@@ -1,10 +1,10 @@
 #Requires -Version 5.1
 <#
-    DisableDefender GUI v0.0.23
-    Premium WPF dark interface for the DisableDefender module
+    DisableDefender GUI v0.0.40
+    Safety-first WPF control center for the DisableDefender module
 
     Features:
-      - Catppuccin Mocha dark palette, custom chrome, glassmorphic panels
+      - Graphite/navy operations palette with accessible state hierarchy
       - Live status tiles plus per-component lockdown/PPL dashboard
       - Live policy edit stream with direct, ACL, and SYSTEM method icons
       - Always-on firewall integrity banner with guard-trip flash
@@ -93,49 +93,53 @@ function Write-Log {
 }
 
 # ---------------------------------------------------------------------------
-# XAML - Catppuccin Mocha theme
+# XAML - safety-first graphite control center
 # ---------------------------------------------------------------------------
 [xml]$xaml = @'
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="DisableDefender"
-        Width="1180" Height="760"
-        MinWidth="1000" MinHeight="640"
+        Width="1280" Height="820"
+        MinWidth="1100" MinHeight="700"
         WindowStartupLocation="CenterScreen"
         WindowStyle="None"
         ResizeMode="CanResize"
-        Background="#1e1e2e"
-        FontFamily="Segoe UI">
+        Background="#0B1220"
+        FontFamily="Segoe UI"
+        TextOptions.TextFormattingMode="Display"
+        TextOptions.TextRenderingMode="ClearType"
+        KeyboardNavigation.TabNavigation="Cycle"
+        AutomationProperties.Name="DisableDefender security control center">
 
     <Window.Resources>
-        <!-- Palette -->
-        <SolidColorBrush x:Key="Base"     Color="#1e1e2e"/>
-        <SolidColorBrush x:Key="Mantle"   Color="#181825"/>
-        <SolidColorBrush x:Key="Crust"    Color="#11111b"/>
-        <SolidColorBrush x:Key="Surface0" Color="#313244"/>
-        <SolidColorBrush x:Key="Surface1" Color="#45475a"/>
-        <SolidColorBrush x:Key="Surface2" Color="#585b70"/>
-        <SolidColorBrush x:Key="Overlay0" Color="#6c7086"/>
-        <SolidColorBrush x:Key="Text"     Color="#cdd6f4"/>
-        <SolidColorBrush x:Key="Subtext0" Color="#a6adc8"/>
-        <SolidColorBrush x:Key="Subtext1" Color="#bac2de"/>
-        <SolidColorBrush x:Key="FirewallOkBg"  Color="#14291f"/>
-        <SolidColorBrush x:Key="FirewallBadBg" Color="#3b1f2e"/>
-        <SolidColorBrush x:Key="Red"      Color="#f38ba8"/>
-        <SolidColorBrush x:Key="Maroon"   Color="#eba0ac"/>
-        <SolidColorBrush x:Key="Peach"    Color="#fab387"/>
-        <SolidColorBrush x:Key="Yellow"   Color="#f9e2af"/>
-        <SolidColorBrush x:Key="Green"    Color="#a6e3a1"/>
-        <SolidColorBrush x:Key="Teal"     Color="#94e2d5"/>
-        <SolidColorBrush x:Key="Sky"      Color="#89dceb"/>
-        <SolidColorBrush x:Key="Blue"     Color="#89b4fa"/>
-        <SolidColorBrush x:Key="Lavender" Color="#b4befe"/>
-        <SolidColorBrush x:Key="Mauve"    Color="#cba6f7"/>
-        <SolidColorBrush x:Key="Pink"     Color="#f5c2e7"/>
+        <!-- Graphite/navy palette -->
+        <SolidColorBrush x:Key="Base"     Color="#0B1220"/>
+        <SolidColorBrush x:Key="Mantle"   Color="#101A2A"/>
+        <SolidColorBrush x:Key="Crust"    Color="#070D17"/>
+        <SolidColorBrush x:Key="Surface0" Color="#26354A"/>
+        <SolidColorBrush x:Key="Surface1" Color="#3A4B65"/>
+        <SolidColorBrush x:Key="Surface2" Color="#50627F"/>
+        <SolidColorBrush x:Key="Overlay0" Color="#8492AA"/>
+        <SolidColorBrush x:Key="Text"     Color="#F3F6FB"/>
+        <SolidColorBrush x:Key="Subtext0" Color="#B5C0D2"/>
+        <SolidColorBrush x:Key="Subtext1" Color="#D2D9E5"/>
+        <SolidColorBrush x:Key="FirewallOkBg"  Color="#10271F"/>
+        <SolidColorBrush x:Key="FirewallBadBg" Color="#321923"/>
+        <SolidColorBrush x:Key="Red"      Color="#FF7088"/>
+        <SolidColorBrush x:Key="Maroon"   Color="#F48C9D"/>
+        <SolidColorBrush x:Key="Peach"    Color="#FFB86B"/>
+        <SolidColorBrush x:Key="Yellow"   Color="#FFC857"/>
+        <SolidColorBrush x:Key="Green"    Color="#56D97B"/>
+        <SolidColorBrush x:Key="Teal"     Color="#5AD5C7"/>
+        <SolidColorBrush x:Key="Sky"      Color="#67C8FF"/>
+        <SolidColorBrush x:Key="Blue"     Color="#6EA8FE"/>
+        <SolidColorBrush x:Key="Lavender" Color="#AEBEFF"/>
+        <SolidColorBrush x:Key="Mauve"    Color="#A493FF"/>
+        <SolidColorBrush x:Key="Pink"     Color="#F1A3DB"/>
 
         <!-- Scrollbar dark -->
         <Style TargetType="ScrollBar">
-            <Setter Property="Background" Value="#1e1e2e"/>
+            <Setter Property="Background" Value="#0B1220"/>
             <Setter Property="Width" Value="8"/>
         </Style>
 
@@ -145,10 +149,12 @@ function Write-Log {
             <Setter Property="Background" Value="{StaticResource Surface0}"/>
             <Setter Property="BorderBrush" Value="{StaticResource Surface1}"/>
             <Setter Property="BorderThickness" Value="1"/>
-            <Setter Property="Padding" Value="14,10"/>
+            <Setter Property="Padding" Value="12,9"/>
             <Setter Property="FontSize" Value="13"/>
             <Setter Property="Cursor" Value="Hand"/>
             <Setter Property="HorizontalContentAlignment" Value="Center"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+            <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
@@ -156,17 +162,23 @@ function Write-Log {
                                 Background="{TemplateBinding Background}"
                                 BorderBrush="{TemplateBinding BorderBrush}"
                                 BorderThickness="{TemplateBinding BorderThickness}"
-                                CornerRadius="8"
+                                CornerRadius="7"
                                 SnapsToDevicePixels="True">
-                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" Margin="{TemplateBinding Padding}"/>
+                            <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                              VerticalAlignment="{TemplateBinding VerticalContentAlignment}"
+                                              Margin="{TemplateBinding Padding}"/>
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="bd" Property="Background" Value="#45475a"/>
-                                <Setter TargetName="bd" Property="BorderBrush" Value="#89b4fa"/>
+                                <Setter TargetName="bd" Property="Background" Value="#31415A"/>
+                                <Setter TargetName="bd" Property="BorderBrush" Value="#6EA8FE"/>
                             </Trigger>
                             <Trigger Property="IsPressed" Value="True">
-                                <Setter TargetName="bd" Property="Background" Value="#585b70"/>
+                                <Setter TargetName="bd" Property="Background" Value="#42536F"/>
+                            </Trigger>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="bd" Property="BorderBrush" Value="#AEBEFF"/>
+                                <Setter TargetName="bd" Property="BorderThickness" Value="2"/>
                             </Trigger>
                             <Trigger Property="IsEnabled" Value="False">
                                 <Setter TargetName="bd" Property="Opacity" Value="0.4"/>
@@ -179,25 +191,27 @@ function Write-Log {
 
         <!-- Primary action button (bigger, accent) -->
         <Style x:Key="PrimaryAction" TargetType="Button" BasedOn="{StaticResource BaseButton}">
-            <Setter Property="Padding" Value="18,14"/>
+            <Setter Property="Padding" Value="14,11"/>
             <Setter Property="FontSize" Value="14"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
             <Setter Property="HorizontalAlignment" Value="Stretch"/>
-            <Setter Property="Margin" Value="0,0,0,10"/>
+            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+            <Setter Property="MinHeight" Value="50"/>
+            <Setter Property="Margin" Value="0,0,0,8"/>
         </Style>
 
         <!-- Danger action -->
         <Style x:Key="DangerAction" TargetType="Button" BasedOn="{StaticResource PrimaryAction}">
-            <Setter Property="Background" Value="#3b1f2e"/>
-            <Setter Property="BorderBrush" Value="#f38ba8"/>
-            <Setter Property="Foreground" Value="#f38ba8"/>
+            <Setter Property="Background" Value="#2D1821"/>
+            <Setter Property="BorderBrush" Value="#FF7088"/>
+            <Setter Property="Foreground" Value="#FF8DA1"/>
         </Style>
 
         <!-- Success action -->
         <Style x:Key="SuccessAction" TargetType="Button" BasedOn="{StaticResource PrimaryAction}">
-            <Setter Property="Background" Value="#1e3329"/>
-            <Setter Property="BorderBrush" Value="#a6e3a1"/>
-            <Setter Property="Foreground" Value="#a6e3a1"/>
+            <Setter Property="Background" Value="#14281D"/>
+            <Setter Property="BorderBrush" Value="#56D97B"/>
+            <Setter Property="Foreground" Value="#71E18E"/>
         </Style>
 
         <!-- Title bar icon button -->
@@ -247,16 +261,16 @@ function Write-Log {
             <Setter Property="Background" Value="{StaticResource Mantle}"/>
             <Setter Property="BorderBrush" Value="{StaticResource Surface0}"/>
             <Setter Property="BorderThickness" Value="1"/>
-            <Setter Property="CornerRadius" Value="10"/>
-            <Setter Property="Padding" Value="16"/>
-            <Setter Property="Margin" Value="6"/>
+            <Setter Property="CornerRadius" Value="8"/>
+            <Setter Property="Padding" Value="15"/>
+            <Setter Property="Margin" Value="5"/>
         </Style>
 
         <!-- Section header -->
         <Style x:Key="SectionHeader" TargetType="TextBlock">
             <Setter Property="FontSize" Value="11"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
-            <Setter Property="Foreground" Value="{StaticResource Subtext0}"/>
+            <Setter Property="Foreground" Value="{StaticResource Subtext1}"/>
             <Setter Property="Margin" Value="0,0,0,10"/>
             <Setter Property="Text" Value=""/>
         </Style>
@@ -269,6 +283,45 @@ function Write-Log {
             <Setter Property="BorderThickness" Value="1"/>
             <Setter Property="Padding" Value="8"/>
             <Setter Property="CaretBrush" Value="{StaticResource Text}"/>
+        </Style>
+
+        <!-- Accessible dark checkbox -->
+        <Style TargetType="CheckBox">
+            <Setter Property="Foreground" Value="{StaticResource Subtext1}"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="CheckBox">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <Border x:Name="checkBox" Width="18" Height="18" CornerRadius="3" Background="{StaticResource Crust}"
+                                    BorderBrush="{StaticResource Surface2}" BorderThickness="1" VerticalAlignment="Center">
+                                <Path x:Name="checkMark" Data="M3,8 L7,12 L15,4" Stroke="{StaticResource Base}" StrokeThickness="2"
+                                      StrokeStartLineCap="Round" StrokeEndLineCap="Round" Visibility="Collapsed"/>
+                            </Border>
+                            <ContentPresenter Grid.Column="1" Margin="9,0,0,0" VerticalAlignment="Center"/>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="checkBox" Property="Background" Value="{StaticResource Red}"/>
+                                <Setter TargetName="checkBox" Property="BorderBrush" Value="{StaticResource Red}"/>
+                                <Setter TargetName="checkMark" Property="Visibility" Value="Visible"/>
+                            </Trigger>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="checkBox" Property="BorderBrush" Value="{StaticResource Lavender}"/>
+                                <Setter TargetName="checkBox" Property="BorderThickness" Value="2"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.45"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
         </Style>
 
         <!-- RichTextBox dark for log -->
@@ -286,7 +339,7 @@ function Write-Log {
         <!-- Progress bar -->
         <Style TargetType="ProgressBar">
             <Setter Property="Background" Value="{StaticResource Surface0}"/>
-            <Setter Property="Foreground" Value="{StaticResource Mauve}"/>
+            <Setter Property="Foreground" Value="{StaticResource Blue}"/>
             <Setter Property="Height" Value="4"/>
             <Setter Property="BorderThickness" Value="0"/>
         </Style>
@@ -295,7 +348,7 @@ function Write-Log {
     <Border CornerRadius="0" Background="{StaticResource Base}" BorderBrush="{StaticResource Surface0}" BorderThickness="1">
         <Grid>
             <Grid.RowDefinitions>
-                <RowDefinition Height="44"/>    <!-- title bar -->
+                <RowDefinition Height="52"/>    <!-- title bar -->
                 <RowDefinition Height="Auto"/>  <!-- tamper banner -->
                 <RowDefinition Height="Auto"/>  <!-- firewall banner -->
                 <RowDefinition Height="*"/>     <!-- body -->
@@ -303,53 +356,65 @@ function Write-Log {
             </Grid.RowDefinitions>
 
             <!-- ============ TITLE BAR ============ -->
-            <Border x:Name="titleBar" Grid.Row="0" Background="{StaticResource Mantle}" BorderBrush="{StaticResource Surface0}" BorderThickness="0,0,0,1">
+            <Border x:Name="titleBar" Grid.Row="0" Background="#0C1524" BorderBrush="{StaticResource Surface0}" BorderThickness="0,0,0,1">
                 <Grid>
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="Auto"/>
                         <ColumnDefinition Width="*"/>
                         <ColumnDefinition Width="Auto"/>
                     </Grid.ColumnDefinitions>
-                    <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="16,0,0,0">
-                        <Border Width="26" Height="26" CornerRadius="6" Background="#f38ba8">
-                            <TextBlock Text="D" Foreground="White" FontWeight="Bold" FontSize="14" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                        </Border>
-                        <TextBlock Text="DisableDefender" Foreground="{StaticResource Text}" FontSize="14" FontWeight="SemiBold" Margin="10,0,0,0" VerticalAlignment="Center"/>
-                        <TextBlock x:Name="versionText" Text="v0.0.23" Foreground="{StaticResource Overlay0}" FontSize="11" Margin="8,2,0,0" VerticalAlignment="Center"/>
+                    <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="18,0,0,0">
+                        <Viewbox Width="26" Height="26" Margin="0,0,10,0" AutomationProperties.Name="DisableDefender shield">
+                            <Grid Width="24" Height="24">
+                                <Path Data="M12,1.5 L21,5.1 L21,11.1 C21,16.7 17.4,20.7 12,22.7 C6.6,20.7 3,16.7 3,11.1 L3,5.1 Z"
+                                      Fill="{StaticResource Text}"/>
+                                <TextBlock Text="D" Foreground="{StaticResource Base}" FontWeight="Bold" FontSize="10.5"
+                                           HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0,0,0,1"/>
+                            </Grid>
+                        </Viewbox>
+                        <TextBlock Text="DisableDefender" Foreground="{StaticResource Text}" FontSize="15" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                        <TextBlock x:Name="versionText" Text="v0.0.40" Foreground="{StaticResource Overlay0}" FontSize="11" Margin="10,2,0,0" VerticalAlignment="Center"/>
                     </StackPanel>
                     <StackPanel Grid.Column="2" Orientation="Horizontal">
-                        <Button x:Name="btnMin" Style="{StaticResource ChromeButton}" Content="&#xE921;" FontFamily="Segoe MDL2 Assets" Foreground="{StaticResource Text}" ToolTip="Minimize"/>
-                        <Button x:Name="btnClose" Style="{StaticResource CloseButton}" Content="&#xE8BB;" FontFamily="Segoe MDL2 Assets" Foreground="{StaticResource Text}" ToolTip="Close"/>
+                        <Button x:Name="btnMin" Style="{StaticResource ChromeButton}" Content="&#xE921;" FontFamily="Segoe MDL2 Assets"
+                                Foreground="{StaticResource Subtext1}" ToolTip="Minimize" AutomationProperties.Name="Minimize window"/>
+                        <Button x:Name="btnMax" Style="{StaticResource ChromeButton}" Content="&#xE922;" FontFamily="Segoe MDL2 Assets"
+                                Foreground="{StaticResource Subtext1}" ToolTip="Maximize" AutomationProperties.Name="Maximize window"/>
+                        <Button x:Name="btnClose" Style="{StaticResource CloseButton}" Content="&#xE8BB;" FontFamily="Segoe MDL2 Assets"
+                                Foreground="{StaticResource Subtext1}" ToolTip="Close" AutomationProperties.Name="Close window"/>
                     </StackPanel>
                 </Grid>
             </Border>
 
             <!-- ============ TAMPER PROTECTION BANNER ============ -->
-            <Border x:Name="tamperBanner" Grid.Row="1" Background="#3b1f2e" BorderBrush="#f38ba8" BorderThickness="0,0,0,1" Padding="16,10" Visibility="Collapsed">
+            <Border x:Name="tamperBanner" Grid.Row="1" Background="{StaticResource FirewallBadBg}" BorderBrush="{StaticResource Red}"
+                    BorderThickness="0,0,0,1" Padding="20,11" Visibility="Collapsed"
+                    AutomationProperties.Name="Tamper Protection warning">
                 <Grid>
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*"/>
                         <ColumnDefinition Width="Auto"/>
                     </Grid.ColumnDefinitions>
                     <StackPanel Grid.Column="0" Orientation="Vertical">
-                        <TextBlock Text="Tamper Protection is ON" FontWeight="SemiBold" Foreground="{StaticResource Red}" FontSize="13"/>
-                        <TextBlock Text="Disable Tamper Protection in Windows Security first. No scripted bypass exists on 24H2+." Foreground="{StaticResource Subtext1}" FontSize="11" Margin="0,2,0,0"/>
+                        <TextBlock Text="Tamper Protection is blocking changes" FontWeight="SemiBold" Foreground="{StaticResource Red}" FontSize="13"/>
+                        <TextBlock Text="Turn it off in Windows Security before continuing. DisableDefender will not attempt an unsupported bypass." Foreground="{StaticResource Subtext1}" FontSize="11" Margin="0,2,0,0"/>
                     </StackPanel>
                     <Button x:Name="btnOpenSecurity" Grid.Column="1" Style="{StaticResource BaseButton}" Content="Open Windows Security" Padding="12,6" FontSize="12"/>
                 </Grid>
             </Border>
 
             <!-- ============ FIREWALL INTEGRITY BANNER ============ -->
-            <Border x:Name="firewallBanner" Grid.Row="2" Background="{StaticResource FirewallOkBg}" BorderBrush="{StaticResource Green}" BorderThickness="0,0,0,1" Padding="16,8">
+            <Border x:Name="firewallBanner" Grid.Row="2" Margin="0" Background="{StaticResource FirewallOkBg}" BorderBrush="{StaticResource Green}"
+                    BorderThickness="0,0,0,1" Padding="20,10" AutomationProperties.Name="Firewall integrity status">
                 <Grid>
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="Auto"/>
                         <ColumnDefinition Width="*"/>
                     </Grid.ColumnDefinitions>
-                    <Ellipse x:Name="firewallBannerDot" Grid.Column="0" Width="9" Height="9" Fill="{StaticResource Green}" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                    <Ellipse x:Name="firewallBannerDot" Grid.Column="0" Width="10" Height="10" Fill="{StaticResource Green}" VerticalAlignment="Center" Margin="0,0,12,0"/>
                     <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                        <TextBlock x:Name="firewallBannerTitle" Text="Firewall integrity OK" FontWeight="SemiBold" Foreground="{StaticResource Green}" FontSize="12" VerticalAlignment="Center"/>
-                        <TextBlock x:Name="firewallBannerText" Text="mpssvc and BFE guarded; firewall profiles enabled" Foreground="{StaticResource Subtext1}" FontSize="11" Margin="12,0,0,0" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                        <TextBlock x:Name="firewallBannerTitle" Text="Firewall integrity protected" FontWeight="SemiBold" Foreground="{StaticResource Green}" FontSize="12.5" VerticalAlignment="Center"/>
+                        <TextBlock x:Name="firewallBannerText" Text="mpssvc and BFE guarded; firewall profiles enabled" Foreground="{StaticResource Subtext1}" FontSize="11.5" Margin="14,0,0,0" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
                     </StackPanel>
                 </Grid>
             </Border>
@@ -357,7 +422,7 @@ function Write-Log {
             <!-- ============ BODY ============ -->
             <Grid Grid.Row="3">
                 <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="280"/>
+                    <ColumnDefinition Width="252"/>
                     <ColumnDefinition Width="*"/>
                 </Grid.ColumnDefinitions>
 
@@ -371,47 +436,118 @@ function Write-Log {
                         </Grid.RowDefinitions>
 
                         <!-- Overall status indicator -->
-                        <Border Grid.Row="0" Margin="16,20,16,10" Padding="14" CornerRadius="10" Background="{StaticResource Base}" BorderBrush="{StaticResource Surface0}" BorderThickness="1">
-                            <StackPanel>
-                                <TextBlock Text="OVERALL" Style="{StaticResource SectionHeader}"/>
-                                <StackPanel Orientation="Horizontal">
-                                    <Ellipse x:Name="overallDot" Width="14" Height="14" Fill="{StaticResource Overlay0}" VerticalAlignment="Center"/>
-                                    <TextBlock x:Name="overallLabel" Text="Checking..." Margin="10,0,0,0" Foreground="{StaticResource Text}" FontSize="16" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                        <StackPanel Grid.Row="0" Margin="18,22,18,10">
+                            <TextBlock Text="SECURITY STATE" Style="{StaticResource SectionHeader}"/>
+                            <Border Padding="15" CornerRadius="8" Background="{StaticResource Base}" BorderBrush="{StaticResource Surface0}"
+                                    BorderThickness="1" AutomationProperties.Name="Overall Defender state">
+                                <StackPanel>
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="42"/>
+                                            <ColumnDefinition Width="*"/>
+                                        </Grid.ColumnDefinitions>
+                                        <Border Grid.Column="0" Width="34" Height="38" CornerRadius="7" Background="#172338"
+                                                BorderBrush="{StaticResource Surface1}" BorderThickness="1">
+                                            <TextBlock Text="&#xE83D;" FontFamily="Segoe MDL2 Assets" Foreground="{StaticResource Lavender}"
+                                                       FontSize="19" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                        </Border>
+                                        <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                            <StackPanel Orientation="Horizontal">
+                                                <Ellipse x:Name="overallDot" Width="11" Height="11" Fill="{StaticResource Overlay0}" VerticalAlignment="Center"/>
+                                                <TextBlock x:Name="overallLabel" Text="CHECKING" Margin="9,0,0,0" Foreground="{StaticResource Text}"
+                                                           FontSize="16" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                                            </StackPanel>
+                                            <TextBlock x:Name="overallSubLabel" Text="Reading Defender state" Foreground="{StaticResource Subtext0}"
+                                                       FontSize="11" Margin="0,4,0,0" TextWrapping="Wrap"/>
+                                        </StackPanel>
+                                    </Grid>
+                                    <Border Margin="0,14,0,0" Padding="0,11,0,0" BorderBrush="{StaticResource Surface0}" BorderThickness="0,1,0,0">
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock x:Name="railFirewallIcon" Text="&#xE83D;" FontFamily="Segoe MDL2 Assets" Foreground="{StaticResource Overlay0}" FontSize="15" VerticalAlignment="Center"/>
+                                            <TextBlock x:Name="railFirewallText" Text="Checking Firewall boundary" Foreground="{StaticResource Subtext1}" FontSize="11.5" Margin="9,0,0,0" VerticalAlignment="Center"/>
+                                        </StackPanel>
+                                    </Border>
                                 </StackPanel>
-                                <TextBlock x:Name="overallSubLabel" Text="" Foreground="{StaticResource Subtext0}" FontSize="11" Margin="0,4,0,0"/>
-                            </StackPanel>
-                        </Border>
-
-                        <!-- Actions -->
-                        <StackPanel Grid.Row="1" Margin="16,14,16,0">
-                            <TextBlock Text="ACTIONS" Style="{StaticResource SectionHeader}"/>
-                            <Button x:Name="btnDisable" Style="{StaticResource PrimaryAction}" Content="Disable Defender"/>
-                            <Button x:Name="btnRemove"  Style="{StaticResource DangerAction}"  Content="Full Remove"/>
-                            <Button x:Name="btnRestore" Style="{StaticResource SuccessAction}" Content="Restore Defender"/>
-                            <Button x:Name="btnRefresh" Style="{StaticResource PrimaryAction}" Content="Refresh Status"/>
+                            </Border>
                         </StackPanel>
 
+                        <!-- Actions -->
+                        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                            <StackPanel Margin="18,12,18,0">
+                                <TextBlock Text="ACTIONS" Style="{StaticResource SectionHeader}"/>
+                                <Button x:Name="btnDisable" Style="{StaticResource PrimaryAction}" AutomationProperties.Name="Disable Defender">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="28"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="&#xE83D;" FontFamily="Segoe MDL2 Assets" Foreground="{StaticResource Blue}" FontSize="17" VerticalAlignment="Center"/>
+                                    <TextBlock Grid.Column="1" Text="Disable Defender" VerticalAlignment="Center"/>
+                                    <TextBlock Grid.Column="2" Text="&#xE76C;" FontFamily="Segoe MDL2 Assets" Foreground="{StaticResource Overlay0}" FontSize="11" VerticalAlignment="Center"/>
+                                </Grid>
+                            </Button>
+                            <Button x:Name="btnRemove" Style="{StaticResource DangerAction}" AutomationProperties.Name="Full Remove">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="28"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="&#xE74D;" FontFamily="Segoe MDL2 Assets" Foreground="{StaticResource Red}" FontSize="17" VerticalAlignment="Center"/>
+                                    <TextBlock Grid.Column="1" Text="Full Remove" VerticalAlignment="Center"/>
+                                    <TextBlock Grid.Column="2" Text="&#xE76C;" FontFamily="Segoe MDL2 Assets" Foreground="{StaticResource Red}" FontSize="11" VerticalAlignment="Center"/>
+                                </Grid>
+                            </Button>
+                            <Button x:Name="btnRestore" Style="{StaticResource SuccessAction}" AutomationProperties.Name="Restore Defender">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="28"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="&#xE777;" FontFamily="Segoe MDL2 Assets" Foreground="{StaticResource Green}" FontSize="17" VerticalAlignment="Center"/>
+                                    <TextBlock Grid.Column="1" Text="Restore Defender" VerticalAlignment="Center"/>
+                                    <TextBlock Grid.Column="2" Text="&#xE76C;" FontFamily="Segoe MDL2 Assets" Foreground="{StaticResource Green}" FontSize="11" VerticalAlignment="Center"/>
+                                </Grid>
+                            </Button>
+                            <Button x:Name="btnRefresh" Style="{StaticResource PrimaryAction}" AutomationProperties.Name="Refresh security status">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="28"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="&#xE72C;" FontFamily="Segoe MDL2 Assets" Foreground="{StaticResource Lavender}" FontSize="17" VerticalAlignment="Center"/>
+                                    <TextBlock Grid.Column="1" Text="Refresh status" VerticalAlignment="Center"/>
+                                    <TextBlock Grid.Column="2" Text="F5" Foreground="{StaticResource Overlay0}" FontSize="10" VerticalAlignment="Center"/>
+                                </Grid>
+                                </Button>
+                            </StackPanel>
+                        </ScrollViewer>
+
                         <!-- System info -->
-                        <Border Grid.Row="2" Margin="16,0,16,16" Padding="14" CornerRadius="10" Background="{StaticResource Base}" BorderBrush="{StaticResource Surface0}" BorderThickness="1">
+                        <Border Grid.Row="2" Margin="18,0,18,18" Padding="14" CornerRadius="8" Background="{StaticResource Base}" BorderBrush="{StaticResource Surface0}"
+                                BorderThickness="1" AutomationProperties.Name="System context">
                             <StackPanel>
-                                <TextBlock Text="SYSTEM" Style="{StaticResource SectionHeader}"/>
-                                <Grid Margin="0,0,0,4">
+                                <TextBlock Text="SYSTEM CONTEXT" Style="{StaticResource SectionHeader}"/>
+                                <Grid Margin="0,0,0,6">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*"/>
                                         <ColumnDefinition Width="Auto"/>
                                     </Grid.ColumnDefinitions>
-                                    <TextBlock Grid.Column="0" Text="OS Build" Foreground="{StaticResource Subtext0}" FontSize="11"/>
-                                    <TextBlock Grid.Column="1" x:Name="sysOsText" Text="-" Foreground="{StaticResource Text}" FontSize="11"/>
+                                    <TextBlock Grid.Column="0" Text="OS build" Foreground="{StaticResource Subtext0}" FontSize="11"/>
+                                    <TextBlock Grid.Column="1" x:Name="sysOsText" Text="-" Foreground="{StaticResource Subtext1}" FontSize="11"/>
                                 </Grid>
-                                <Grid Margin="0,0,0,4">
+                                <Grid Margin="0,0,0,6">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*"/>
                                         <ColumnDefinition Width="Auto"/>
                                     </Grid.ColumnDefinitions>
-                                    <TextBlock Grid.Column="0" Text="Safe Mode" Foreground="{StaticResource Subtext0}" FontSize="11"/>
-                                    <TextBlock Grid.Column="1" x:Name="sysSafeText" Text="-" Foreground="{StaticResource Text}" FontSize="11"/>
+                                    <TextBlock Grid.Column="0" Text="Safe mode" Foreground="{StaticResource Subtext0}" FontSize="11"/>
+                                    <TextBlock Grid.Column="1" x:Name="sysSafeText" Text="-" Foreground="{StaticResource Subtext1}" FontSize="11"/>
                                 </Grid>
-                                <Grid Margin="0,0,0,4">
+                                <Grid Margin="0,0,0,6">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*"/>
                                         <ColumnDefinition Width="Auto"/>
@@ -424,8 +560,8 @@ function Write-Log {
                                         <ColumnDefinition Width="*"/>
                                         <ColumnDefinition Width="Auto"/>
                                     </Grid.ColumnDefinitions>
-                                    <TextBlock Grid.Column="0" Text="Tamper Prot." Foreground="{StaticResource Subtext0}" FontSize="11"/>
-                                    <TextBlock Grid.Column="1" x:Name="sysTamperText" Text="-" Foreground="{StaticResource Text}" FontSize="11"/>
+                                    <TextBlock Grid.Column="0" Text="Tamper protection" Foreground="{StaticResource Subtext0}" FontSize="11"/>
+                                    <TextBlock Grid.Column="1" x:Name="sysTamperText" Text="-" Foreground="{StaticResource Subtext1}" FontSize="11"/>
                                 </Grid>
                             </StackPanel>
                         </Border>
@@ -435,13 +571,32 @@ function Write-Log {
                 <!-- RIGHT PANE -->
                 <Grid Grid.Column="1">
                     <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>   <!-- workspace heading -->
                         <RowDefinition Height="Auto"/>   <!-- tiles -->
-                        <RowDefinition Height="Auto"/>   <!-- component dashboard -->
-                        <RowDefinition Height="*"/>      <!-- log -->
+                        <RowDefinition Height="*"/>      <!-- component dashboard -->
+                        <RowDefinition Height="112"/>    <!-- log -->
                     </Grid.RowDefinitions>
 
+                    <!-- Workspace heading -->
+                    <Grid Grid.Row="0" Margin="20,18,20,5">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <Border Grid.Column="0" Width="42" Height="42" CornerRadius="8" Background="#172338"
+                                BorderBrush="{StaticResource Surface0}" BorderThickness="1" Margin="0,0,13,0">
+                            <TextBlock Text="&#xE83D;" FontFamily="Segoe MDL2 Assets" Foreground="{StaticResource Lavender}" FontSize="22"
+                                       HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                            <TextBlock Text="Security Control Center" Foreground="{StaticResource Text}" FontSize="20" FontWeight="SemiBold"/>
+                            <TextBlock Text="Monitor Defender state, verify safety boundaries, and recover with confidence."
+                                       Foreground="{StaticResource Subtext0}" FontSize="11.5" Margin="0,3,0,0"/>
+                        </StackPanel>
+                    </Grid>
+
                     <!-- Status tiles grid -->
-                    <Grid Grid.Row="0" Margin="14,14,14,6">
+                    <Grid Grid.Row="1" Margin="15,4,15,7">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*"/>
                             <ColumnDefinition Width="*"/>
@@ -453,130 +608,210 @@ function Write-Log {
                         </Grid.RowDefinitions>
 
                         <!-- Tile: Antivirus -->
-                        <Border Grid.Row="0" Grid.Column="0" Style="{StaticResource Tile}">
+                        <Border Grid.Row="0" Grid.Column="0" Style="{StaticResource Tile}" AutomationProperties.Name="Antivirus status">
                             <StackPanel>
-                                <TextBlock Text="ANTIVIRUS ENGINE" Style="{StaticResource SectionHeader}"/>
+                                <Grid Margin="0,0,0,9">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="26"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="&#xE83D;" FontFamily="Segoe MDL2 Assets" Foreground="{StaticResource Lavender}" FontSize="17"/>
+                                    <TextBlock Grid.Column="1" Text="Antivirus" Foreground="{StaticResource Text}" FontWeight="SemiBold" FontSize="12.5"/>
+                                    <TextBlock Grid.Column="2" Text="&#xE76C;" FontFamily="Segoe MDL2 Assets" Foreground="{StaticResource Overlay0}" FontSize="10"/>
+                                </Grid>
                                 <StackPanel Orientation="Horizontal">
                                     <Ellipse x:Name="dotAV" Width="10" Height="10" Fill="{StaticResource Overlay0}" VerticalAlignment="Center"/>
-                                    <TextBlock x:Name="valAV" Text="-" Margin="8,0,0,0" Foreground="{StaticResource Text}" FontSize="22" FontWeight="SemiBold"/>
+                                    <TextBlock x:Name="valAV" Text="-" Margin="9,0,0,0" Foreground="{StaticResource Text}" FontSize="21" FontWeight="SemiBold"/>
                                 </StackPanel>
-                                <TextBlock x:Name="subAV" Text="WinDefend service" Foreground="{StaticResource Subtext0}" FontSize="11" Margin="0,6,0,0"/>
+                                <TextBlock x:Name="subAV" Text="WinDefend service" Foreground="{StaticResource Subtext0}" FontSize="11" Margin="0,5,0,0" TextTrimming="CharacterEllipsis"/>
                             </StackPanel>
                         </Border>
 
                         <!-- Tile: Real-time -->
-                        <Border Grid.Row="0" Grid.Column="1" Style="{StaticResource Tile}">
+                        <Border Grid.Row="0" Grid.Column="1" Style="{StaticResource Tile}" AutomationProperties.Name="Real-time protection status">
                             <StackPanel>
-                                <TextBlock Text="REAL-TIME PROTECTION" Style="{StaticResource SectionHeader}"/>
+                                <Grid Margin="0,0,0,9">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="26"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="&#xE823;" FontFamily="Segoe MDL2 Assets" Foreground="{StaticResource Lavender}" FontSize="17"/>
+                                    <TextBlock Grid.Column="1" Text="Real-time" Foreground="{StaticResource Text}" FontWeight="SemiBold" FontSize="12.5"/>
+                                    <TextBlock Grid.Column="2" Text="&#xE76C;" FontFamily="Segoe MDL2 Assets" Foreground="{StaticResource Overlay0}" FontSize="10"/>
+                                </Grid>
                                 <StackPanel Orientation="Horizontal">
                                     <Ellipse x:Name="dotRT" Width="10" Height="10" Fill="{StaticResource Overlay0}" VerticalAlignment="Center"/>
-                                    <TextBlock x:Name="valRT" Text="-" Margin="8,0,0,0" Foreground="{StaticResource Text}" FontSize="22" FontWeight="SemiBold"/>
+                                    <TextBlock x:Name="valRT" Text="-" Margin="9,0,0,0" Foreground="{StaticResource Text}" FontSize="21" FontWeight="SemiBold"/>
                                 </StackPanel>
-                                <TextBlock x:Name="subRT" Text="Behavior + IOAV + script scan" Foreground="{StaticResource Subtext0}" FontSize="11" Margin="0,6,0,0"/>
+                                <TextBlock x:Name="subRT" Text="Behavior + IOAV + script scan" Foreground="{StaticResource Subtext0}" FontSize="11" Margin="0,5,0,0" TextTrimming="CharacterEllipsis"/>
                             </StackPanel>
                         </Border>
 
                         <!-- Tile: Tamper Protection -->
-                        <Border Grid.Row="0" Grid.Column="2" Style="{StaticResource Tile}">
+                        <Border Grid.Row="0" Grid.Column="2" Style="{StaticResource Tile}" AutomationProperties.Name="Tamper Protection status">
                             <StackPanel>
-                                <TextBlock Text="TAMPER PROTECTION" Style="{StaticResource SectionHeader}"/>
+                                <Grid Margin="0,0,0,9">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="26"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="&#xE72E;" FontFamily="Segoe MDL2 Assets" Foreground="{StaticResource Lavender}" FontSize="17"/>
+                                    <TextBlock Grid.Column="1" Text="Tamper Protection" Foreground="{StaticResource Text}" FontWeight="SemiBold" FontSize="12.5"/>
+                                    <TextBlock Grid.Column="2" Text="&#xE76C;" FontFamily="Segoe MDL2 Assets" Foreground="{StaticResource Overlay0}" FontSize="10"/>
+                                </Grid>
                                 <StackPanel Orientation="Horizontal">
                                     <Ellipse x:Name="dotTP" Width="10" Height="10" Fill="{StaticResource Overlay0}" VerticalAlignment="Center"/>
-                                    <TextBlock x:Name="valTP" Text="-" Margin="8,0,0,0" Foreground="{StaticResource Text}" FontSize="22" FontWeight="SemiBold"/>
+                                    <TextBlock x:Name="valTP" Text="-" Margin="9,0,0,0" Foreground="{StaticResource Text}" FontSize="21" FontWeight="SemiBold"/>
                                 </StackPanel>
-                                <TextBlock x:Name="subTP" Text="Must be OFF to proceed" Foreground="{StaticResource Subtext0}" FontSize="11" Margin="0,6,0,0"/>
+                                <TextBlock x:Name="subTP" Text="Must be OFF to proceed" Foreground="{StaticResource Subtext0}" FontSize="11" Margin="0,5,0,0" TextTrimming="CharacterEllipsis"/>
                             </StackPanel>
                         </Border>
 
                         <!-- Tile: Firewall -->
-                        <Border Grid.Row="1" Grid.Column="0" Style="{StaticResource Tile}">
+                        <Border Grid.Row="1" Grid.Column="0" Style="{StaticResource Tile}" AutomationProperties.Name="Firewall status">
                             <StackPanel>
-                                <TextBlock Text="FIREWALL" Style="{StaticResource SectionHeader}"/>
+                                <Grid Margin="0,0,0,9">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="26"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="&#xE83D;" FontFamily="Segoe MDL2 Assets" Foreground="{StaticResource Lavender}" FontSize="17"/>
+                                    <TextBlock Grid.Column="1" Text="Firewall" Foreground="{StaticResource Text}" FontWeight="SemiBold" FontSize="12.5"/>
+                                    <TextBlock Grid.Column="2" Text="&#xE76C;" FontFamily="Segoe MDL2 Assets" Foreground="{StaticResource Overlay0}" FontSize="10"/>
+                                </Grid>
                                 <StackPanel Orientation="Horizontal">
                                     <Ellipse x:Name="dotFW" Width="10" Height="10" Fill="{StaticResource Overlay0}" VerticalAlignment="Center"/>
-                                    <TextBlock x:Name="valFW" Text="-" Margin="8,0,0,0" Foreground="{StaticResource Text}" FontSize="22" FontWeight="SemiBold"/>
+                                    <TextBlock x:Name="valFW" Text="-" Margin="9,0,0,0" Foreground="{StaticResource Text}" FontSize="21" FontWeight="SemiBold"/>
                                 </StackPanel>
-                                <TextBlock x:Name="subFW" Text="mpssvc + BFE preserved" Foreground="{StaticResource Subtext0}" FontSize="11" Margin="0,6,0,0"/>
+                                <TextBlock x:Name="subFW" Text="mpssvc + BFE preserved" Foreground="{StaticResource Subtext0}" FontSize="11" Margin="0,5,0,0" TextTrimming="CharacterEllipsis"/>
                             </StackPanel>
                         </Border>
 
                         <!-- Tile: Services -->
-                        <Border Grid.Row="1" Grid.Column="1" Style="{StaticResource Tile}">
+                        <Border Grid.Row="1" Grid.Column="1" Style="{StaticResource Tile}" AutomationProperties.Name="Defender services status">
                             <StackPanel>
-                                <TextBlock Text="DEFENDER SERVICES" Style="{StaticResource SectionHeader}"/>
+                                <Grid Margin="0,0,0,9">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="26"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="&#xE713;" FontFamily="Segoe MDL2 Assets" Foreground="{StaticResource Lavender}" FontSize="17"/>
+                                    <TextBlock Grid.Column="1" Text="Defender Services" Foreground="{StaticResource Text}" FontWeight="SemiBold" FontSize="12.5"/>
+                                    <TextBlock Grid.Column="2" Text="&#xE76C;" FontFamily="Segoe MDL2 Assets" Foreground="{StaticResource Overlay0}" FontSize="10"/>
+                                </Grid>
                                 <StackPanel Orientation="Horizontal">
                                     <Ellipse x:Name="dotSvc" Width="10" Height="10" Fill="{StaticResource Overlay0}" VerticalAlignment="Center"/>
-                                    <TextBlock x:Name="valSvc" Text="-" Margin="8,0,0,0" Foreground="{StaticResource Text}" FontSize="22" FontWeight="SemiBold"/>
+                                    <TextBlock x:Name="valSvc" Text="-" Margin="9,0,0,0" Foreground="{StaticResource Text}" FontSize="21" FontWeight="SemiBold"/>
                                 </StackPanel>
-                                <TextBlock x:Name="subSvc" Text="Disabled / Total" Foreground="{StaticResource Subtext0}" FontSize="11" Margin="0,6,0,0"/>
+                                <TextBlock x:Name="subSvc" Text="Disabled / Total" Foreground="{StaticResource Subtext0}" FontSize="11" Margin="0,5,0,0" TextTrimming="CharacterEllipsis"/>
                             </StackPanel>
                         </Border>
 
                         <!-- Tile: Passive Mode -->
-                        <Border Grid.Row="1" Grid.Column="2" Style="{StaticResource Tile}">
+                        <Border Grid.Row="1" Grid.Column="2" Style="{StaticResource Tile}" AutomationProperties.Name="MAPS telemetry status">
                             <StackPanel>
-                                <TextBlock Text="MAPS TELEMETRY" Style="{StaticResource SectionHeader}"/>
+                                <Grid Margin="0,0,0,9">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="26"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="&#xE8F1;" FontFamily="Segoe MDL2 Assets" Foreground="{StaticResource Lavender}" FontSize="17"/>
+                                    <TextBlock Grid.Column="1" Text="MAPS" Foreground="{StaticResource Text}" FontWeight="SemiBold" FontSize="12.5"/>
+                                    <TextBlock Grid.Column="2" Text="&#xE76C;" FontFamily="Segoe MDL2 Assets" Foreground="{StaticResource Overlay0}" FontSize="10"/>
+                                </Grid>
                                 <StackPanel Orientation="Horizontal">
                                     <Ellipse x:Name="dotMAPS" Width="10" Height="10" Fill="{StaticResource Overlay0}" VerticalAlignment="Center"/>
-                                    <TextBlock x:Name="valMAPS" Text="-" Margin="8,0,0,0" Foreground="{StaticResource Text}" FontSize="22" FontWeight="SemiBold"/>
+                                    <TextBlock x:Name="valMAPS" Text="-" Margin="9,0,0,0" Foreground="{StaticResource Text}" FontSize="21" FontWeight="SemiBold"/>
                                 </StackPanel>
-                                <TextBlock x:Name="subMAPS" Text="Cloud-based protection" Foreground="{StaticResource Subtext0}" FontSize="11" Margin="0,6,0,0"/>
+                                <TextBlock x:Name="subMAPS" Text="Cloud-based protection" Foreground="{StaticResource Subtext0}" FontSize="11" Margin="0,5,0,0" TextTrimming="CharacterEllipsis"/>
                             </StackPanel>
                         </Border>
                     </Grid>
 
                     <!-- Component dashboard -->
-                    <Border Grid.Row="1" Margin="20,4,20,8" Padding="12" CornerRadius="10" Background="{StaticResource Mantle}" BorderBrush="{StaticResource Surface0}" BorderThickness="1">
-                        <Grid>
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="2*"/>
-                                <ColumnDefinition Width="12"/>
-                                <ColumnDefinition Width="*"/>
-                            </Grid.ColumnDefinitions>
-                            <Grid Grid.Column="0">
+                    <Grid Grid.Row="2" Margin="20,4,20,8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="3*"/>
+                            <ColumnDefinition Width="10"/>
+                            <ColumnDefinition Width="2*"/>
+                        </Grid.ColumnDefinitions>
+                        <Border Grid.Column="0" Background="{StaticResource Mantle}" BorderBrush="{StaticResource Surface0}" BorderThickness="1"
+                                CornerRadius="8" Padding="13" AutomationProperties.Name="Component health">
+                            <Grid>
                                 <Grid.RowDefinitions>
                                     <RowDefinition Height="Auto"/>
-                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="*"/>
                                 </Grid.RowDefinitions>
-                                <TextBlock Grid.Row="0" Text="COMPONENT LOCKDOWN" Foreground="{StaticResource Subtext0}" FontSize="11" FontWeight="SemiBold" Margin="0,0,0,10"/>
-                                <ScrollViewer Grid.Row="1" MaxHeight="176" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                                <StackPanel Grid.Row="0" Margin="0,0,0,10">
+                                    <TextBlock Text="Component health" Foreground="{StaticResource Text}" FontSize="12.5" FontWeight="SemiBold"/>
+                                    <TextBlock Text="Service, driver, and protection posture" Foreground="{StaticResource Subtext0}" FontSize="10.5" Margin="0,2,0,0"/>
+                                </StackPanel>
+                                <ScrollViewer Grid.Row="1" MaxHeight="172" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                                     <WrapPanel x:Name="componentTilePanel"/>
                                 </ScrollViewer>
                             </Grid>
-                            <Border Grid.Column="1" Width="1" Margin="5,0" Background="{StaticResource Surface0}"/>
-                            <Grid Grid.Column="2">
+                        </Border>
+                        <Border Grid.Column="2" Background="{StaticResource Mantle}" BorderBrush="{StaticResource Surface0}" BorderThickness="1"
+                                CornerRadius="8" Padding="13" AutomationProperties.Name="Policy changes">
+                            <Grid>
                                 <Grid.RowDefinitions>
                                     <RowDefinition Height="Auto"/>
-                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="*"/>
                                 </Grid.RowDefinitions>
-                                <TextBlock Grid.Row="0" Text="POLICY EDIT STREAM" Foreground="{StaticResource Subtext0}" FontSize="11" FontWeight="SemiBold" Margin="0,0,0,10"/>
-                                <ScrollViewer Grid.Row="1" MaxHeight="176" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-                                    <StackPanel x:Name="policyStreamPanel"/>
+                                <StackPanel Grid.Row="0" Margin="0,0,0,10">
+                                    <TextBlock Text="Policy changes" Foreground="{StaticResource Text}" FontSize="12.5" FontWeight="SemiBold"/>
+                                    <TextBlock Text="Latest privileged configuration events" Foreground="{StaticResource Subtext0}" FontSize="10.5" Margin="0,2,0,0"/>
+                                </StackPanel>
+                                <ScrollViewer Grid.Row="1" MaxHeight="172" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                                    <StackPanel x:Name="policyStreamPanel">
+                                        <StackPanel x:Name="policyEmptyState" Margin="4,20,4,16" HorizontalAlignment="Center">
+                                            <TextBlock Text="&#xE823;" FontFamily="Segoe MDL2 Assets" Foreground="{StaticResource Overlay0}" FontSize="22"
+                                                       HorizontalAlignment="Center"/>
+                                            <TextBlock Text="No policy changes in this session" Foreground="{StaticResource Subtext1}" FontSize="11.5"
+                                                       FontWeight="SemiBold" Margin="0,8,0,0" HorizontalAlignment="Center"/>
+                                            <TextBlock Text="Verified changes will appear here as they occur." Foreground="{StaticResource Subtext0}" FontSize="10.5"
+                                                       Margin="0,3,0,0" HorizontalAlignment="Center"/>
+                                        </StackPanel>
+                                    </StackPanel>
                                 </ScrollViewer>
                             </Grid>
-                        </Grid>
-                    </Border>
+                        </Border>
+                    </Grid>
 
                     <!-- Log panel -->
-                    <Border Grid.Row="2" Margin="20,0,20,10" CornerRadius="10" Background="{StaticResource Mantle}" BorderBrush="{StaticResource Surface0}" BorderThickness="1">
+                    <Border Grid.Row="3" Margin="20,0,20,10" CornerRadius="8" Background="{StaticResource Mantle}" BorderBrush="{StaticResource Surface0}"
+                            BorderThickness="1" AutomationProperties.Name="Live activity">
                         <Grid>
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="Auto"/>
                                 <RowDefinition Height="*"/>
                             </Grid.RowDefinitions>
-                            <Grid Grid.Row="0" Margin="14,10">
+                            <Grid Grid.Row="0" Margin="14,10,12,9">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="*"/>
                                     <ColumnDefinition Width="Auto"/>
                                 </Grid.ColumnDefinitions>
-                                <TextBlock Grid.Column="0" Text="LIVE LOG" Foreground="{StaticResource Subtext0}" FontSize="11" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                                <StackPanel Grid.Column="0">
+                                    <TextBlock Text="Live activity" Foreground="{StaticResource Text}" FontSize="12.5" FontWeight="SemiBold"/>
+                                    <TextBlock Text="Structured local operation output" Foreground="{StaticResource Subtext0}" FontSize="10.5" Margin="0,2,0,0"/>
+                                </StackPanel>
                                 <StackPanel Grid.Column="1" Orientation="Horizontal">
-                                    <Button x:Name="btnCopyLog" Style="{StaticResource BaseButton}" Content="Copy" Padding="10,4" FontSize="11" Margin="0,0,6,0"/>
-                                    <Button x:Name="btnExportLog" Style="{StaticResource BaseButton}" Content="Export" Padding="10,4" FontSize="11" Margin="0,0,6,0"/>
-                                    <Button x:Name="btnClearLog" Style="{StaticResource BaseButton}" Content="Clear" Padding="10,4" FontSize="11"/>
+                                    <Button x:Name="btnCopyLog" Style="{StaticResource BaseButton}" Content="Copy" Padding="10,5" FontSize="11" Margin="0,0,6,0"
+                                            AutomationProperties.Name="Copy live activity"/>
+                                    <Button x:Name="btnExportLog" Style="{StaticResource BaseButton}" Content="Export" Padding="10,5" FontSize="11" Margin="0,0,6,0"
+                                            AutomationProperties.Name="Export live activity"/>
+                                    <Button x:Name="btnClearLog" Style="{StaticResource BaseButton}" Content="Clear" Padding="10,5" FontSize="11"
+                                            AutomationProperties.Name="Clear live activity"/>
                                 </StackPanel>
                             </Grid>
-                            <RichTextBox x:Name="logBox" Grid.Row="1" Margin="14,0,14,14" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                            <RichTextBox x:Name="logBox" Grid.Row="1" Margin="14,0,14,14" VerticalScrollBarVisibility="Auto"
+                                         HorizontalScrollBarVisibility="Disabled" AutomationProperties.Name="Live activity log">
                                 <FlowDocument>
                                     <Paragraph x:Name="logPara" Margin="0"/>
                                 </FlowDocument>
@@ -587,23 +822,26 @@ function Write-Log {
             </Grid>
 
             <!-- ============ STATUS BAR ============ -->
-            <Border Grid.Row="4" Background="{StaticResource Mantle}" BorderBrush="{StaticResource Surface0}" BorderThickness="0,1,0,0">
-                <Grid Margin="16,0">
+            <Border Grid.Row="4" Background="#0C1524" BorderBrush="{StaticResource Surface0}" BorderThickness="0,1,0,0">
+                <Grid Margin="18,0">
                     <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="200"/>
+                        <ColumnDefinition Width="170"/>
                         <ColumnDefinition Width="*"/>
                         <ColumnDefinition Width="Auto"/>
                     </Grid.ColumnDefinitions>
-                    <ProgressBar Grid.Column="0" x:Name="progressBar" IsIndeterminate="False" VerticalAlignment="Center" Width="180"/>
-                    <TextBlock Grid.Column="1" x:Name="statusText" Text="Idle" Foreground="{StaticResource Subtext0}" FontSize="12" VerticalAlignment="Center" Margin="14,0,0,0"/>
-                    <TextBlock Grid.Column="2" x:Name="footerText" Text="firewall preserved" Foreground="{StaticResource Overlay0}" FontSize="11" VerticalAlignment="Center"/>
+                    <ProgressBar Grid.Column="0" x:Name="progressBar" IsIndeterminate="False" VerticalAlignment="Center" Width="154"
+                                 AutomationProperties.Name="Operation progress"/>
+                    <TextBlock Grid.Column="1" x:Name="statusText" Text="Idle" Foreground="{StaticResource Subtext0}" FontSize="11.5"
+                               VerticalAlignment="Center" Margin="12,0,0,0" AutomationProperties.LiveSetting="Polite"/>
+                    <TextBlock Grid.Column="2" x:Name="footerText" Text="LOCAL ONLY  &#x2022;  FIREWALL BOUNDARY ENFORCED"
+                               Foreground="{StaticResource Subtext0}" FontSize="10.5" FontWeight="SemiBold" VerticalAlignment="Center"/>
                 </Grid>
             </Border>
 
             <!-- ============ TOAST OVERLAY ============ -->
             <Border x:Name="toast" Grid.Row="3" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,24,24"
-                    Background="{StaticResource Mantle}" BorderBrush="{StaticResource Mauve}" BorderThickness="1" CornerRadius="10"
-                    Padding="16,12" MaxWidth="360" Visibility="Collapsed">
+                    Background="{StaticResource Mantle}" BorderBrush="{StaticResource Mauve}" BorderThickness="1" CornerRadius="8"
+                    Padding="16,12" MaxWidth="390" Visibility="Collapsed" AutomationProperties.LiveSetting="Polite">
                 <StackPanel Orientation="Horizontal">
                     <Ellipse x:Name="toastDot" Width="8" Height="8" Fill="{StaticResource Mauve}" VerticalAlignment="Center"/>
                     <TextBlock x:Name="toastText" Text="" Foreground="{StaticResource Text}" FontSize="13" Margin="12,0,0,0" VerticalAlignment="Center" TextWrapping="Wrap"/>
@@ -611,16 +849,20 @@ function Write-Log {
             </Border>
 
             <!-- ============ CONFIRMATION OVERLAY ============ -->
-            <Grid x:Name="confirmOverlay" Grid.Row="0" Grid.RowSpan="5" Background="#BB000000" Visibility="Collapsed">
-                <Border Background="{StaticResource Base}" BorderBrush="{StaticResource Surface1}" BorderThickness="1" CornerRadius="12"
-                        Padding="28" MaxWidth="660" HorizontalAlignment="Center" VerticalAlignment="Center">
+            <Grid x:Name="confirmOverlay" Grid.Row="0" Grid.RowSpan="5" Background="#E0070D17" Visibility="Collapsed"
+                  KeyboardNavigation.TabNavigation="Cycle">
+                <Border Background="{StaticResource Mantle}" BorderBrush="{StaticResource Surface1}" BorderThickness="1" CornerRadius="10"
+                        Padding="30" MaxWidth="700" HorizontalAlignment="Center" VerticalAlignment="Center"
+                        AutomationProperties.Name="Action confirmation">
                     <StackPanel>
-                        <TextBlock x:Name="confirmTitle" Text="Confirm Action" Foreground="{StaticResource Text}" FontSize="18" FontWeight="SemiBold"/>
-                        <TextBlock x:Name="confirmBody" Text="" Foreground="{StaticResource Subtext1}" FontSize="13" Margin="0,10,0,0" TextWrapping="Wrap"/>
+                        <TextBlock Text="REVIEW OPERATION" Foreground="{StaticResource Yellow}" FontSize="10.5" FontWeight="SemiBold"/>
+                        <TextBlock x:Name="confirmTitle" Text="Confirm action" Foreground="{StaticResource Text}" FontSize="20" FontWeight="SemiBold" Margin="0,6,0,0"/>
+                        <TextBlock x:Name="confirmBody" Text="" Foreground="{StaticResource Subtext1}" FontSize="13" LineHeight="19"
+                                   Margin="0,10,0,0" TextWrapping="Wrap"/>
                         <Border x:Name="confirmDiffPanel" Visibility="Collapsed" Margin="0,14,0,0" Padding="12"
                                 Background="{StaticResource Mantle}" BorderBrush="{StaticResource Surface1}" BorderThickness="1" CornerRadius="8">
                             <StackPanel>
-                                <TextBlock Text="Current vs target" Foreground="{StaticResource Subtext0}" FontSize="11" FontWeight="SemiBold" Margin="0,0,0,8"/>
+                                <TextBlock Text="CURRENT &#x2192; TARGET" Foreground="{StaticResource Subtext1}" FontSize="10.5" FontWeight="SemiBold" Margin="0,0,0,8"/>
                                 <ScrollViewer MaxHeight="220" VerticalScrollBarVisibility="Auto">
                                     <TextBlock x:Name="confirmDiffText" Text="" Foreground="{StaticResource Text}" FontSize="11" FontFamily="Consolas" TextWrapping="NoWrap"/>
                                 </ScrollViewer>
@@ -632,11 +874,14 @@ function Write-Log {
                                       Content="Override safety gates (-Force)"
                                       Foreground="{StaticResource Red}"
                                       FontSize="12"
+                                      AutomationProperties.Name="Override safety gates for this run"
                                       ToolTip="Bypasses Tamper Protection, managed-device, and Safe Mode refusal gates for this run only."/>
                         </Border>
                         <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,20,0,0">
-                            <Button x:Name="btnConfirmCancel" Style="{StaticResource BaseButton}" Content="Cancel" Padding="18,8" Margin="0,0,10,0"/>
-                            <Button x:Name="btnConfirmOk" Style="{StaticResource DangerAction}" Content="Proceed" Padding="18,8" Margin="0"/>
+                            <Button x:Name="btnConfirmCancel" Style="{StaticResource BaseButton}" Content="Cancel" Padding="18,9"
+                                    Margin="0,0,10,0" IsCancel="True" AutomationProperties.Name="Cancel operation"/>
+                            <Button x:Name="btnConfirmOk" Style="{StaticResource DangerAction}" Content="Proceed" Padding="18,9"
+                                    Margin="0" IsDefault="True" AutomationProperties.Name="Proceed with operation"/>
                         </StackPanel>
                     </StackPanel>
                 </Border>
@@ -677,10 +922,12 @@ function Set-TileState {
     if ($null -eq $val) { return }
     if ($null -eq $Value) {
         $val.Text = 'N/A'
-        $dot.Fill = $window.Resources['Overlay0']
+        $val.Foreground = $window.Resources['Yellow']
+        $dot.Fill = $window.Resources['Yellow']
         if ($SubText) { $sub.Text = $SubText }
         return
     }
+    $val.Foreground = $window.Resources['Text']
     $isOn = [bool]$Value
     if ($isOn) {
         $val.Text = $BadText
@@ -713,18 +960,18 @@ function Add-ComponentTile {
     param([Parameter(Mandatory)]$Component)
 
     $border = [System.Windows.Controls.Border]::new()
-    $border.Width = 146
-    $border.Height = 76
+    $border.Width = 168
+    $border.Height = 82
     $border.Margin = [System.Windows.Thickness]::new(0, 0, 8, 8)
     $border.Padding = [System.Windows.Thickness]::new(10)
-    $border.CornerRadius = [System.Windows.CornerRadius]::new(8)
-    $border.Background = $window.Resources['Base']
+    $border.CornerRadius = [System.Windows.CornerRadius]::new(6)
+    $border.Background = $window.Resources['Crust']
     $border.BorderThickness = [System.Windows.Thickness]::new(1)
 
     switch ($Component.DisableTargetDrift) {
         'OK' {
             $dotBrush = $window.Resources['Green']
-            $border.BorderBrush = $window.Resources['Green']
+            $border.BorderBrush = $window.Resources['Surface1']
             $stateText = 'LOCKED'
         }
         'Drift' {
@@ -761,6 +1008,10 @@ function Add-ComponentTile {
     $panel.Children.Add((New-ComponentText -Text $runtime -FontSize 10 -Resource 'Overlay0')) | Out-Null
 
     $border.ToolTip = ("{0}`nService: {1}`nExpected Disable start: {2}`nCurrent start: {3}`nRuntime: {4}`nProtection: {5}`n{6}" -f $Component.Name, $Component.Service, $Component.ExpectedStart, $Component.CurrentStart, $runtime, $Component.PPLStatus, $Component.Detail)
+    [System.Windows.Automation.AutomationProperties]::SetName(
+        $border,
+        ("{0}: {1}; {2}; {3}" -f $Component.Name, $stateText, $protection, $runtime)
+    )
     $border.Child = $panel
     $ui.componentTilePanel.Children.Add($border) | Out-Null
 }
@@ -833,19 +1084,29 @@ function Set-FirewallBannerState {
         $ui.firewallBannerTitle.Text = 'Firewall integrity guard tripped'
         $ui.firewallBannerTitle.Foreground = $window.Resources['Red']
         $ui.firewallBannerText.Text = "$Source - $((@($Issues) | Select-Object -First 3) -join '; ')"
-        $ui.footerText.Text = 'firewall attention required'
+        $ui.footerText.Text = 'FIREWALL ATTENTION REQUIRED'
         $ui.footerText.Foreground = $window.Resources['Red']
+        if ($ui.railFirewallIcon) { $ui.railFirewallIcon.Foreground = $window.Resources['Red'] }
+        if ($ui.railFirewallText) {
+            $ui.railFirewallText.Text = 'Firewall attention required'
+            $ui.railFirewallText.Foreground = $window.Resources['Red']
+        }
         if ($Flash) { Start-FirewallBannerFlash }
     } else {
         $ui.firewallBanner.Opacity = 1
         $ui.firewallBanner.Background = $window.Resources['FirewallOkBg']
         $ui.firewallBanner.BorderBrush = $window.Resources['Green']
         $ui.firewallBannerDot.Fill = $window.Resources['Green']
-        $ui.firewallBannerTitle.Text = 'Firewall integrity OK'
+        $ui.firewallBannerTitle.Text = 'Firewall integrity protected'
         $ui.firewallBannerTitle.Foreground = $window.Resources['Green']
         $ui.firewallBannerText.Text = 'mpssvc and BFE guarded; firewall profiles enabled'
-        $ui.footerText.Text = 'firewall preserved'
-        $ui.footerText.Foreground = $window.Resources['Overlay0']
+        $ui.footerText.Text = 'LOCAL ONLY  |  FIREWALL BOUNDARY ENFORCED'
+        $ui.footerText.Foreground = $window.Resources['Subtext0']
+        if ($ui.railFirewallIcon) { $ui.railFirewallIcon.Foreground = $window.Resources['Green'] }
+        if ($ui.railFirewallText) {
+            $ui.railFirewallText.Text = 'Firewall boundary verified'
+            $ui.railFirewallText.Foreground = $window.Resources['Subtext1']
+        }
     }
 }
 
@@ -921,15 +1182,22 @@ function Add-PolicyStreamEntry {
     if (-not $ui.policyStreamPanel) { return }
     $streamEvent = Get-PolicyStreamEvent -Entry $Entry
     if (-not $streamEvent) { return }
+    if ($ui.policyEmptyState -and $ui.policyStreamPanel.Children.Contains($ui.policyEmptyState)) {
+        $ui.policyStreamPanel.Children.Remove($ui.policyEmptyState)
+    }
 
     $row = [System.Windows.Controls.Border]::new()
     $row.Margin = [System.Windows.Thickness]::new(0, 0, 0, 7)
-    $row.Padding = [System.Windows.Thickness]::new(8)
-    $row.CornerRadius = [System.Windows.CornerRadius]::new(7)
-    $row.Background = $window.Resources['Base']
+    $row.Padding = [System.Windows.Thickness]::new(9)
+    $row.CornerRadius = [System.Windows.CornerRadius]::new(6)
+    $row.Background = $window.Resources['Crust']
     $row.BorderBrush = $window.Resources['Surface0']
     $row.BorderThickness = [System.Windows.Thickness]::new(1)
     $row.ToolTip = $streamEvent.Detail
+    [System.Windows.Automation.AutomationProperties]::SetName(
+        $row,
+        ("{0}: {1} - {2}" -f $streamEvent.Title, $streamEvent.Method, $streamEvent.Detail)
+    )
 
     $grid = [System.Windows.Controls.Grid]::new()
     $iconColumn = [System.Windows.Controls.ColumnDefinition]::new()
@@ -1020,9 +1288,36 @@ function Get-DisableTargetDiffText {
 }
 
 function Show-Confirm {
-    param([string]$Title, [string]$Body, [scriptblock]$OnProceed, [string]$DiffText, [switch]$AllowForceOverride)
+    param(
+        [string]$Title,
+        [string]$Body,
+        [scriptblock]$OnProceed,
+        [string]$DiffText,
+        [switch]$AllowForceOverride,
+        [ValidateSet('Warning', 'Danger', 'Recovery')]
+        [string]$Kind = 'Warning',
+        [string]$ConfirmLabel = 'Proceed'
+    )
     $ui.confirmTitle.Text = $Title
     $ui.confirmBody.Text  = $Body
+    $ui.btnConfirmOk.Content = $ConfirmLabel
+    switch ($Kind) {
+        'Danger' {
+            $ui.btnConfirmOk.Background = $window.Resources['FirewallBadBg']
+            $ui.btnConfirmOk.BorderBrush = $window.Resources['Red']
+            $ui.btnConfirmOk.Foreground = $window.Resources['Red']
+        }
+        'Recovery' {
+            $ui.btnConfirmOk.Background = $window.Resources['FirewallOkBg']
+            $ui.btnConfirmOk.BorderBrush = $window.Resources['Green']
+            $ui.btnConfirmOk.Foreground = $window.Resources['Green']
+        }
+        default {
+            $ui.btnConfirmOk.Background = $window.Resources['Surface0']
+            $ui.btnConfirmOk.BorderBrush = $window.Resources['Blue']
+            $ui.btnConfirmOk.Foreground = $window.Resources['Text']
+        }
+    }
     if ([string]::IsNullOrWhiteSpace($DiffText)) {
         $ui.confirmDiffText.Text = ''
         $ui.confirmDiffPanel.Visibility = 'Collapsed'
@@ -1037,6 +1332,7 @@ function Show-Confirm {
     }
     $script:ConfirmAction = $OnProceed
     $ui.confirmOverlay.Visibility = 'Visible'
+    $ui.btnConfirmCancel.Focus() | Out-Null
 }
 
 function Add-LogEntry {
@@ -1067,6 +1363,7 @@ function Set-Busy {
     param([bool]$IsBusy, [string]$Label = 'Idle')
     $script:UIState.Busy = $IsBusy
     $ui.statusText.Text = $Label
+    $ui.statusText.Foreground = if ($IsBusy) { $window.Resources['Blue'] } else { $window.Resources['Subtext0'] }
     $ui.progressBar.IsIndeterminate = $IsBusy
     $ui.btnDisable.IsEnabled = -not $IsBusy
     $ui.btnRemove.IsEnabled  = -not $IsBusy
@@ -1108,12 +1405,15 @@ function Update-StatusTiles {
             $fwp = Get-NetFirewallProfile -ErrorAction Stop
             $allOn = $fwp | ForEach-Object { $_.Enabled } | Where-Object { -not $_ } | Measure-Object | Select-Object -ExpandProperty Count
             $fwOn  = $allOn -eq 0
-            $ui.dotFW.Fill = if ($fwOn) { $window.Resources['Green'] } else { $window.Resources['Red'] }
+            $ui.dotFW.Fill = if ($fwOn) { $window.Resources['Green'] } else { $window.Resources['Yellow'] }
             $ui.valFW.Text = if ($fwOn) { 'ON' } else { 'PARTIAL' }
+            $ui.valFW.Foreground = if ($fwOn) { $window.Resources['Green'] } else { $window.Resources['Yellow'] }
             $prof = ($fwp | ForEach-Object { "$($_.Name)=$($_.Enabled)" }) -join ', '
             $ui.subFW.Text = $prof
         } catch {
-            $ui.dotFW.Fill = $window.Resources['Overlay0']; $ui.valFW.Text = 'N/A'
+            $ui.dotFW.Fill = $window.Resources['Yellow']
+            $ui.valFW.Text = 'N/A'
+            $ui.valFW.Foreground = $window.Resources['Yellow']
         }
 
         # Services disabled count
@@ -1128,11 +1428,19 @@ function Update-StatusTiles {
                 if ($sv.StartType -eq 'Disabled') { $disabled++ }
             }
         }
-        $ui.valSvc.Text = "$disabled / $present"
-        $ui.subSvc.Text = "$total known; $present present"
-        if ($present -gt 0 -and $disabled -eq $present) { $ui.dotSvc.Fill = $window.Resources['Green'] }
-        elseif ($disabled -gt 0) { $ui.dotSvc.Fill = $window.Resources['Yellow'] }
-        else { $ui.dotSvc.Fill = $window.Resources['Red'] }
+        if ($total -eq 0) {
+            $ui.valSvc.Text = 'N/A'
+            $ui.valSvc.Foreground = $window.Resources['Yellow']
+            $ui.subSvc.Text = 'Service catalog unavailable'
+            $ui.dotSvc.Fill = $window.Resources['Yellow']
+        } else {
+            $ui.valSvc.Text = "$disabled / $present"
+            $ui.valSvc.Foreground = $window.Resources['Text']
+            $ui.subSvc.Text = "$total known; $present present"
+            if ($present -gt 0 -and $disabled -eq $present) { $ui.dotSvc.Fill = $window.Resources['Green'] }
+            elseif ($disabled -gt 0) { $ui.dotSvc.Fill = $window.Resources['Yellow'] }
+            else { $ui.dotSvc.Fill = $window.Resources['Red'] }
+        }
 
         # Overall
         if ($mp -and $mp.IsTamperProtected) {
@@ -1285,9 +1593,35 @@ $statusTimer.Start()
 # ---------------------------------------------------------------------------
 # Event wiring
 # ---------------------------------------------------------------------------
-$ui.titleBar.Add_MouseLeftButtonDown({ param($s, $e) if ($e.ClickCount -eq 1) { $window.DragMove() } })
+function Update-MaximizeButtonState {
+    if ($window.WindowState -eq 'Maximized') {
+        $ui.btnMax.Content = [char]0xE923
+        $ui.btnMax.ToolTip = 'Restore window'
+        [System.Windows.Automation.AutomationProperties]::SetName($ui.btnMax, 'Restore window')
+    } else {
+        $ui.btnMax.Content = [char]0xE922
+        $ui.btnMax.ToolTip = 'Maximize'
+        [System.Windows.Automation.AutomationProperties]::SetName($ui.btnMax, 'Maximize window')
+    }
+}
+
+function Invoke-WindowStateToggle {
+    $window.WindowState = if ($window.WindowState -eq 'Maximized') { 'Normal' } else { 'Maximized' }
+}
+
+$ui.titleBar.Add_MouseLeftButtonDown({
+    param($s, $e)
+    if ($e.ClickCount -eq 2) {
+        Invoke-WindowStateToggle
+        $e.Handled = $true
+    } elseif ($window.WindowState -eq 'Normal') {
+        $window.DragMove()
+    }
+})
 $ui.btnMin.Add_Click({ $window.WindowState = 'Minimized' })
+$ui.btnMax.Add_Click({ Invoke-WindowStateToggle })
 $ui.btnClose.Add_Click({ $window.Close() })
+$window.Add_StateChanged({ Update-MaximizeButtonState })
 
 # Confirmation modal buttons - registered once
 $ui.btnConfirmCancel.Add_Click({ $ui.confirmOverlay.Visibility = 'Collapsed'; $script:ConfirmAction = $null })
@@ -1296,6 +1630,10 @@ $window.Add_KeyDown({
     if ($e.Key -eq 'Escape' -and $ui.confirmOverlay.Visibility -eq 'Visible') {
         $ui.confirmOverlay.Visibility = 'Collapsed'
         $script:ConfirmAction = $null
+        $e.Handled = $true
+    } elseif ($e.Key -eq 'F5' -and $ui.confirmOverlay.Visibility -ne 'Visible' -and -not $script:UIState.Busy) {
+        Update-StatusTiles
+        Show-Toast 'Security status refreshed.' info
         $e.Handled = $true
     }
 })
@@ -1324,19 +1662,19 @@ $ui.btnRefresh.Add_Click({
 
 $ui.btnDisable.Add_Click({
     $diffText = Get-DisableTargetDiffText
-    Show-Confirm -Title 'Disable Microsoft Defender?' -Body "This will apply policy keys, disable services, and turn off real-time protection. Reversible via Restore.`n`nYour firewall will not be touched." -DiffText $diffText -AllowForceOverride -OnProceed {
+    Show-Confirm -Title 'Disable Microsoft Defender?' -Body "Defender protection will be disabled using policy, service, task, and runtime-preference changes. This workflow is designed to be reversible through Restore.`n`nThe Windows Firewall boundary remains enforced." -DiffText $diffText -AllowForceOverride -Kind Warning -ConfirmLabel 'Disable Defender' -OnProceed {
         Start-ModeAsync -ActionMode 'Disable' -ForceOverride:$script:ConfirmForceOverride
     }
 })
 
 $ui.btnRemove.Add_Click({
-    Show-Confirm -Title 'FULL REMOVE Microsoft Defender?' -Body "This is aggressive. It will:`n  - Apply all Disable operations`n  - Deprovision the Windows Security UI app`n  - Remove SafeBoot\WinDefend so it cannot load even in Safe Mode`n  - DISM-remove platform packages`n`nBest run from Safe Mode. Restore mode may require sfc/DISM to fully repair. Firewall preserved." -AllowForceOverride -OnProceed {
+    Show-Confirm -Title 'Full Remove Microsoft Defender?' -Body "This is the aggressive path. It will:`n  - Apply all Disable operations`n  - Deprovision the Windows Security UI app`n  - Remove SafeBoot\WinDefend so it cannot load in Safe Mode`n  - DISM-remove Defender platform packages`n`nSafe Mode is recommended. Recovery may require SFC or DISM repair. The Windows Firewall boundary remains enforced." -AllowForceOverride -Kind Danger -ConfirmLabel 'Proceed with removal' -OnProceed {
         Start-ModeAsync -ActionMode 'Remove' -ForceOverride:$script:ConfirmForceOverride
     }
 })
 
 $ui.btnRestore.Add_Click({
-    Show-Confirm -Title 'Restore Microsoft Defender?' -Body "This will clear all policy overrides, re-enable services, and reprovision the Windows Security app." -OnProceed {
+    Show-Confirm -Title 'Restore Microsoft Defender?' -Body "DisableDefender will clear its policy overrides, restore supported service and task defaults, and reprovision Windows Security where possible. A Defender health check runs afterward." -Kind Recovery -ConfirmLabel 'Restore Defender' -OnProceed {
         Start-ModeAsync -ActionMode 'Restore'
     }
 })
@@ -1360,7 +1698,10 @@ $ui.btnExportLog.Add_Click({
 
 $ui.btnClearLog.Add_Click({
     $ui.logPara.Inlines.Clear()
-    if ($ui.policyStreamPanel) { $ui.policyStreamPanel.Children.Clear() }
+    if ($ui.policyStreamPanel) {
+        $ui.policyStreamPanel.Children.Clear()
+        if ($ui.policyEmptyState) { $ui.policyStreamPanel.Children.Add($ui.policyEmptyState) | Out-Null }
+    }
     Show-Toast 'Log cleared.' info
 })
 
@@ -1368,6 +1709,7 @@ $ui.btnClearLog.Add_Click({
 # Initial render
 # ---------------------------------------------------------------------------
 $ui.versionText.Text = "v$script:Version"
+Update-MaximizeButtonState
 Write-Log "=== $script:AppName GUI v$script:Version ready ==="
 Update-StatusTiles
 
@@ -1379,10 +1721,26 @@ while ($script:UIState.LogQueue.Count -gt 0) {
 # ---------------------------------------------------------------------------
 # Show window
 # ---------------------------------------------------------------------------
+$window.Add_Closing({
+    param($source, $closingArgs)
+    if ($script:UIState.Busy) {
+        $closingArgs.Cancel = $true
+        Show-Toast 'An operation is still running. Close is available after the current phase finishes.' warn
+    }
+})
+
 $window.Add_Closed({
     $drainTimer.Stop()
     $statusTimer.Stop()
-    if ($script:AsyncPS) { try { $script:AsyncPS.Stop() } catch {} }
+    if ($script:AsyncPS) {
+        try {
+            if ($script:AsyncResult -and $script:AsyncResult.IsCompleted) {
+                $script:AsyncPS.EndInvoke($script:AsyncResult) | Out-Null
+            }
+        } catch {}
+        try { $script:AsyncPS.Dispose() } catch {}
+    }
+    if ($script:Runspace) { try { $script:Runspace.Dispose() } catch {} }
 })
 
 $null = $window.ShowDialog()

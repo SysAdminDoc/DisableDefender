@@ -1514,6 +1514,12 @@ InModuleScope DisableDefender {
 Describe 'DisableDefender GUI safety wiring' {
     BeforeAll {
         $script:GuiSource = Get-Content -LiteralPath (Join-Path $PSScriptRoot '..\DisableDefender.GUI.ps1') -Raw
+        $xamlMatch = [regex]::Match(
+            $script:GuiSource,
+            '(?s)\[xml\]\$xaml\s*=\s*@''\r?\n(?<xaml>.*?)\r?\n''@'
+        )
+        if (-not $xamlMatch.Success) { throw 'GUI XAML here-string was not found.' }
+        $script:GuiXaml = [xml]$xamlMatch.Groups['xaml'].Value
     }
 
     It 'does not force Disable or Remove from the GUI by default' {
@@ -1526,5 +1532,36 @@ Describe 'DisableDefender GUI safety wiring' {
         $script:GuiSource | Should -Match 'Start-ModeAsync\s+-ActionMode ''Disable''\s+-ForceOverride:\$script:ConfirmForceOverride'
         $script:GuiSource | Should -Match 'Invoke-DisableDefender\s+-Force:\$ForceOverride'
         $script:GuiSource | Should -Match 'Invoke-RemoveDefender\s+-Force:\$ForceOverride'
+    }
+
+    It 'gives custom chrome and action controls explicit accessible names' {
+        $namedButtons = @(
+            'btnMin', 'btnMax', 'btnClose',
+            'btnDisable', 'btnRemove', 'btnRestore', 'btnRefresh',
+            'btnCopyLog', 'btnExportLog', 'btnClearLog',
+            'btnConfirmCancel', 'btnConfirmOk'
+        )
+
+        foreach ($buttonName in $namedButtons) {
+            $node = @($script:GuiXaml.SelectNodes('//*[@*[local-name()="Name"]]')) |
+                Where-Object { $_.Attributes['x:Name'].Value -eq $buttonName } |
+                Select-Object -First 1
+            $node | Should -Not -BeNullOrEmpty
+            $node.Attributes['AutomationProperties.Name'].Value | Should -Not -BeNullOrEmpty
+        }
+    }
+
+    It 'defines keyboard focus, default, cancel, refresh, and maximize semantics' {
+        $script:GuiSource | Should -Match 'KeyboardNavigation\.TabNavigation="Cycle"'
+        $script:GuiSource | Should -Match 'x:Name="btnConfirmCancel"[^>]*IsCancel="True"'
+        $script:GuiSource | Should -Match 'x:Name="btnConfirmOk"[^>]*IsDefault="True"'
+        $script:GuiSource | Should -Match '\$e\.Key -eq ''F5'''
+        $script:GuiSource | Should -Match '\$ui\.btnMax\.Add_Click'
+        $script:GuiSource | Should -Match '\$window\.Add_StateChanged'
+    }
+
+    It 'blocks unsafe window close while a phase is busy and does not abruptly stop the worker' {
+        $script:GuiSource | Should -Match '(?s)\$window\.Add_Closing\(\{.*?\$script:UIState\.Busy.*?\$closingArgs\.Cancel\s*=\s*\$true'
+        $script:GuiSource | Should -Not -Match '\$script:AsyncPS\.Stop\('
     }
 }

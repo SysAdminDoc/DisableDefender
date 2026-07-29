@@ -5,8 +5,7 @@
 [![Platform](https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-0078D6.svg)](https://www.microsoft.com/windows)
 [![PowerShell](https://img.shields.io/badge/powershell-5.1%2B-012456.svg)](https://learn.microsoft.com/powershell)
 
-<img width="1168" height="754" alt="2026-04-20 14_23_00-DisableDefender" src="https://github.com/user-attachments/assets/975dd36c-e05f-461e-8a40-3b9c2b9136e9" />
-<br>
+![DisableDefender safety-first WPF control center](assets/disabledefender-gui.png)
 
 
 **The ultimate Microsoft Defender Antivirus disabler / remover for Windows 10 and 11.**
@@ -19,7 +18,7 @@ PowerShell-native module with **both a CLI launcher and a premium WPF GUI**. No 
 
 ## GUI
 
-A premium WPF dark interface — Catppuccin Mocha palette, custom chrome, glassmorphic tiles, live status dashboard, embedded log, async execution.
+A safety-first WPF control center with custom chrome, explicit protection-state hierarchy, component evidence, policy-change history, embedded activity output, and asynchronous execution.
 
 Run via:
 ```powershell
@@ -29,8 +28,6 @@ or double-click `DisableDefender.GUI.bat`.
 
 Dashboard tiles show: Antivirus engine, Real-time protection, Tamper Protection (with warning banner + direct link to Windows Security), Firewall, Defender service count, MAPS telemetry, and a per-component lockdown grid for Defender services/drivers with PPL or LaunchProtected state for MsMpEng, WdFilter, WdBoot, and WdNisDrv. A live policy edit stream tags direct writes, ACL overrides, and SYSTEM-task fallback methods as they happen. The always-on firewall integrity banner polls mpssvc, BFE, and firewall profiles, then flashes red if any guard trips. Disable/Remove confirmations expose a default-off `-Force` override checkbox instead of bypassing safety gates automatically. Overall indicator summarizes to PROTECTED / DISABLED / BLOCKED. Live log pane streams every operation with level colors (INFO / OK / WARN / ERROR / DEBUG). Copy, Export, Clear buttons. Toast notifications on completion.
 Disable confirmation includes a current-vs-target drift preview before execution.
-
-![GUI placeholder — re-capture after first run per screenshots.md]
 
 ---
 
