@@ -762,7 +762,7 @@ function Write-Log {
                                 </Grid.RowDefinitions>
                                 <StackPanel Grid.Row="0" Margin="0,0,0,10">
                                     <TextBlock Text="Component health" Foreground="{StaticResource Text}" FontSize="12.5" FontWeight="SemiBold"/>
-                                    <TextBlock Text="Service, driver, and protection posture" Foreground="{StaticResource Subtext0}" FontSize="10.5" Margin="0,2,0,0"/>
+                                    <TextBlock x:Name="componentSubtitle" Text="Service, driver, and protection posture" Foreground="{StaticResource Subtext0}" FontSize="10.5" Margin="0,2,0,0"/>
                                 </StackPanel>
                                 <ScrollViewer Grid.Row="1" MaxHeight="172" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                                     <WrapPanel x:Name="componentTilePanel"/>
@@ -1031,6 +1031,50 @@ function Add-ComponentTile {
 function Update-ComponentTiles {
     if (-not $ui.componentTilePanel) { return }
     $ui.componentTilePanel.Children.Clear()
+    if ($ui.componentSubtitle) {
+        try {
+            $safeModeStatus = Get-DefenderSafeModeStatus
+            switch ($safeModeStatus.Stage) {
+                'Idle' {
+                    $ui.componentSubtitle.Text = 'Service, driver, and protection posture'
+                    $ui.componentSubtitle.Foreground = $window.Resources['Subtext0']
+                }
+                'Completed' {
+                    $ui.componentSubtitle.Text = (
+                        "Safe Mode transaction completed - {0}/{1} required effects verified" -f
+                        $safeModeStatus.VerifiedEffects, $safeModeStatus.RequiredEffects)
+                    $ui.componentSubtitle.Foreground = $window.Resources['Green']
+                }
+                'RolledBack' {
+                    $ui.componentSubtitle.Text = 'Safe Mode transaction rolled back - no boot override remains'
+                    $ui.componentSubtitle.Foreground = $window.Resources['Yellow']
+                }
+                default {
+                    $ui.componentSubtitle.Text = (
+                        "Safe Mode transaction: {0} - recovery: {1}" -f
+                        $safeModeStatus.Stage, $safeModeStatus.RecoveryRecommendation)
+                    $ui.componentSubtitle.Foreground = if ($safeModeStatus.LastError) {
+                        $window.Resources['Red']
+                    } else {
+                        $window.Resources['Yellow']
+                    }
+                }
+            }
+            $ui.componentSubtitle.ToolTip = (
+                "Transaction: {0}`nStage: {1}`nChild exit: {2}`nTask result: {3}`nLast error: {4}" -f
+                $safeModeStatus.TransactionId,
+                $safeModeStatus.Stage,
+                $safeModeStatus.ChildExitCode,
+                $safeModeStatus.SafeModeTaskResult,
+                $safeModeStatus.LastError)
+            [System.Windows.Automation.AutomationProperties]::SetName(
+                $ui.componentSubtitle,
+                $ui.componentSubtitle.Text)
+        } catch {
+            $ui.componentSubtitle.Text = "Safe Mode transaction status unavailable: $($_.Exception.Message)"
+            $ui.componentSubtitle.Foreground = $window.Resources['Red']
+        }
+    }
     try {
         foreach ($component in @(Get-DefenderComponentStatus)) {
             Add-ComponentTile -Component $component

@@ -37,6 +37,7 @@ Initialize-DefenderRuntimeDirectory -Path $script:AppDir | Out-Null
 . "$moduleRoot\Public\Get-DefenderFirewallStatus.ps1"
 . "$moduleRoot\Public\Get-DefenderHealth.ps1"
 . "$moduleRoot\Public\Get-DefenderComponentStatus.ps1"
+. "$moduleRoot\Public\Get-DefenderSafeModeStatus.ps1"
 . "$moduleRoot\Public\Show-DefenderStatus.ps1"
 . "$moduleRoot\Public\Invoke-DisableDefender.ps1"
 . "$moduleRoot\Public\Invoke-RemoveDefender.ps1"
@@ -52,6 +53,7 @@ Export-ModuleMember -Function @(
     'Get-DefenderFirewallStatus',
     'Get-DefenderHealth',
     'Get-DefenderComponentStatus',
+    'Get-DefenderSafeModeStatus',
     'Show-DefenderStatus',
     'Invoke-DisableDefender',
     'Invoke-RemoveDefender',

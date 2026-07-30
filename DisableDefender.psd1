@@ -14,6 +14,7 @@
         'Get-DefenderFirewallStatus'
         'Get-DefenderHealth'
         'Get-DefenderComponentStatus'
+        'Get-DefenderSafeModeStatus'
         'Show-DefenderStatus'
         'Invoke-DisableDefender'
         'Invoke-RemoveDefender'

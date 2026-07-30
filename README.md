@@ -59,7 +59,7 @@ Disable confirmation includes a current-vs-target drift preview before execution
 - **Health mode + Restore verification**: compares current state to Disable/Remove/fixed-default Restore targets and reports drift for services, policy keys, tasks, Appx, SafeBoot, and MpPreference; recorded-baseline Restore verifies its manifest expectations directly
 - **Feature-update drift detection**: Disable/Remove record a Defender surface baseline; Health flags changed Windows builds plus unknown Defender-like services, tasks, and packages and prints a reapply plan that preserves firewall and MDE Sense by default
 - **Local release builder**: creates an unsigned clean zip, SHA256 file, and release metadata JSON inside an identity-tracked staging directory
-- **Safe Mode bootstrap**: `Invoke-SafeModeRemove` schedules a one-shot task that boots into Safe Mode, runs Remove, clears the safeboot flag, and reboots back to normal; a watchdog task prevents Safe Mode traps if the script fails
+- **Safe Mode transaction**: `Invoke-SafeModeRemove` persists and verifies the worker and independent BCD watchdog before changing boot state, records child/task/effect evidence across boots, and finalizes or rolls back deterministically
 - **Support bundle export**: `Export-DefenderSupportBundle` collects logs, phase-state, tripwires, component status, health summary, Windows build info, and optional redacted Defender event-log excerpts into a diagnostic zip without secrets
 - **Offline remove bundle** (`PrepareOffline`): generates a self-contained `Invoke-OfflineDefenderRemove.ps1` that targets an offline Windows volume from WinRE or a secondary OS, bypassing live Tamper Protection by editing dormant registry hives directly; refuses to run against the live system root
 - **Module layout**: `DisableDefender.psd1` / `DisableDefender.psm1` with public commands and private helpers for function-level tests
@@ -148,8 +148,16 @@ Export-DefenderHtmlReport -OutputPath C:\Reports\defender.html -HealthTarget Rem
 # Automated Safe Mode Remove (reboot -> Remove -> reboot back)
 Invoke-SafeModeRemove
 Invoke-SafeModeRemove -IncludeMDE -DelaySeconds 30
-# Preserve an intentional managed/domain override in the generated task
+# Preserve an intentional managed/domain or normal-boot override
 Invoke-SafeModeRemove -Force
+
+# Inspect the durable stage, live task/BCD evidence, and recovery recommendation
+Get-DefenderSafeModeStatus
+Get-DefenderSafeModeStatus -Json
+
+# Explicitly resume a verified pre-boot stage or roll an interrupted run back
+Invoke-SafeModeRemove -RecoveryAction Resume
+Invoke-SafeModeRemove -RecoveryAction Rollback
 
 # Save a state snapshot, then compare later
 Save-DefenderSnapshot -OutputPath C:\Snapshots\before.json
@@ -318,6 +326,7 @@ v0.0.2 fixed a false-positive where `SharedAccess` (ICS, off by default) tripped
 - `%ProgramData%\DisableDefender\restore-manifest.*.jsonl`
 - `%ProgramData%\DisableDefender\surface-baseline.json`
 - `%ProgramData%\DisableDefender\phase-state.json`
+- `%ProgramData%\DisableDefender\safe-mode-transaction.json`
 - `%ProgramData%\DisableDefender\tripwire.jsonl`
 
 ## License

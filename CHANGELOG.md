@@ -9,6 +9,7 @@
 - Added one structured operation-result contract across phase state, logs, CLI JSON, and GUI completion feedback, with per-effect attempted, changed, verified, evidence, and error fields.
 - Added durable restore replay/finalization state so partial manifest replay, failed baseline verification, and interrupted multi-manifest archival remain resumable.
 - Added an explicit `-RepairWithoutManifest` fixed-default repair path in the CLI, module command, and GUI.
+- Added `Get-DefenderSafeModeStatus` for live BCD/task evidence, persisted cross-boot stages, child/task results, verified effect counts, errors, and recovery guidance; the GUI component dashboard surfaces the same transaction state.
 
 ### Fixed
 - Restore manifests, replay state, and registry ACL backups are now treated as privileged input: bounded versioned schemas and target allowlists reject the whole artifact before mutation, while one owner/DACL/reparse/file-identity-validated, no-write-shared lease supplies the exact replayed bytes.
@@ -23,6 +24,7 @@
 - Disable and Remove save a surface baseline only after a verified non-simulation plan; action-mode JSON emits one success envelope and the GUI consumes the same verified result.
 - Restore now replays and verifies the exact recorded registry, preference, task, service, SafeBoot, context-menu, Security Health, and DISM baseline before archiving the manifest; unreadable registry pre-state aborts before mutation.
 - Repeated-run restore collapses final expectations to the oldest selected baseline, while exact Restore refuses partial phase filters and never falls through to fixed defaults.
+- Safe Mode removal now verifies both exact SYSTEM startup-task definitions before BCD mutation, proves the watchdog is an independent `bcdedit.exe` action, read-verifies every BCD transition, persists child JSON/effect evidence and task exit results, reboots only after verified removal, and deterministically resumes, finalizes, or rolls back interrupted stages.
 
 ## v0.0.40 - 2026-06-30
 

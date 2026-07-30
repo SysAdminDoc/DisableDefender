@@ -21,6 +21,7 @@ Describe 'Module manifest' {
             'Get-DefenderComponentStatus'
             'Get-DefenderFirewallStatus'
             'Get-DefenderHealth'
+            'Get-DefenderSafeModeStatus'
             'Get-DefenderStatus'
             'Invoke-DisableDefender'
             'Invoke-RemoveDefender'
@@ -3281,27 +3282,169 @@ InModuleScope DisableDefender {
 }
 
 InModuleScope DisableDefender {
-    Describe 'Invoke-SafeModeRemove force propagation' {
+    Describe 'Safe Mode transaction persistence' {
+        It 'round-trips a bounded schema through the privileged runtime state file' {
+            $previousAppDir = $script:AppDir
+            $script:AppDir = $TestDrive
+            try {
+                $state = New-DefenderSafeModeTransaction `
+                    -CliPath (Join-Path $TestDrive 'DisableDefender.ps1') `
+                    -ModuleManifestPath (Join-Path $TestDrive 'DisableDefender.psd1') `
+                    -IncludeMDE -Force -RebootDelay 12
+                Save-DefenderSafeModeTransaction -State $state | Out-Null
+
+                $restored = Read-DefenderSafeModeTransaction
+
+                $restored.SchemaVersion | Should -Be 1
+                $restored.TransactionId | Should -Be $state.TransactionId
+                $restored.Stage | Should -Be 'Preparing'
+                $restored.Options.IncludeMDE | Should -Be $true
+                $restored.Options.Force | Should -Be $true
+                $restored.Options.RebootDelay | Should -Be 12
+            } finally {
+                $script:AppDir = $previousAppDir
+            }
+        }
+
+        It 'rejects an unknown future transaction schema before use' {
+            $state = New-DefenderSafeModeTransaction `
+                -CliPath (Join-Path $TestDrive 'DisableDefender.ps1') `
+                -ModuleManifestPath (Join-Path $TestDrive 'DisableDefender.psd1') `
+                -RebootDelay 0
+            $state.SchemaVersion = 99
+
+            { Assert-DefenderSafeModeTransactionState -State $state } |
+                Should -Throw -ExpectedMessage '*Unsupported*schema*'
+        }
+    }
+
+    Describe 'Safe Mode task definition verification' {
+        BeforeEach {
+            Mock Get-ScheduledTaskInfo { [PSCustomObject]@{ LastTaskResult = 267011 } }
+        }
+
+        It 'proves the watchdog is an independent SYSTEM boot action' {
+            Mock Get-ScheduledTask {
+                [PSCustomObject]@{
+                    TaskName  = 'DisableDefender_SafeBootWatchdog'
+                    Actions   = @([PSCustomObject]@{
+                        Execute = 'bcdedit.exe'
+                        Arguments = '/deletevalue {current} safeboot'
+                    })
+                    Triggers  = @([PSCustomObject]@{ TriggerType = 'Boot' })
+                    Principal = [PSCustomObject]@{
+                        UserId = 'S-1-5-18'
+                        RunLevel = 'Highest'
+                    }
+                    State     = 'Ready'
+                }
+            }
+
+            $evidence = Get-DefenderSafeModeTaskEvidence `
+                -TaskName 'DisableDefender_SafeBootWatchdog' -Kind Watchdog
+
+            $evidence.Verified | Should -Be $true
+            $evidence.Execute | Should -Be 'bcdedit.exe'
+            $evidence.Arguments | Should -Be '/deletevalue {current} safeboot'
+            $evidence.BootTrigger | Should -Be $true
+            $evidence.UserId | Should -Be 'S-1-5-18'
+            $evidence.Arguments | Should -Not -Match 'DisableDefender|PowerShell|Import-Module'
+        }
+
+        It 'rejects a registered action whose command was substituted' {
+            Mock Get-ScheduledTask {
+                [PSCustomObject]@{
+                    TaskName  = 'DisableDefender_SafeBootWatchdog'
+                    Actions   = @([PSCustomObject]@{
+                        Execute = 'cmd.exe'
+                        Arguments = '/c whoami'
+                    })
+                    Triggers  = @([PSCustomObject]@{ TriggerType = 'Boot' })
+                    Principal = [PSCustomObject]@{ UserId = 'S-1-5-18'; RunLevel = 'Highest' }
+                    State     = 'Ready'
+                }
+            }
+
+            {
+                Get-DefenderSafeModeTaskEvidence `
+                    -TaskName 'DisableDefender_SafeBootWatchdog' -Kind Watchdog
+            } | Should -Throw -ExpectedMessage '*did not match*'
+        }
+    }
+
+    Describe 'Invoke-SafeModeRemove transaction orchestration' {
         BeforeEach {
             $script:SafeModeEncodedScripts = @()
+            $script:SafeModeCallOrder = @()
+            $script:SafeModeSavedStates = @()
             Mock Get-CimInstance {
                 [PSCustomObject]@{ BootupState = 'Normal boot' }
             }
+            Mock Read-DefenderSafeModeTransaction { $null }
+            Mock Save-DefenderSafeModeTransaction {
+                $script:SafeModeSavedStates += (
+                    $State | ConvertTo-Json -Depth 20 | ConvertFrom-Json)
+                'safe-mode-transaction.json'
+            }
+            Mock Test-Path { $true }
             Mock Register-DefenderSafeModeTask {
                 $script:SafeModeEncodedScripts += $EncodedScript
+                $script:SafeModeCallOrder += 'RegisterMain'
+                [PSCustomObject]@{ Verified = $true; LastTaskResult = 267011 }
             }
-            Mock Register-SafeBootWatchdog {}
-            Mock Unregister-ScheduledTask {}
-            Mock Unregister-SafeBootWatchdog {}
+            Mock Register-SafeBootWatchdog {
+                $script:SafeModeCallOrder += 'RegisterWatchdog'
+                [PSCustomObject]@{
+                    Verified = $true
+                    Execute = 'bcdedit.exe'
+                    Arguments = '/deletevalue {current} safeboot'
+                    LastTaskResult = 267011
+                }
+            }
+            Mock Get-DefenderSafeModeTaskEvidence {
+                $script:SafeModeCallOrder += "Query$Kind"
+                [PSCustomObject]@{ Verified = $true; Kind = $Kind; LastTaskResult = 267011 }
+            }
+            Mock Set-DefenderBcdSafeBoot {
+                $script:SafeModeCallOrder += 'BcdSet'
+                [PSCustomObject]@{
+                    QueryExitCode = 0
+                    SafeBootConfigured = $true
+                    Value = 'minimal'
+                }
+            }
+            Mock Clear-DefenderBcdSafeBoot {
+                $script:SafeModeCallOrder += 'BcdClear'
+                [PSCustomObject]@{
+                    QueryExitCode = 0
+                    SafeBootConfigured = $false
+                    Value = $null
+                }
+            }
+            Mock Remove-DefenderSafeModeTasks {
+                $script:SafeModeCallOrder += 'TasksRemoved'
+            }
+            Mock Invoke-DefenderSafeModeReboot {
+                $script:SafeModeCallOrder += 'RebootRequested'
+            }
             Mock Write-Log {}
-            Mock bcdedit.exe {
-                $global:LASTEXITCODE = 0
-                'The operation completed successfully.'
-            }
-            Mock shutdown.exe {}
         }
 
-        It 'omits Force by default and includes it only when explicitly requested' {
+        It 'queries both registered tasks before mutating BCD' {
+            $result = Invoke-SafeModeRemove -DelaySeconds 0 -Confirm:$false
+
+            $bcdIndex = [array]::IndexOf($script:SafeModeCallOrder, 'BcdSet')
+            [array]::IndexOf($script:SafeModeCallOrder, 'QueryMain') |
+                Should -BeLessThan $bcdIndex
+            [array]::IndexOf($script:SafeModeCallOrder, 'QueryWatchdog') |
+                Should -BeLessThan $bcdIndex
+            $result.Stage | Should -Be 'RebootRequested'
+            $result.SafeBootSet | Should -Be $true
+            Should -Invoke Get-DefenderSafeModeTaskEvidence -Times 2 -Exactly
+            Should -Invoke Invoke-DefenderSafeModeReboot -Times 1 -Exactly
+        }
+
+        It 'preserves Force only as an explicit transaction option' {
             $defaultResult = Invoke-SafeModeRemove -DelaySeconds 0 -Confirm:$false
             $forcedResult = Invoke-SafeModeRemove -DelaySeconds 0 -Force -Confirm:$false
 
@@ -3309,11 +3452,246 @@ InModuleScope DisableDefender {
                 [Text.Encoding]::Unicode.GetString([Convert]::FromBase64String($_))
             })
             $decodedScripts.Count | Should -Be 2
-            $decodedScripts[0] | Should -Match '-Mode Remove -Silent -NoReboot'
-            $decodedScripts[0] | Should -Not -Match '-Mode Remove -Force'
-            $decodedScripts[1] | Should -Match '-Mode Remove -Silent -NoReboot -Force'
+            $decodedScripts[0] | Should -Match 'Invoke-DefenderSafeModeWorker'
+            $decodedScripts[1] | Should -Match 'Invoke-DefenderSafeModeWorker'
+            $decodedScripts[0] | Should -Not -Match 'finally\s*\{'
             $defaultResult.Force | Should -Be $false
             $forcedResult.Force | Should -Be $true
+        }
+
+        It 'rolls back without touching BCD when watchdog verification fails' {
+            Mock Register-SafeBootWatchdog { throw 'watchdog registration failed' }
+
+            {
+                Invoke-SafeModeRemove -DelaySeconds 0 -Confirm:$false
+            } | Should -Throw -ExpectedMessage '*rolled back*watchdog registration failed*'
+
+            Should -Invoke Set-DefenderBcdSafeBoot -Times 0 -Exactly
+            Should -Invoke Clear-DefenderBcdSafeBoot -Times 1 -Exactly
+            Should -Invoke Remove-DefenderSafeModeTasks -Times 1 -Exactly
+            $script:SafeModeSavedStates[-1].Stage | Should -Be 'RolledBack'
+        }
+
+        It 'clears BCD and removes tasks when the bootstrap reboot request fails' {
+            Mock Invoke-DefenderSafeModeReboot { throw 'shutdown refused request' }
+
+            {
+                Invoke-SafeModeRemove -DelaySeconds 0 -Confirm:$false
+            } | Should -Throw -ExpectedMessage '*rolled back*shutdown refused request*'
+
+            Should -Invoke Set-DefenderBcdSafeBoot -Times 1 -Exactly
+            Should -Invoke Clear-DefenderBcdSafeBoot -Times 1 -Exactly
+            Should -Invoke Remove-DefenderSafeModeTasks -Times 1 -Exactly
+            $script:SafeModeSavedStates[-1].Stage | Should -Be 'RolledBack'
+        }
+
+        It 'resumes a verified interrupted pre-boot stage without replacing the transaction' {
+            $existingState = New-DefenderSafeModeTransaction `
+                -CliPath (Join-Path $TestDrive 'DisableDefender.ps1') `
+                -ModuleManifestPath (Join-Path $TestDrive 'DisableDefender.psd1') `
+                -RebootDelay 0
+            $existingState.Stage = 'RebootRequested'
+            Mock Read-DefenderSafeModeTransaction { $existingState }
+            Mock Get-DefenderBcdSafeBootEvidence {
+                [PSCustomObject]@{
+                    QueryExitCode = 0
+                    SafeBootConfigured = $true
+                    Value = 'minimal'
+                }
+            }
+
+            $result = Invoke-SafeModeRemove -DelaySeconds 0 -Confirm:$false
+
+            $result.TransactionId | Should -Be $existingState.TransactionId
+            $result.Resumed | Should -Be $true
+            $result.RecoveryAction | Should -Be 'Resume'
+            Should -Invoke Register-DefenderSafeModeTask -Times 0 -Exactly
+            Should -Invoke Register-SafeBootWatchdog -Times 0 -Exactly
+            Should -Invoke Get-DefenderSafeModeTaskEvidence -Times 2 -Exactly
+            Should -Invoke Invoke-DefenderSafeModeReboot -Times 1 -Exactly
+        }
+    }
+
+    Describe 'Safe Mode worker recovery' {
+        BeforeEach {
+            $script:WorkerSavedStates = @()
+            Mock Save-DefenderSafeModeTransaction {
+                $script:WorkerSavedStates += (
+                    $State | ConvertTo-Json -Depth 20 | ConvertFrom-Json)
+                'safe-mode-transaction.json'
+            }
+            Mock Get-CimInstance {
+                [PSCustomObject]@{ BootupState = 'Fail-safe boot' }
+            }
+            Mock New-DefenderSafeModeWorkerCommand { 'encoded-worker' }
+            Mock Get-DefenderSafeModeTaskEvidence {
+                [PSCustomObject]@{
+                    Verified = $true
+                    Kind = $Kind
+                    LastTaskResult = 267009
+                }
+            }
+            Mock Clear-DefenderBcdSafeBoot {
+                [PSCustomObject]@{
+                    QueryExitCode = 0
+                    SafeBootConfigured = $false
+                    Value = $null
+                }
+            }
+            Mock Unregister-SafeBootWatchdog {}
+            Mock Invoke-DefenderSafeModeReboot {}
+        }
+
+        It 'persists child exit and required effect evidence before rebooting' {
+            $state = New-DefenderSafeModeTransaction `
+                -CliPath (Join-Path $TestDrive 'DisableDefender.ps1') `
+                -ModuleManifestPath (Join-Path $TestDrive 'DisableDefender.psd1') `
+                -RebootDelay 0
+            $state.Stage = 'RebootRequested'
+            Mock Read-DefenderSafeModeTransaction { $state }
+            $operation = [PSCustomObject][ordered]@{
+                SchemaVersion = 1
+                Ok = $true
+                Succeeded = $true
+                Mode = 'Remove'
+                Phases = @(
+                    [PSCustomObject]@{
+                        Name = 'Services'
+                        Result = [PSCustomObject]@{
+                            Effects = @(
+                                [PSCustomObject]@{
+                                    Target = 'WinDefend'
+                                    Required = $true
+                                    Verified = $true
+                                    Evidence = [PSCustomObject]@{ Start = 4 }
+                                    Errors = @()
+                                }
+                            )
+                        }
+                    }
+                )
+            }
+            Mock Invoke-DefenderSafeModeChild {
+                [PSCustomObject]@{
+                    ExitCode = 0
+                    StandardOutput = '{}'
+                    StandardError = ''
+                    OperationResult = $operation
+                }
+            }
+
+            $result = Invoke-DefenderSafeModeWorker -TransactionId $state.TransactionId
+
+            $result.Succeeded | Should -Be $true
+            $state.Stage | Should -Be 'RebootRequestedNormal'
+            $state.ChildExitCode | Should -Be 0
+            $state.EffectEvidence.Count | Should -Be 1
+            $state.EffectEvidence[0].Target | Should -Be 'WinDefend'
+            $state.EffectEvidence[0].Verified | Should -Be $true
+            Should -Invoke Clear-DefenderBcdSafeBoot -Times 1 -Exactly
+            Should -Invoke Invoke-DefenderSafeModeReboot -Times 1 -Exactly
+            ($script:WorkerSavedStates.Stage) | Should -Contain 'RemoveVerified'
+            ($script:WorkerSavedStates.Stage) | Should -Contain 'ReturnConfigured'
+        }
+
+        It 'persists failure, clears BCD, and does not reboot on child failure' {
+            $state = New-DefenderSafeModeTransaction `
+                -CliPath (Join-Path $TestDrive 'DisableDefender.ps1') `
+                -ModuleManifestPath (Join-Path $TestDrive 'DisableDefender.psd1') `
+                -RebootDelay 0
+            $state.Stage = 'RebootRequested'
+            Mock Read-DefenderSafeModeTransaction { $state }
+            Mock Invoke-DefenderSafeModeChild {
+                [PSCustomObject]@{
+                    ExitCode = 7
+                    StandardOutput = ''
+                    StandardError = 'effect verification failed'
+                    OperationResult = $null
+                }
+            }
+
+            $result = Invoke-DefenderSafeModeWorker -TransactionId $state.TransactionId
+
+            $result.Succeeded | Should -Be $false
+            $state.Stage | Should -Be 'Failed'
+            $state.ChildExitCode | Should -Be 7
+            $state.LastError | Should -Match 'effect verification failed'
+            Should -Invoke Clear-DefenderBcdSafeBoot -Times 1 -Exactly
+            Should -Invoke Invoke-DefenderSafeModeReboot -Times 0 -Exactly
+        }
+
+        It 'finalizes only a verified operation with a successful persisted task result' {
+            $state = New-DefenderSafeModeTransaction `
+                -CliPath (Join-Path $TestDrive 'DisableDefender.ps1') `
+                -ModuleManifestPath (Join-Path $TestDrive 'DisableDefender.psd1') `
+                -RebootDelay 0
+            $state.Stage = 'RebootRequestedNormal'
+            $state.SafeModeTaskResult = 0
+            $state.OperationResult = [PSCustomObject]@{
+                SchemaVersion = 1
+                Ok = $true
+                Succeeded = $true
+                Mode = 'Remove'
+                Phases = @(
+                    [PSCustomObject]@{
+                        Result = [PSCustomObject]@{
+                            Effects = @(
+                                [PSCustomObject]@{
+                                    Required = $true
+                                    Verified = $true
+                                    Errors = @()
+                                }
+                            )
+                        }
+                    }
+                )
+            }
+            Mock Get-DefenderBcdSafeBootEvidence {
+                [PSCustomObject]@{
+                    QueryExitCode = 0
+                    SafeBootConfigured = $false
+                }
+            }
+            Mock Remove-DefenderSafeModeTasks {}
+
+            $result = Complete-DefenderSafeModeNormalBoot -State $state
+
+            $result.Succeeded | Should -Be $true
+            $state.Stage | Should -Be 'Completed'
+            $state.RecoveryAction | Should -Be 'Finalize'
+            Should -Invoke Remove-DefenderSafeModeTasks -Times 1 -Exactly
+        }
+
+        It 'persists worker and normal-boot finalizer task exit results separately' {
+            $state = New-DefenderSafeModeTransaction `
+                -CliPath (Join-Path $TestDrive 'DisableDefender.ps1') `
+                -ModuleManifestPath (Join-Path $TestDrive 'DisableDefender.psd1') `
+                -RebootDelay 0
+            $state.Stage = 'RebootRequestedNormal'
+            Mock Read-DefenderSafeModeTransaction { $state }
+
+            Set-DefenderSafeModeTaskResult -TransactionId $state.TransactionId -Result 0
+            Set-DefenderSafeModeTaskResult -TransactionId $state.TransactionId -Result 7 -Finalizer
+
+            $state.SafeModeTaskResult | Should -Be 0
+            $state.FinalizerTaskResult | Should -Be 7
+            Should -Invoke Save-DefenderSafeModeTransaction -Times 2 -Exactly
+        }
+    }
+
+    Describe 'Get-DefenderSafeModeStatus' {
+        It 'reports an idle read-only contract when no transaction exists' {
+            Mock Read-DefenderSafeModeTransaction { $null }
+            Mock Get-CimInstance {
+                [PSCustomObject]@{ BootupState = 'Normal boot' }
+            }
+
+            $status = Get-DefenderSafeModeStatus
+
+            $status.SchemaVersion | Should -Be 1
+            $status.Stage | Should -Be 'Idle'
+            $status.Active | Should -Be $false
+            $status.RecoveryRecommendation | Should -Be 'None'
         }
     }
 }
