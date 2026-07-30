@@ -243,14 +243,9 @@ Build the distributable locally:
 .\tools\New-DisableDefenderRelease.ps1
 ```
 
-Build and sign when a code-signing certificate is available:
-```powershell
-.\tools\New-DisableDefenderRelease.ps1 -CertificateThumbprint '<thumbprint>'
-```
+The builder creates `dist\DisableDefender-vX.Y.Z.zip`, a `.sha256` file, and `DisableDefender-vX.Y.Z.release.json`. Releases are intentionally unsigned. Recursive cleanup is confined to a new identity-tracked stage under `dist`; repository roots, source directories, prefix-sharing siblings, existing temp directories, reparse points, and substituted paths are refused.
 
-The builder creates `dist\DisableDefender-vX.Y.Z.zip`, a `.sha256` file, and `DisableDefender-vX.Y.Z.release.json`. Without a supplied certificate, the artifact is intentionally marked `Unsigned`.
-
-Smart App Control can block unknown, unsigned, or low-reputation apps. See Microsoft’s [Smart App Control FAQ](https://support.microsoft.com/windows/smart-app-control-faq-285ea03d-fa88-4d56-882e-6698afdb7003). PowerShell script signatures use Authenticode; see Microsoft’s [`Set-AuthenticodeSignature`](https://learn.microsoft.com/powershell/module/microsoft.powershell.security/set-authenticodesignature) documentation. If SAC blocks the unsigned zip or launcher, extract manually, review the scripts, unblock the downloaded files if appropriate, and run from an elevated PowerShell session.
+Smart App Control can block unknown, unsigned, or low-reputation apps. See Microsoft’s [Smart App Control FAQ](https://support.microsoft.com/windows/smart-app-control-faq-285ea03d-fa88-4d56-882e-6698afdb7003). If SAC blocks the unsigned zip or launcher, extract manually, review the scripts, unblock the downloaded files if appropriate, and run from an elevated PowerShell session.
 
 ## What each mode does
 

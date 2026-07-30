@@ -36,17 +36,25 @@ Describe 'Module manifest' {
 }
 
 Describe 'Local release build' {
-    It 'builds an unsigned release zip with hash and metadata' {
-        $version = [string](Test-ModuleManifest -Path $script:ModuleManifest).Version
-        $output = Join-Path $TestDrive 'release'
-        $scriptPath = Join-Path $PSScriptRoot '..\tools\New-DisableDefenderRelease.ps1'
+    BeforeAll {
+        $script:ReleaseRepoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
+        $script:ReleaseVersion = [string](Test-ModuleManifest -Path $script:ModuleManifest).Version
+        $script:ReleaseBuilder = Join-Path $PSScriptRoot '..\tools\New-DisableDefenderRelease.ps1'
+    }
 
-        $metadata = & $scriptPath -Version $version -OutputDirectory $output -SkipSigning
+    It 'builds an unsigned release zip with hash and metadata' {
+        $output = Join-Path $TestDrive 'release'
+
+        $metadata = & $script:ReleaseBuilder -Version $script:ReleaseVersion `
+            -OutputDirectory $output -SkipSigning
 
         Test-Path -LiteralPath $metadata.ZipPath | Should -Be $true
         Test-Path -LiteralPath "$($metadata.ZipPath).sha256" | Should -Be $true
-        Test-Path -LiteralPath (Join-Path $output "DisableDefender-v$version.release.json") | Should -Be $true
+        Test-Path -LiteralPath (Join-Path $output "DisableDefender-v$($script:ReleaseVersion).release.json") |
+            Should -Be $true
         $metadata.SignatureStatus | Should -Be 'Unsigned'
+        @(Get-ChildItem -LiteralPath $output -Force -Directory -Filter '.DisableDefender-stage-*').Count |
+            Should -Be 0
 
         Add-Type -AssemblyName System.IO.Compression.FileSystem
         $zip = [System.IO.Compression.ZipFile]::OpenRead($metadata.ZipPath)
@@ -58,6 +66,111 @@ Describe 'Local release build' {
         } finally {
             $zip.Dispose()
         }
+    }
+
+    It 'refuses the repository root, protected source descendants, and prefix siblings' {
+        $prefixSibling = "$($script:ReleaseRepoRoot)-release-escape"
+
+        { & $script:ReleaseBuilder -OutputDirectory $script:ReleaseRepoRoot -SkipSigning } |
+            Should -Throw -ExpectedMessage '*strict descendant*'
+        { & $script:ReleaseBuilder -OutputDirectory (Join-Path $script:ReleaseRepoRoot 'Private') -SkipSigning } |
+            Should -Throw -ExpectedMessage '*only under dist*'
+        { & $script:ReleaseBuilder -OutputDirectory $prefixSibling -SkipSigning } |
+            Should -Throw -ExpectedMessage '*dist directory or a new temp directory*'
+    }
+
+    It 'refuses the temp root and existing temp directories without deleting their contents' {
+        $existingOutput = Join-Path $TestDrive 'existing-output'
+        New-Item -ItemType Directory -Path $existingOutput | Out-Null
+        $sentinel = Join-Path $existingOutput 'keep.txt'
+        Set-Content -LiteralPath $sentinel -Value 'keep' -Encoding ASCII
+
+        { & $script:ReleaseBuilder -OutputDirectory ([IO.Path]::GetTempPath()) -SkipSigning } |
+            Should -Throw -ExpectedMessage '*temp root*'
+        { & $script:ReleaseBuilder -OutputDirectory $existingOutput -SkipSigning } |
+            Should -Throw -ExpectedMessage '*newly created unique directory*'
+
+        Get-Content -LiteralPath $sentinel -Raw | Should -Match '^keep'
+    }
+
+    It 'refuses an existing reparse point anywhere in the output path' {
+        $junctionTarget = Join-Path $TestDrive 'junction-target'
+        $junctionPath = Join-Path $TestDrive 'junction-output'
+        New-Item -ItemType Directory -Path $junctionTarget | Out-Null
+        New-Item -ItemType Junction -Path $junctionPath -Target $junctionTarget | Out-Null
+        try {
+            { & $script:ReleaseBuilder -OutputDirectory $junctionPath -SkipSigning } |
+                Should -Throw -ExpectedMessage '*reparse point*'
+        } finally {
+            if (Test-Path -LiteralPath $junctionPath) {
+                Remove-Item -LiteralPath $junctionPath -Force
+            }
+        }
+    }
+
+    It 'refuses path substitution and leaves the replacement directory untouched' {
+        $output = Join-Path $TestDrive 'substitution-output'
+        $env:DD_RELEASE_SUBSTITUTION_OUTPUT = $output
+        $env:DD_RELEASE_REPLACEMENT_STAGE = ''
+        Mock Compress-Archive {
+            param($Path, $DestinationPath)
+            $packageRoot = Split-Path -Parent $Path
+            $stageRoot = Split-Path -Parent $packageRoot
+            $resolvedStage = [IO.Path]::GetFullPath($stageRoot)
+            $resolvedOutput = [IO.Path]::GetFullPath($env:DD_RELEASE_SUBSTITUTION_OUTPUT)
+            if (-not $resolvedStage.StartsWith(
+                $resolvedOutput.TrimEnd('\') + '\',
+                [StringComparison]::OrdinalIgnoreCase)) {
+                throw "Unexpected substitution-test stage: $resolvedStage"
+            }
+
+            Remove-Item -LiteralPath $resolvedStage -Recurse -Force
+            New-Item -ItemType Directory -Path $resolvedStage | Out-Null
+            Set-Content -LiteralPath (Join-Path $resolvedStage 'replacement.txt') `
+                -Value 'replacement must survive' -Encoding ASCII
+            $env:DD_RELEASE_REPLACEMENT_STAGE = $resolvedStage
+            throw 'Injected stage substitution'
+        }
+
+        try {
+            { & $script:ReleaseBuilder -OutputDirectory $output -SkipSigning } |
+                Should -Throw -ExpectedMessage '*identity changed*'
+
+            Test-Path -LiteralPath (Join-Path $env:DD_RELEASE_REPLACEMENT_STAGE 'replacement.txt') |
+                Should -Be $true
+        } finally {
+            if ($env:DD_RELEASE_REPLACEMENT_STAGE) {
+                $resolvedTestDrive = [IO.Path]::GetFullPath($TestDrive).TrimEnd('\') + '\'
+                if (-not $env:DD_RELEASE_REPLACEMENT_STAGE.StartsWith(
+                    $resolvedTestDrive,
+                    [StringComparison]::OrdinalIgnoreCase)) {
+                    throw "Refusing unexpected substitution-test cleanup: $($env:DD_RELEASE_REPLACEMENT_STAGE)"
+                }
+                if (Test-Path -LiteralPath $env:DD_RELEASE_REPLACEMENT_STAGE) {
+                    Remove-Item -LiteralPath $env:DD_RELEASE_REPLACEMENT_STAGE -Recurse -Force
+                }
+            }
+            Remove-Item Env:DD_RELEASE_SUBSTITUTION_OUTPUT -ErrorAction SilentlyContinue
+            Remove-Item Env:DD_RELEASE_REPLACEMENT_STAGE -ErrorAction SilentlyContinue
+        }
+    }
+
+    It 'rechecks both directory identities immediately before recursive cleanup' {
+        $builderSource = Get-Content -LiteralPath $script:ReleaseBuilder -Raw
+        $cleanupFunction = [regex]::Match(
+            $builderSource,
+            '(?s)function Remove-ReleaseDirectorySafely \{(?<Body>.*?)' +
+            '\r?\n\}\r?\n\r?\nfunction Remove-ExistingReleaseArtifact'
+        )
+
+        $cleanupFunction.Success | Should -Be $true
+        $cleanupFunction.Groups['Body'].Value | Should -Match (
+            '(?s)Assert-ReleaseDirectoryIdentity -Expected \$ParentIdentity.*' +
+            'Assert-ReleaseDirectoryIdentity -Expected \$DirectoryIdentity.*' +
+            'Remove-Item -LiteralPath \$DirectoryIdentity\.Path -Recurse'
+        )
+        ([regex]::Matches($builderSource, 'Remove-Item[^\r\n]*-Recurse')).Count |
+            Should -Be 1
     }
 }
 

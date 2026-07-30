@@ -11,6 +11,7 @@
 - Added an explicit `-RepairWithoutManifest` fixed-default repair path in the CLI, module command, and GUI.
 
 ### Fixed
+- Release packaging now cleans only a newly created, file-identity-tracked staging directory; strict `dist` / unique-temp containment, reparse checks, path-substitution detection, and an immediate identity recheck protect every recursive delete. The builder now emits unsigned artifacts only.
 - Firewall guards now fail closed when `mpssvc` or `BFE` is missing, disabled, stopped, or unverifiable, or when a required profile is missing, unavailable, or off; the GUI no longer maintains a weaker duplicate probe.
 - Phase filters now apply only to mutation phases; prerequisite, managed/domain, Safe Mode, restore-point, and Firewall pre/postflight gates are mandatory, and an empty action selection fails before manifest creation.
 - Safe Mode and offline generators preserve `-Force` only when the caller explicitly requests it instead of injecting a safety override.
