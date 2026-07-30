@@ -663,6 +663,8 @@ function Start-RestoreManifest {
     $script:RestoreManifestRunId = [guid]::NewGuid().ToString()
     $script:RestoreManifestSequence = 0
     $script:RestoreManifestMode = $Mode
+    $script:AclBackupRunId = $script:RestoreManifestRunId
+    $script:AclBackupDocument = $null
     Write-Log "Restore manifest recording started: $path" INFO
 }
 

@@ -35,7 +35,7 @@ Disable confirmation includes a current-vs-target drift preview before execution
 
 - **Three modes**: `Disable` (reversible), `Remove` (aggressive), `Restore` (undo)
 - **Firewall preservation** with critical (`mpssvc`, `BFE`) vs touch-refuse separation; pre/post integrity guard aborts if profile flips off
-- **Registry ACL takeover** via `SeTakeOwnershipPrivilege` + `Microsoft.Win32.Registry` — no TrustedInstaller needed (TI triggers Defender alarms per privacy.sexy #264)
+- **Registry ACL takeover** via `SeTakeOwnershipPrivilege` + `Microsoft.Win32.Registry` — each allowlisted key gets a per-run, atomically replaced write-ahead journal with its original owner flushed before ownership changes and its original DACL flushed before permission changes
 - **SYSTEM-via-task fallback** for keys that even Admin+ACL-override can't touch, with task result/output logging
 - **Multi-strategy `Set-ServiceStart`**: direct write → ACL takeover → SYSTEM task, with target-state verification after every strategy
 - **Full policy coverage** (privacy.sexy-enriched): `DisableAntiSpyware`, real-time, behavior, IOAV, IPS, IPC, spynet, MAPS, NIS, IPS-throttle, MpEngine PUA + file-hash, signatures, scan, SmartScreen, MRT, passive-mode for MDE, UX suppression, legacy `Microsoft Antimalware`
@@ -47,7 +47,7 @@ Disable confirmation includes a current-vs-target drift preview before execution
 - **Restore point** before any destructive op (opt-out with `-NoRestorePoint`)
 - **Runtime directory preflight**: `%ProgramData%\DisableDefender` refuses junctions/symlinks and repairs weak ACLs before writing logs, manifests, phase state, tripwires, ACL backups, or SYSTEM task output
 - **Privileged restore-input leases**: manifests, replay state, and ACL backups are size-bounded and read through one owner/DACL/reparse/file-identity-validated handle that denies concurrent writes and replacement
-- **Transactional exact restore**: Disable/Remove record versioned, target-allowlisted JSONL undo entries; Restore rejects mixed RunIds or non-contiguous sequences before mutation, replays the exact leased bytes in reverse order, verifies the recorded baseline, and only then archives it. Interrupted replay and archive finalization resume from durable state.
+- **Transactional exact restore**: Disable/Remove record versioned, target-allowlisted JSONL undo entries; Restore rejects mixed RunIds or non-contiguous sequences before mutation, replays the exact leased bytes in reverse order, restores only ACL journals matching the selected manifest RunIds, verifies the recorded baseline, and only then archives it. Interrupted replay and archive finalization resume from durable state.
 - **Explicit no-manifest repair**: `-RepairWithoutManifest` runs the separate fixed-default repair preset and is refused while a selected undo manifest exists
 - **Atomic phase boundaries**: each mode records phase status to `phase-state.json`; failures log partial state plus resume/rollback recovery choices
 - **Shared fail-closed Firewall guard**: every mutation phase and the GUI use the same read-only check; missing, disabled, or stopped `mpssvc` / `BFE`, unavailable required profiles, or any profile switched off abort the operation
@@ -280,7 +280,7 @@ Everything Disable does, plus:
 - Rejects mixed RunIds, sequence gaps/duplicates, oversized or over-depth data, extra schema fields, non-allowlisted registry/service/task/preference/package targets, reparse points, weak runtime-file ACLs, and concurrent input replacement before privileged mutation
 - Warns when older archived undo chains exist; use `-ManifestSelection All` to replay active and archived manifests newest-first
 - Restores each recorded registry value/tree, `MpPreference`, task, service, SafeBoot, context-menu, DISM package, and Security Health package/marker set to its exact pre-run state
-- Restores backed-up registry ACLs when ACL takeover was used
+- Prevalidates every selected ACL journal, unwinds repeated runs newest-first, and restores owner-only crash checkpoints or full owner/DACL baselines; any failed replay retains the whole active set, while total success moves journals to retained `.restored.*` archives
 - Preserves the selected manifests and a durable resume point after replay, verification, or archive interruption; archives manifests only after exact verification
 - Refuses `-Only`/`-Skip`, so a recorded transaction cannot bypass part of its baseline
 - With no manifest, stops before mutation unless `-RepairWithoutManifest` explicitly selects fixed-default repair; that repair supports `-Only`/`-Skip` and ends with fixed-target health guidance
@@ -324,6 +324,8 @@ v0.0.2 fixed a false-positive where `SharedAccess` (ICS, off by default) tripped
 - `%ProgramData%\DisableDefender\transcript.log`
 - `%ProgramData%\DisableDefender\restore-manifest.jsonl`
 - `%ProgramData%\DisableDefender\restore-manifest.*.jsonl`
+- `%ProgramData%\DisableDefender\acl-backup.<RunId>.json` (active write-ahead ACL journal)
+- `%ProgramData%\DisableDefender\acl-backup.<RunId>.restored.<Timestamp>.json` (verified retained ACL archive)
 - `%ProgramData%\DisableDefender\surface-baseline.json`
 - `%ProgramData%\DisableDefender\phase-state.json`
 - `%ProgramData%\DisableDefender\safe-mode-transaction.json`

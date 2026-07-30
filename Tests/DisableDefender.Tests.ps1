@@ -784,10 +784,60 @@ InModuleScope DisableDefender {
     }
 
     Describe 'Registry ACL effect verification' {
+        BeforeAll {
+            function New-TestAclJournal {
+                param(
+                    [string]$RunId = ([guid]::NewGuid().ToString('D')),
+                    [string]$SubKey = 'SYSTEM\CurrentControlSet\Services\WinDefend',
+                    [string]$OwnerSid = 'S-1-5-18',
+                    [AllowNull()]$Dacl = 'D:',
+                    [string]$Stage = 'AclGranted',
+                    [string]$Created = '2026-07-29T12:00:00.0000000+00:00',
+                    [switch]$Raw
+                )
+
+                $document = [PSCustomObject][ordered]@{
+                    SchemaVersion = 1
+                    RunId         = $RunId
+                    Created       = $Created
+                    Updated       = $Created
+                    Entries       = @(
+                        [PSCustomObject][ordered]@{
+                            Sequence   = 1
+                            SubKey     = $SubKey
+                            OwnerSid   = $OwnerSid
+                            Dacl       = $Dacl
+                            Stage      = $Stage
+                            CapturedAt = $Created
+                            Updated    = $Created
+                            Error      = $null
+                        }
+                    )
+                }
+                $path = Get-DefenderAclBackupPath -RunId $RunId
+                if ($Raw) {
+                    $json = $document | ConvertTo-Json -Depth 8
+                    [System.IO.File]::WriteAllText(
+                        $path,
+                        $json,
+                        (New-Object System.Text.UTF8Encoding($false)))
+                } else {
+                    Write-DefenderAclBackupDocument -Document $document | Out-Null
+                }
+                return [PSCustomObject]@{
+                    Document = $document
+                    Path     = $path
+                }
+            }
+        }
+
         BeforeEach {
             $script:AppDir = $TestDrive
-            Remove-Item -LiteralPath (Join-Path $TestDrive 'acl-backup.clixml') `
-                -Force -ErrorAction SilentlyContinue
+            Get-ChildItem -LiteralPath $TestDrive -Filter 'acl-backup*' `
+                -File -ErrorAction SilentlyContinue |
+                Remove-Item -Force -ErrorAction SilentlyContinue
+            $script:AclBackupRunId = $null
+            $script:AclBackupDocument = $null
             Mock Assert-DefenderRuntimeDirectory {}
             Mock Initialize-Priv {}
             Mock Write-Log {}
@@ -801,21 +851,16 @@ InModuleScope DisableDefender {
             $result.Effects[0].Required | Should -Be $false
         }
 
-        It 'removes the backup only after every ACL is verified' {
-            $path = Join-Path $TestDrive 'acl-backup.clixml'
-            @{
-                'SYSTEM\CurrentControlSet\Services\WinDefend' = @{
-                    OwnerSid = 'S-1-5-18'
-                    Dacl = 'D:'
-                }
-            } | Export-Clixml -Path $path
+        It 'archives a per-run journal only after every ACL is verified' {
+            $journal = New-TestAclJournal
             Mock Restore-DefenderRegistryAclEntry {
                 [PSCustomObject]@{
-                    Exists = $true
-                    Verified = $true
-                    OwnerSid = $Entry.OwnerSid
-                    Dacl = $Entry.Dacl
-                    Error = $null
+                    Exists       = $true
+                    Verified     = $true
+                    OwnerSid     = $Entry.OwnerSid
+                    Dacl         = $Entry.Dacl
+                    ExpectedDacl = $Entry.Dacl
+                    Error        = $null
                 }
             }
 
@@ -823,10 +868,193 @@ InModuleScope DisableDefender {
 
             $result.Succeeded | Should -Be $true
             $result.Verified | Should -Be 1
-            Test-Path -LiteralPath $path | Should -Be $false
+            Test-Path -LiteralPath $journal.Path | Should -Be $false
+            @(Get-ChildItem -LiteralPath $TestDrive `
+                -Filter "acl-backup.$($journal.Document.RunId).restored.*.json").Count |
+                Should -Be 1
         }
 
-        It 'retains the backup when any ACL fails verification' {
+        It 'retains every active journal when any ACL fails verification' {
+            $first = New-TestAclJournal -Created '2026-07-29T11:00:00+00:00'
+            $second = New-TestAclJournal -Created '2026-07-29T12:00:00+00:00' `
+                -SubKey 'SYSTEM\CurrentControlSet\Services\WdFilter'
+            Mock Restore-DefenderRegistryAclEntry {
+                [PSCustomObject]@{
+                    Exists       = $true
+                    Verified     = $false
+                    OwnerSid     = 'S-1-5-32-544'
+                    Dacl         = 'D:(A;;KA;;;BA)'
+                    ExpectedDacl = $Entry.Dacl
+                    Error        = 'readback mismatch'
+                }
+            }
+
+            $result = Restore-RegKeyACLs
+
+            $result.Succeeded | Should -Be $false
+            $result.Errors | Should -Contain 'readback mismatch'
+            Test-Path -LiteralPath $first.Path | Should -Be $true
+            Test-Path -LiteralPath $second.Path | Should -Be $true
+        }
+
+        It 'rejects every ACL replay when one target is outside the allowlist' {
+            $valid = New-TestAclJournal
+            $invalid = New-TestAclJournal -SubKey 'SOFTWARE\Unrelated' -Raw
+            Mock Restore-DefenderRegistryAclEntry { throw 'should not replay' }
+
+            $result = Restore-RegKeyACLs
+
+            $result.Succeeded | Should -Be $false
+            $result.Errors[0] | Should -Match 'not allowlisted'
+            Should -Invoke Restore-DefenderRegistryAclEntry -Times 0 -Exactly
+            Test-Path -LiteralPath $valid.Path | Should -Be $true
+            Test-Path -LiteralPath $invalid.Path | Should -Be $true
+        }
+
+        It 'rejects an ACL payload that grants broad write access' {
+            $journal = New-TestAclJournal -Dacl 'D:(A;;KA;;;BU)' -Raw
+            Mock Restore-DefenderRegistryAclEntry { throw 'should not replay' }
+
+            $result = Restore-RegKeyACLs
+
+            $result.Succeeded | Should -Be $false
+            $result.Errors[0] | Should -Match 'broad write access'
+            Should -Invoke Restore-DefenderRegistryAclEntry -Times 0 -Exactly
+            Test-Path -LiteralPath $journal.Path | Should -Be $true
+        }
+
+        It 'fails closed on an unrecognized active journal name' {
+            $path = Join-Path $TestDrive 'acl-backup.corrupt.json'
+            [System.IO.File]::WriteAllText($path, '{}')
+            Mock Restore-DefenderRegistryAclEntry { throw 'should not replay' }
+
+            $result = Restore-RegKeyACLs
+
+            $result.Succeeded | Should -Be $false
+            $result.Errors[0] | Should -Match 'Unrecognized registry ACL journal artifact'
+            Should -Invoke Restore-DefenderRegistryAclEntry -Times 0 -Exactly
+        }
+
+        It 'replays only journals selected by manifest RunId' {
+            $older = New-TestAclJournal `
+                -RunId '11111111-1111-1111-1111-111111111111' `
+                -Created '2026-07-29T11:00:00+00:00'
+            $newer = New-TestAclJournal `
+                -RunId '22222222-2222-2222-2222-222222222222' `
+                -Created '2026-07-29T12:00:00+00:00' `
+                -OwnerSid 'S-1-5-80-1234'
+            $script:AclRestoreOrder = @()
+            Mock Restore-DefenderRegistryAclEntry {
+                $script:AclRestoreOrder += [string]$Entry.OwnerSid
+                [PSCustomObject]@{
+                    Exists       = $true
+                    Verified     = $true
+                    OwnerSid     = $Entry.OwnerSid
+                    Dacl         = $Entry.Dacl
+                    ExpectedDacl = $Entry.Dacl
+                    Error        = $null
+                }
+            }
+
+            $result = Restore-RegKeyACLs -RunId $newer.Document.RunId
+
+            $result.Succeeded | Should -Be $true
+            $script:AclRestoreOrder | Should -Be @('S-1-5-80-1234')
+            Test-Path -LiteralPath $older.Path | Should -Be $true
+            Test-Path -LiteralPath $newer.Path | Should -Be $false
+        }
+
+        It 'unwinds repeated runs newest-first to the oldest baseline' {
+            New-TestAclJournal `
+                -RunId '11111111-1111-1111-1111-111111111111' `
+                -Created '2026-07-29T11:00:00+00:00' |
+                Out-Null
+            New-TestAclJournal `
+                -RunId '22222222-2222-2222-2222-222222222222' `
+                -Created '2026-07-29T12:00:00+00:00' `
+                -OwnerSid 'S-1-5-80-1234' |
+                Out-Null
+            $script:AclRestoreOrder = @()
+            Mock Restore-DefenderRegistryAclEntry {
+                $script:AclRestoreOrder += [string]$Entry.OwnerSid
+                [PSCustomObject]@{
+                    Exists       = $true
+                    Verified     = $true
+                    OwnerSid     = $Entry.OwnerSid
+                    Dacl         = $Entry.Dacl
+                    ExpectedDacl = $Entry.Dacl
+                    Error        = $null
+                }
+            }
+
+            $result = Restore-RegKeyACLs
+
+            $result.Succeeded | Should -Be $true
+            $script:AclRestoreOrder |
+                Should -Be @('S-1-5-80-1234', 'S-1-5-18')
+        }
+
+        It 'accepts owner-only write-ahead entries after an interrupted takeover' {
+            $journal = New-TestAclJournal -Dacl $null -Stage 'OwnerChanged'
+            Mock Restore-DefenderRegistryAclEntry {
+                $Entry.Dacl | Should -BeNullOrEmpty
+                [PSCustomObject]@{
+                    Exists       = $true
+                    Verified     = $true
+                    OwnerSid     = $Entry.OwnerSid
+                    Dacl         = 'D:(A;;KR;;;SY)'
+                    ExpectedDacl = 'D:(A;;KR;;;SY)'
+                    Error        = $null
+                }
+            }
+
+            $result = Restore-RegKeyACLs
+
+            $result.Succeeded | Should -Be $true
+            Test-Path -LiteralPath $journal.Path | Should -Be $false
+            Should -Invoke Restore-DefenderRegistryAclEntry -Times 1 -Exactly
+        }
+
+        It 'persists owner and DACL baselines before their mutations' {
+            $script:AclWriteOrder = @()
+            Mock Get-DefenderRegistryOwnerSnapshot { 'S-1-5-18' }
+            Mock Write-DefenderAclBackupDocument {
+                $script:AclWriteOrder +=
+                    "Write:$([string]$Document.Entries[0].Stage)"
+                'journal-path'
+            }
+            Mock Set-DefenderRegistryOwnerAdministrators {
+                $script:AclWriteOrder += 'SetOwner'
+            }
+            Mock Get-DefenderRegistryDaclSnapshot { 'D:' }
+            Mock Set-DefenderRegistryAdministratorsFullControl {
+                $script:AclWriteOrder += 'SetDacl'
+            }
+            Mock Test-DefenderRegistryAdministratorsControl { $true }
+
+            Grant-RegKeyControl `
+                -SubKey 'SYSTEM\CurrentControlSet\Services\WinDefend' |
+                Should -Be $true
+
+            $script:AclWriteOrder -join ',' | Should -Be (
+                'Write:OwnerCaptured,SetOwner,Write:OwnerChanged,' +
+                'Write:BaselineCaptured,SetDacl,Write:AclGranted')
+        }
+
+        It 'never changes ownership when the first journal flush fails' {
+            Mock Get-DefenderRegistryOwnerSnapshot { 'S-1-5-18' }
+            Mock Write-DefenderAclBackupDocument { throw 'disk flush failed' }
+            Mock Set-DefenderRegistryOwnerAdministrators {}
+
+            Grant-RegKeyControl `
+                -SubKey 'SYSTEM\CurrentControlSet\Services\WinDefend' |
+                Should -Be $false
+
+            Should -Invoke Set-DefenderRegistryOwnerAdministrators `
+                -Times 0 -Exactly
+        }
+
+        It 'reads legacy CLIXML journals and archives them after verified replay' {
             $path = Join-Path $TestDrive 'acl-backup.clixml'
             @{
                 'SYSTEM\CurrentControlSet\Services\WinDefend' = @{
@@ -836,59 +1064,22 @@ InModuleScope DisableDefender {
             } | Export-Clixml -Path $path
             Mock Restore-DefenderRegistryAclEntry {
                 [PSCustomObject]@{
-                    Exists = $true
-                    Verified = $false
-                    OwnerSid = 'S-1-5-32-544'
-                    Dacl = 'D:(A;;KA;;;BA)'
-                    Error = 'readback mismatch'
+                    Exists       = $true
+                    Verified     = $true
+                    OwnerSid     = $Entry.OwnerSid
+                    Dacl         = $Entry.Dacl
+                    ExpectedDacl = $Entry.Dacl
+                    Error        = $null
                 }
             }
 
             $result = Restore-RegKeyACLs
 
-            $result.Succeeded | Should -Be $false
-            $result.Errors | Should -Contain 'readback mismatch'
-            Test-Path -LiteralPath $path | Should -Be $true
-        }
-
-        It 'rejects every ACL replay when one target is outside the allowlist' {
-            $path = Join-Path $TestDrive 'acl-backup.clixml'
-            @{
-                'SYSTEM\CurrentControlSet\Services\WinDefend' = @{
-                    OwnerSid = 'S-1-5-18'
-                    Dacl = 'D:'
-                }
-                'SOFTWARE\Unrelated' = @{
-                    OwnerSid = 'S-1-5-18'
-                    Dacl = 'D:'
-                }
-            } | Export-Clixml -Path $path
-            Mock Restore-DefenderRegistryAclEntry { throw 'should not replay' }
-
-            $result = Restore-RegKeyACLs
-
-            $result.Succeeded | Should -Be $false
-            $result.Errors[0] | Should -Match 'not allowlisted'
-            Should -Invoke Restore-DefenderRegistryAclEntry -Times 0 -Exactly
-            Test-Path -LiteralPath $path | Should -Be $true
-        }
-
-        It 'rejects an ACL payload that grants broad write access' {
-            $path = Join-Path $TestDrive 'acl-backup.clixml'
-            @{
-                'SYSTEM\CurrentControlSet\Services\WinDefend' = @{
-                    OwnerSid = 'S-1-5-18'
-                    Dacl = 'D:(A;;KA;;;BU)'
-                }
-            } | Export-Clixml -Path $path
-            Mock Restore-DefenderRegistryAclEntry { throw 'should not replay' }
-
-            $result = Restore-RegKeyACLs
-
-            $result.Succeeded | Should -Be $false
-            $result.Errors[0] | Should -Match 'broad write access'
-            Should -Invoke Restore-DefenderRegistryAclEntry -Times 0 -Exactly
-            Test-Path -LiteralPath $path | Should -Be $true
+            $result.Succeeded | Should -Be $true
+            Test-Path -LiteralPath $path | Should -Be $false
+            @(Get-ChildItem -LiteralPath $TestDrive `
+                -Filter 'acl-backup.restored.*.clixml').Count |
+                Should -Be 1
         }
     }
 
@@ -2884,13 +3075,29 @@ InModuleScope DisableDefender {
         It 'uses only recorded-baseline phases when a manifest exists' {
             Mock Get-RestoreManifestReplayPlan {
                 [PSCustomObject]@{
-                    Manifests = @([PSCustomObject]@{ Path = 'restore-manifest.jsonl' })
+                    Manifests = @([PSCustomObject]@{
+                        Path = 'restore-manifest.jsonl'
+                        RunIds = @(
+                            '11111111-1111-1111-1111-111111111111',
+                            '22222222-2222-2222-2222-222222222222'
+                        )
+                    })
                 }
+            }
+            Mock Restore-RegKeyACLs {
+                $script:CapturedAclRunIds = @($RunId)
+                $aclResult = New-DefenderActionResult -Name 'RegistryAclRestore'
+                Add-DefenderEffect -Result $aclResult -Target 'journal-selection' `
+                    -Required $false -Attempted $false -Changed $false `
+                    -Verified $true -Evidence 'captured'
+                Complete-DefenderActionResult -Result $aclResult
             }
             Mock Invoke-DefenderGuardedPhasePlan {
                 $script:CapturedRestorePhases = $Phases
                 $script:CapturedRestorePreflight = $PreflightPhases
                 $script:CapturedRestorePostflight = $PostflightPhases
+                & (($Phases | Where-Object Key -eq 'AclRestore').Action) |
+                    Out-Null
                 [PSCustomObject]@{
                     Succeeded = $true
                     Simulation = $false
@@ -2915,6 +3122,10 @@ InModuleScope DisableDefender {
             $script:CapturedRestorePhases.Key | Should -Not -Contain 'ContextMenu'
             $script:CapturedRestorePreflight.Key | Should -Be @('FirewallPreflight')
             $script:CapturedRestorePostflight.Key | Should -Be @('FirewallPostflight')
+            $script:CapturedAclRunIds | Should -Be @(
+                '11111111-1111-1111-1111-111111111111',
+                '22222222-2222-2222-2222-222222222222'
+            )
         }
 
         It 'requires an explicit repair switch when no manifest exists' {
@@ -3880,7 +4091,8 @@ InModuleScope DisableDefender {
             try {
                 $entries = @($zip.Entries | ForEach-Object { $_.Name })
                 $entries | Should -Not -Contain 'restore-manifest.jsonl'
-                $entries | Should -Not -Contain 'acl-backup.clixml'
+                @($entries | Where-Object { $_ -like 'acl-backup*' }).Count |
+                    Should -Be 0
             } finally {
                 $zip.Dispose()
             }

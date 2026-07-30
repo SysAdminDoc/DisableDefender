@@ -1182,7 +1182,8 @@ function Get-PolicyStreamEvent {
             'ACL' { 'Yellow' }
             default { 'Peach' }
         }
-    } elseif ($message -match '^WhatIf: would take ownership \+ grant FullControl on HKLM:\\(?<Path>.+)$') {
+    } elseif ($message -match
+        '^WhatIf: would (?:journal, take ownership, and grant|take ownership \+ grant) FullControl on HKLM:\\(?<Path>.+)$') {
         $streamEvent.Method = 'ACL'
         $streamEvent.Icon = [char]0xE72E
         $streamEvent.Title = 'Would grant registry ACL'
@@ -1194,7 +1195,8 @@ function Get-PolicyStreamEvent {
         $streamEvent.Title = 'SYSTEM task method'
         $streamEvent.Detail = $Matches.Command
         $streamEvent.Color = if ($Entry.Level -eq 'ERROR') { 'Red' } else { 'Peach' }
-    } elseif ($message -match '^ACL backup saved|^Restored ACL for |^Registry ACLs restored') {
+    } elseif ($message -match
+        '^ACL journal verified|^Archived verified ACL journal|^Restored ACL for |^Registry ACL restore result|^ACL backup saved|^Registry ACLs restored') {
         $streamEvent.Method = 'ACL'
         $streamEvent.Icon = [char]0xE72E
         $streamEvent.Title = 'Registry ACL state'

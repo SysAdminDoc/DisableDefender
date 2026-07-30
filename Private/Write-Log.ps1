@@ -68,4 +68,6 @@ function Set-RunOptions {
     $script:LogPathOverride = if ([string]::IsNullOrWhiteSpace($LogPath)) { $null } else { $LogPath }
     $script:LogCallback = $LogCallback
     $script:RuntimeDirectoryVerified = $false
+    $script:AclBackupRunId = $null
+    $script:AclBackupDocument = $null
 }

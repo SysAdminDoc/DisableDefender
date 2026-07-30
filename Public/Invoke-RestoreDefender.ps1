@@ -158,9 +158,12 @@ function Invoke-RestoreDefender {
                 @($Skip | Where-Object { $_ }).Count -gt 0) {
                 throw 'Phase filters are not supported for transactional recorded-baseline restore.'
             }
+            $selectedAclRunIds = @($manifestPlan.Manifests | ForEach-Object {
+                @($_.RunIds)
+            } | Sort-Object -Unique)
             $phases = @(
                 New-DefenderPhase -Name 'Replay recorded baseline' -Key 'ReplayManifest' -RequiresResult -Action { Invoke-DefenderRestoreManifestPlan -Selection $ManifestSelection }
-                New-DefenderPhase -Name 'Registry ACL restore' -Key 'AclRestore' -RequiresResult -Action { Restore-RegKeyACLs }
+                New-DefenderPhase -Name 'Registry ACL restore' -Key 'AclRestore' -RequiresResult -Action { Restore-RegKeyACLs -RunId $selectedAclRunIds }
                 New-DefenderPhase -Name 'Recorded baseline verification' -Key 'Verification' -RequiresResult -Action { Test-RestoreManifestBaseline -Selection $ManifestSelection }
             )
             $preflightPhases = @(
