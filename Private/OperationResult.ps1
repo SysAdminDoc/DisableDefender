@@ -54,6 +54,24 @@ function Add-DefenderEffect {
     [void]$Result.Effects.Add($effect)
 }
 
+function Merge-DefenderActionResult {
+    param(
+        [Parameter(Mandatory)]$Result,
+        [Parameter(Mandatory)]$ChildResult
+    )
+
+    if (-not (Test-DefenderActionResult -Value $Result) -or
+        -not (Test-DefenderActionResult -Value $ChildResult)) {
+        throw 'Cannot merge an invalid DisableDefender action result.'
+    }
+
+    foreach ($effect in @($ChildResult.Effects)) {
+        Add-DefenderEffect -Result $Result -Target $effect.Target -Required $effect.Required `
+            -Attempted $effect.Attempted -Changed $effect.Changed -Verified $effect.Verified `
+            -Evidence $effect.Evidence -Errors $effect.Errors
+    }
+}
+
 function Complete-DefenderActionResult {
     param(
         [Parameter(Mandatory)]$Result

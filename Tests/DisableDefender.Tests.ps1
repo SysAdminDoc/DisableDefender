@@ -159,23 +159,286 @@ InModuleScope DisableDefender {
             It 'refuses to write to firewall policy paths' {
                 Mock New-ItemProperty {}
                 Mock New-Item {}
-                Set-RegValue -Path 'HKLM:\SOFTWARE\Policies\Microsoft\WindowsFirewall\DomainProfile' -Name 'Test' -Value 1
+                $result = Set-RegValue -Path 'HKLM:\SOFTWARE\Policies\Microsoft\WindowsFirewall\DomainProfile' -Name 'Test' -Value 1
+
+                $result.Succeeded | Should -Be $false
+                $result.Effects[0].Verified | Should -Be $false
                 Should -Invoke New-ItemProperty -Times 0 -Exactly
             }
 
             It 'refuses to write to firewall service paths' {
                 Mock New-ItemProperty {}
                 Mock New-Item {}
-                Set-RegValue -Path 'HKLM:\SYSTEM\CurrentControlSet\Services\mpssvc\Parameters' -Name 'Test' -Value 1
+                $result = Set-RegValue -Path 'HKLM:\SYSTEM\CurrentControlSet\Services\mpssvc\Parameters' -Name 'Test' -Value 1
+
+                $result.Succeeded | Should -Be $false
                 Should -Invoke New-ItemProperty -Times 0 -Exactly
             }
 
             It 'allows writing to Defender policy paths' {
                 Mock New-ItemProperty {}
                 Mock Test-Path { $true }
+                Mock Get-ItemProperty { [PSCustomObject]@{ DisableAntiSpyware = 0 } }
                 Set-RegValue -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender' -Name 'DisableAntiSpyware' -Value 1
                 Should -Invoke New-ItemProperty -Times 1 -Exactly
             }
+        }
+
+        Context 'Postcondition verification' {
+            BeforeEach {
+                Mock Test-Path { $true }
+                Mock Register-RegistryValueUndo {}
+                Mock Write-Log {}
+            }
+
+            It 'does not write an already-correct value and records a verified no-op' {
+                Mock Get-ItemProperty { [PSCustomObject]@{ Test = 1 } }
+                Mock New-ItemProperty {}
+
+                $result = Set-RegValue -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender' `
+                    -Name 'Test' -Value 1
+
+                $result.Succeeded | Should -Be $true
+                $result.Attempted | Should -Be 0
+                $result.Changed | Should -Be 0
+                $result.Verified | Should -Be 1
+                Should -Invoke New-ItemProperty -Times 0 -Exactly
+            }
+
+            It 'reports a changed value only after the readback matches' {
+                $script:RegistryTestValue = 0
+                Mock Get-ItemProperty { [PSCustomObject]@{ Test = $script:RegistryTestValue } }
+                Mock New-ItemProperty { $script:RegistryTestValue = $Value }
+
+                $result = Set-RegValue -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender' `
+                    -Name 'Test' -Value 1
+
+                $result.Succeeded | Should -Be $true
+                $result.Attempted | Should -Be 1
+                $result.Changed | Should -Be 1
+                $result.Verified | Should -Be 1
+                $result.Effects[0].Evidence.Actual | Should -Be 1
+            }
+
+            It 'fails when a write returns without reaching the requested value' {
+                Mock Get-ItemProperty { [PSCustomObject]@{ Test = 0 } }
+                Mock New-ItemProperty {}
+
+                $result = Set-RegValue -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender' `
+                    -Name 'Test' -Value 1
+
+                $result.Succeeded | Should -Be $false
+                $result.Attempted | Should -Be 1
+                $result.Changed | Should -Be 0
+                $result.Verified | Should -Be 0
+                $result.Errors[0] | Should -Match 'did not converge'
+            }
+
+            It 'fails closed without writing when the original value cannot be read' {
+                Mock Get-ItemProperty { throw [System.UnauthorizedAccessException]::new('denied') }
+                Mock New-ItemProperty {}
+
+                $result = Set-RegValue -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender' `
+                    -Name 'Test' -Value 1
+
+                $result.Succeeded | Should -Be $false
+                $result.Attempted | Should -Be 0
+                Should -Invoke New-ItemProperty -Times 0 -Exactly
+                Should -Invoke Register-RegistryValueUndo -Times 0 -Exactly
+            }
+        }
+    }
+
+    Describe 'MpPreference effect verification' {
+        BeforeEach {
+            Mock Get-MpRuntimeExclusionCatalog { @() }
+            Mock Test-RestoreManifestRecording { $false }
+            Mock Write-Log {}
+        }
+
+        It 'verifies a preference after changing it' {
+            $script:MpRealtimeValue = $false
+            Mock Get-MpRuntimePreferenceCatalog {
+                @([PSCustomObject]@{
+                    Name = 'DisableRealtimeMonitoring'
+                    DisableValue = $true
+                    RestoreValue = $false
+                })
+            }
+            Mock Get-MpPreference {
+                [PSCustomObject]@{ DisableRealtimeMonitoring = $script:MpRealtimeValue }
+            }
+            Mock Set-MpPreference { $script:MpRealtimeValue = $DisableRealtimeMonitoring }
+
+            $result = Set-MpRuntimePrefs
+
+            $result.Succeeded | Should -Be $true
+            $result.Attempted | Should -Be 1
+            $result.Changed | Should -Be 1
+            $result.Verified | Should -Be 1
+            Should -Invoke Get-MpPreference -Times 2 -Exactly
+        }
+
+        It 'records an already-correct preference without calling the mutator' {
+            Mock Get-MpRuntimePreferenceCatalog {
+                @([PSCustomObject]@{
+                    Name = 'DisableRealtimeMonitoring'
+                    DisableValue = $true
+                    RestoreValue = $false
+                })
+            }
+            Mock Get-MpPreference {
+                [PSCustomObject]@{ DisableRealtimeMonitoring = $true }
+            }
+            Mock Set-MpPreference {}
+
+            $result = Set-MpRuntimePrefs
+
+            $result.Succeeded | Should -Be $true
+            $result.Attempted | Should -Be 0
+            $result.Changed | Should -Be 0
+            $result.Verified | Should -Be 1
+            Should -Invoke Set-MpPreference -Times 0 -Exactly
+        }
+
+        It 'reports partial convergence as failure' {
+            $script:MpRealtimeValue = $false
+            $script:MpBehaviorValue = $false
+            $script:MpSetCall = 0
+            Mock Get-MpRuntimePreferenceCatalog {
+                @(
+                    [PSCustomObject]@{ Name = 'DisableRealtimeMonitoring'; DisableValue = $true; RestoreValue = $false }
+                    [PSCustomObject]@{ Name = 'DisableBehaviorMonitoring'; DisableValue = $true; RestoreValue = $false }
+                )
+            }
+            Mock Get-MpPreference {
+                [PSCustomObject]@{
+                    DisableRealtimeMonitoring = $script:MpRealtimeValue
+                    DisableBehaviorMonitoring = $script:MpBehaviorValue
+                }
+            }
+            Mock Set-MpPreference {
+                $script:MpSetCall++
+                if ($script:MpSetCall -eq 1) {
+                    $script:MpRealtimeValue = $true
+                }
+            }
+
+            $result = Set-MpRuntimePrefs
+
+            $result.Succeeded | Should -Be $false
+            $result.Attempted | Should -Be 2
+            $result.Changed | Should -Be 1
+            $result.Verified | Should -Be 1
+            ($result.Effects | Where-Object Target -eq 'DisableBehaviorMonitoring').Errors[0] |
+                Should -Match 'did not converge'
+        }
+
+        It 'fails without mutation when preferences cannot be queried' {
+            Mock Get-MpRuntimePreferenceCatalog {
+                @([PSCustomObject]@{
+                    Name = 'DisableRealtimeMonitoring'
+                    DisableValue = $true
+                    RestoreValue = $false
+                })
+            }
+            Mock Get-MpPreference { throw 'Defender provider unavailable' }
+            Mock Set-MpPreference {}
+
+            $result = Set-MpRuntimePrefs
+
+            $result.Succeeded | Should -Be $false
+            $result.Effects[0].Target | Should -Be 'Get-MpPreference'
+            Should -Invoke Set-MpPreference -Times 0 -Exactly
+        }
+
+        It 'verifies exclusions are removed during restore' {
+            $script:MpExclusionPaths = @('C:\')
+            Mock Get-MpRuntimePreferenceCatalog { @() }
+            Mock Get-MpRuntimeExclusionCatalog {
+                @([PSCustomObject]@{ Parameter = 'ExclusionPath'; Values = @('C:\') })
+            }
+            Mock Get-MpPreference {
+                [PSCustomObject]@{ ExclusionPath = @($script:MpExclusionPaths) }
+            }
+            Mock Remove-MpPreference { $script:MpExclusionPaths = @() }
+
+            $result = Clear-MpRuntimePrefs
+
+            $result.Succeeded | Should -Be $true
+            $result.Attempted | Should -Be 1
+            $result.Changed | Should -Be 1
+            $result.Effects[0].Evidence.Actual | Should -Be 'Absent'
+        }
+    }
+
+    Describe 'Scheduled task effect verification' {
+        BeforeEach {
+            $script:OriginalDefenderTasks = $script:DefenderTasks
+            $script:DefenderTasks = @('\Microsoft\Windows\Windows Defender\Test Task')
+            Mock Test-RestoreManifestRecording { $false }
+            Mock Write-Log {}
+        }
+
+        AfterEach {
+            $script:DefenderTasks = $script:OriginalDefenderTasks
+        }
+
+        It 'verifies a task after disabling it' {
+            $script:TaskTestState = 'Ready'
+            Mock Get-ScheduledTask { [PSCustomObject]@{ State = $script:TaskTestState } }
+            Mock Disable-ScheduledTask { $script:TaskTestState = 'Disabled' }
+            Mock Invoke-DefenderScheduledTaskFallback { 0 }
+
+            $result = Disable-DefenderTasks
+
+            $result.Succeeded | Should -Be $true
+            $result.Attempted | Should -Be 1
+            $result.Changed | Should -Be 1
+            $result.Verified | Should -Be 1
+            Should -Invoke Invoke-DefenderScheduledTaskFallback -Times 0 -Exactly
+        }
+
+        It 'records an absent task as a verified not-applicable effect' {
+            Mock Get-ScheduledTask { throw 'task not found' }
+            Mock Disable-ScheduledTask {}
+            Mock Invoke-DefenderScheduledTaskFallback { 1 }
+
+            $result = Disable-DefenderTasks
+
+            $result.Succeeded | Should -Be $true
+            $result.Attempted | Should -Be 0
+            $result.Effects[0].Required | Should -Be $false
+            $result.Effects[0].Evidence.Actual | Should -Be 'Absent'
+            Should -Invoke Disable-ScheduledTask -Times 0 -Exactly
+        }
+
+        It 'uses the native fallback when the cmdlet does not converge' {
+            $script:TaskTestState = 'Ready'
+            Mock Get-ScheduledTask { [PSCustomObject]@{ State = $script:TaskTestState } }
+            Mock Disable-ScheduledTask {}
+            Mock Invoke-DefenderScheduledTaskFallback {
+                $script:TaskTestState = 'Disabled'
+                return 0
+            }
+
+            $result = Disable-DefenderTasks
+
+            $result.Succeeded | Should -Be $true
+            $result.Effects[0].Evidence.NativeExitCode | Should -Be 0
+            Should -Invoke Invoke-DefenderScheduledTaskFallback -Times 1 -Exactly
+        }
+
+        It 'fails when neither mutation path reaches the requested state' {
+            Mock Get-ScheduledTask { [PSCustomObject]@{ State = 'Ready' } }
+            Mock Disable-ScheduledTask { throw 'access denied' }
+            Mock Invoke-DefenderScheduledTaskFallback { 5 }
+
+            $result = Disable-DefenderTasks
+
+            $result.Succeeded | Should -Be $false
+            $result.Verified | Should -Be 0
+            $result.Errors[0] | Should -Match 'exited 5'
         }
     }
 
@@ -183,30 +446,34 @@ InModuleScope DisableDefender {
         Context 'Refuse-list guard' {
             It 'refuses to modify firewall services' {
                 $result = Set-ServiceStart -Service 'mpssvc' -State 'Disabled'
-                $result | Should -Be $false
+                $result.Succeeded | Should -Be $false
+                $result.Effects[0].Verified | Should -Be $false
             }
 
             It 'refuses to modify BFE' {
                 $result = Set-ServiceStart -Service 'BFE' -State 'Disabled'
-                $result | Should -Be $false
+                $result.Succeeded | Should -Be $false
             }
 
             It 'refuses to modify SharedAccess' {
                 $result = Set-ServiceStart -Service 'SharedAccess' -State 'Disabled'
-                $result | Should -Be $false
+                $result.Succeeded | Should -Be $false
             }
         }
 
         Context 'Absent service' {
-            It 'returns true for services not present on the system' {
+            It 'returns a verified not-applicable result for services not present on the system' {
                 Mock Test-Path { $false }
                 $result = Set-ServiceStart -Service 'FakeDefenderService' -State 'Disabled'
-                $result | Should -Be $true
+                $result.Succeeded | Should -Be $true
+                $result.Attempted | Should -Be 0
+                $result.Effects[0].Required | Should -Be $false
+                $result.Effects[0].Evidence.Actual | Should -Be 'Absent'
             }
         }
 
         Context 'Target verification' {
-            It 'returns false when SYSTEM fallback reports success but Start value does not change' {
+            It 'returns a failed result when SYSTEM fallback reports success but Start value does not change' {
                 Mock Test-Path { $true }
                 Mock Set-ItemProperty { throw 'denied' }
                 Mock Grant-RegKeyControl { $false }
@@ -216,9 +483,114 @@ InModuleScope DisableDefender {
 
                 $result = Set-ServiceStart -Service 'WinDefend' -State 'Disabled'
 
-                $result | Should -Be $false
+                $result.Succeeded | Should -Be $false
+                $result.Verified | Should -Be 0
                 Should -Invoke Invoke-AsSystem -Times 1 -Exactly
             }
+
+            It 'returns a verified no-op when the Start value is already correct' {
+                Mock Test-Path { $true }
+                Mock Get-ItemProperty { [PSCustomObject]@{ Start = 4 } }
+                Mock Set-ItemProperty {}
+
+                $result = Set-ServiceStart -Service 'WinDefend' -State 'Disabled'
+
+                $result.Succeeded | Should -Be $true
+                $result.Attempted | Should -Be 0
+                $result.Verified | Should -Be 1
+                Should -Invoke Set-ItemProperty -Times 0 -Exactly
+            }
+
+            It 'verifies the direct Start-value write before reporting success' {
+                $script:ServiceStartTestValue = 3
+                Mock Test-Path { $true }
+                Mock Get-ItemProperty { [PSCustomObject]@{ Start = $script:ServiceStartTestValue } }
+                Mock Set-ItemProperty { $script:ServiceStartTestValue = $Value }
+
+                $result = Set-ServiceStart -Service 'WinDefend' -State 'Disabled'
+
+                $result.Succeeded | Should -Be $true
+                $result.Changed | Should -Be 1
+                $result.Verified | Should -Be 1
+                $result.Effects[0].Evidence.Method | Should -Be 'Direct'
+            }
+        }
+    }
+
+    Describe 'Service phase effect verification' {
+        BeforeEach {
+            $script:OriginalDefenderServices = $script:DefenderServices
+            $script:DefenderServices = @('WinDefend')
+            $script:IncludeMDEMode = $false
+            Mock Test-RestoreManifestRecording { $false }
+            Mock Save-AclBackup {}
+            Mock Write-Log {}
+            Mock Set-ServiceStart {
+                $child = New-DefenderActionResult -Name "ServiceStart:$Service"
+                Add-DefenderEffect -Result $child -Target "Service:${Service}:Start" `
+                    -Attempted $true -Changed $true -Verified $true -Evidence @{ Expected = $State; Actual = $State }
+                Complete-DefenderActionResult -Result $child
+            }
+        }
+
+        AfterEach {
+            $script:DefenderServices = $script:OriginalDefenderServices
+        }
+
+        It 'verifies both runtime stop and disabled start state' {
+            $script:ServiceRuntimeTestState = 'Running'
+            Mock Get-Service {
+                [PSCustomObject]@{
+                    Status = $script:ServiceRuntimeTestState
+                    CanStop = $true
+                }
+            }
+            Mock Invoke-DefenderServiceStop {
+                $script:ServiceRuntimeTestState = 'Stopped'
+                return 0
+            }
+
+            $result = Disable-DefenderServices
+
+            $result.Succeeded | Should -Be $true
+            $result.Attempted | Should -Be 2
+            $result.Changed | Should -Be 2
+            $result.Verified | Should -Be 2
+        }
+
+        It 'fails when a stoppable service remains running' {
+            Mock Get-Service {
+                [PSCustomObject]@{
+                    Status = 'Running'
+                    CanStop = $true
+                }
+            }
+            Mock Invoke-DefenderServiceStop { 5 }
+
+            $result = Disable-DefenderServices
+
+            $result.Succeeded | Should -Be $false
+            ($result.Effects | Where-Object Target -eq 'Service:WinDefend:Runtime').Verified |
+                Should -Be $false
+            $result.Errors[0] | Should -Match 'exited 5'
+        }
+
+        It 'marks non-stoppable runtime state as reboot-deferred while still verifying Start' {
+            Mock Get-Service {
+                [PSCustomObject]@{
+                    Status = 'Running'
+                    CanStop = $false
+                }
+            }
+            Mock Invoke-DefenderServiceStop { throw 'should not stop' }
+
+            $result = Disable-DefenderServices
+
+            $result.Succeeded | Should -Be $true
+            $runtimeEffect = $result.Effects | Where-Object Target -eq 'Service:WinDefend:Runtime'
+            $runtimeEffect.Required | Should -Be $false
+            $runtimeEffect.Verified | Should -Be $false
+            Should -Invoke Invoke-DefenderServiceStop -Times 0 -Exactly
         }
     }
 

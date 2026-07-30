@@ -39,58 +39,205 @@ function Get-MpRuntimeExclusionCatalog {
     )
 }
 
-function Set-MpRuntimePrefs {
-    Write-Log "Applying Set-MpPreference flags..." INFO
-    $currentPrefs = $null
-    if (Test-RestoreManifestRecording) {
-        try { $currentPrefs = Get-MpPreference -ErrorAction Stop } catch {}
+function Test-DefenderMpPreferenceValue {
+    param(
+        [AllowNull()]$Actual,
+        [AllowNull()]$Expected
+    )
+
+    return ([string]$Actual -ieq [string]$Expected)
+}
+
+function Invoke-DefenderMpPreferencePlan {
+    param(
+        [Parameter(Mandatory)][ValidateSet('Disable','Restore')][string]$Mode
+    )
+
+    $result = New-DefenderActionResult -Name "MpPreference:$Mode" -Simulation:$WhatIfPreference
+    $pending = New-Object System.Collections.ArrayList
+    try {
+        $currentPrefs = Get-MpPreference -ErrorAction Stop
+    } catch {
+        Add-DefenderEffect -Result $result -Target 'Get-MpPreference' -Attempted $false `
+            -Changed $false -Verified $false -Evidence @{ Expected = 'Readable'; Actual = 'Unavailable' } `
+            -Errors $_.Exception.Message
+        return (Complete-DefenderActionResult -Result $result)
     }
+
     foreach ($preference in Get-MpRuntimePreferenceCatalog) {
-        if ($currentPrefs -and ($currentPrefs.PSObject.Properties.Name -contains $preference.Name)) {
+        $expected = if ($Mode -eq 'Disable') { $preference.DisableValue } else { $preference.RestoreValue }
+        if ($currentPrefs.PSObject.Properties.Name -notcontains $preference.Name) {
+            Add-DefenderEffect -Result $result -Target $preference.Name -Required $false `
+                -Attempted $false -Changed $false -Verified $true `
+                -Evidence @{ Expected = $expected; Actual = 'PropertyUnavailable'; State = 'NotApplicable' }
+            continue
+        }
+
+        $before = $currentPrefs.($preference.Name)
+        if (Test-DefenderMpPreferenceValue -Actual $before -Expected $expected) {
+            Add-DefenderEffect -Result $result -Target $preference.Name -Attempted $false `
+                -Changed $false -Verified $true `
+                -Evidence @{ Expected = $expected; Actual = $before; State = 'AlreadyCorrect' }
+            continue
+        }
+
+        if ($WhatIfPreference) {
+            Add-DefenderEffect -Result $result -Target $preference.Name -Required $false `
+                -Attempted $false -Changed $false -Verified $false `
+                -Evidence @{ Expected = $expected; Actual = $before; State = 'Simulation' }
+            continue
+        }
+
+        if ($Mode -eq 'Disable' -and (Test-RestoreManifestRecording)) {
             Write-RestoreManifestEntry -Phase 'MpPreference' -Action 'SetMpPreference' -Target $preference.Name -Data ([ordered]@{
                 Name  = $preference.Name
-                Value = $currentPrefs.($preference.Name)
+                Value = $before
             })
         }
-        $splat = @{ ErrorAction = 'SilentlyContinue' }
-        $splat[$preference.Name] = $preference.DisableValue
-        try { Set-MpPreference @splat } catch {}
+
+        $mutationError = $null
+        try {
+            $splat = @{ ErrorAction = 'Stop' }
+            $splat[$preference.Name] = $expected
+            Set-MpPreference @splat
+        } catch {
+            $mutationError = $_.Exception.Message
+        }
+        [void]$pending.Add([PSCustomObject]@{
+            Target        = $preference.Name
+            Kind          = 'Preference'
+            Parameter     = $preference.Name
+            Value         = $expected
+            Before        = $before
+            MutationError = $mutationError
+        })
     }
-    try {
-        if ($currentPrefs) {
-            foreach ($exclusion in Get-MpRuntimeExclusionCatalog) {
-                foreach ($value in $exclusion.Values) {
-                    if (@($currentPrefs.($exclusion.Parameter)) -notcontains $value) {
+
+    foreach ($exclusion in Get-MpRuntimeExclusionCatalog) {
+        $propertyAvailable = $currentPrefs.PSObject.Properties.Name -contains $exclusion.Parameter
+        if (-not $propertyAvailable) {
+            foreach ($value in $exclusion.Values) {
+                Add-DefenderEffect -Result $result -Target "$($exclusion.Parameter):$value" `
+                    -Required $false -Attempted $false -Changed $false -Verified $true `
+                    -Evidence @{ Expected = 'NotApplicable'; Actual = 'PropertyUnavailable' }
+            }
+            continue
+        }
+
+        foreach ($value in $exclusion.Values) {
+            $beforePresent = @($currentPrefs.($exclusion.Parameter)) -contains $value
+            $expectedPresent = ($Mode -eq 'Disable')
+            if ($beforePresent -eq $expectedPresent) {
+                Add-DefenderEffect -Result $result -Target "$($exclusion.Parameter):$value" `
+                    -Attempted $false -Changed $false -Verified $true `
+                    -Evidence @{ Expected = $(if ($expectedPresent) { 'Present' } else { 'Absent' }); Actual = $(if ($beforePresent) { 'Present' } else { 'Absent' }); State = 'AlreadyCorrect' }
+                continue
+            }
+
+            if ($WhatIfPreference) {
+                Add-DefenderEffect -Result $result -Target "$($exclusion.Parameter):$value" `
+                    -Required $false -Attempted $false -Changed $false -Verified $false `
+                    -Evidence @{ Expected = $(if ($expectedPresent) { 'Present' } else { 'Absent' }); Actual = $(if ($beforePresent) { 'Present' } else { 'Absent' }); State = 'Simulation' }
+                continue
+            }
+
+            if ($Mode -eq 'Disable' -and (Test-RestoreManifestRecording)) {
+                if (-not $beforePresent) {
                         Write-RestoreManifestEntry -Phase 'MpPreference' -Action 'RemoveMpPreferenceValue' -Target "$($exclusion.Parameter):$value" -Data ([ordered]@{
                             Parameter = $exclusion.Parameter
                             Value     = $value
                         })
-                    }
                 }
             }
+
+            $mutationError = $null
+            try {
+                $splat = @{ ErrorAction = 'Stop' }
+                $splat[$exclusion.Parameter] = @($value)
+                if ($Mode -eq 'Disable') {
+                    Add-MpPreference @splat
+                } else {
+                    Remove-MpPreference @splat
+                }
+            } catch {
+                $mutationError = $_.Exception.Message
+            }
+            [void]$pending.Add([PSCustomObject]@{
+                Target        = "$($exclusion.Parameter):$value"
+                Kind          = 'Exclusion'
+                Parameter     = $exclusion.Parameter
+                Value         = $value
+                Before        = $beforePresent
+                Expected      = $expectedPresent
+                MutationError = $mutationError
+            })
         }
-        foreach ($exclusion in Get-MpRuntimeExclusionCatalog) {
-            $splat = @{ ErrorAction = 'SilentlyContinue' }
-            $splat[$exclusion.Parameter] = $exclusion.Values
-            Add-MpPreference @splat
+    }
+
+    if ($pending.Count -gt 0) {
+        try {
+            $afterPrefs = Get-MpPreference -ErrorAction Stop
+            $queryError = $null
+        } catch {
+            $afterPrefs = $null
+            $queryError = $_.Exception.Message
         }
-    } catch {}
-    Write-Log "Runtime preferences applied." OK
+
+        foreach ($item in $pending) {
+            if ($null -eq $afterPrefs) {
+                Add-DefenderEffect -Result $result -Target $item.Target -Attempted $true `
+                    -Changed $false -Verified $false `
+                    -Evidence @{ Expected = $item.Value; Actual = 'Unavailable'; MutationError = $item.MutationError } `
+                    -Errors "Post-mutation Get-MpPreference failed: $queryError"
+                continue
+            }
+
+            if ($item.Kind -eq 'Preference') {
+                $propertyAvailable = $afterPrefs.PSObject.Properties.Name -contains $item.Parameter
+                $actual = if ($propertyAvailable) { $afterPrefs.($item.Parameter) } else { $null }
+                $verified = $propertyAvailable -and
+                    (Test-DefenderMpPreferenceValue -Actual $actual -Expected $item.Value)
+                $changed = $verified -and
+                    -not (Test-DefenderMpPreferenceValue -Actual $item.Before -Expected $item.Value)
+                $expectedEvidence = $item.Value
+            } else {
+                $propertyAvailable = $afterPrefs.PSObject.Properties.Name -contains $item.Parameter
+                $afterPresent = $propertyAvailable -and (@($afterPrefs.($item.Parameter)) -contains $item.Value)
+                $verified = $propertyAvailable -and ($afterPresent -eq $item.Expected)
+                $changed = $verified -and ($item.Before -ne $item.Expected)
+                $actual = if ($afterPresent) { 'Present' } else { 'Absent' }
+                $expectedEvidence = if ($item.Expected) { 'Present' } else { 'Absent' }
+            }
+
+            $errors = if ($verified) {
+                @()
+            } elseif ($item.MutationError) {
+                @($item.MutationError)
+            } else {
+                @('MpPreference did not converge to the requested value.')
+            }
+            Add-DefenderEffect -Result $result -Target $item.Target -Attempted $true `
+                -Changed $changed -Verified $verified `
+                -Evidence @{ Expected = $expectedEvidence; Actual = $actual; MutationError = $item.MutationError } `
+                -Errors $errors
+        }
+    }
+
+    return (Complete-DefenderActionResult -Result $result)
+}
+
+function Set-MpRuntimePrefs {
+    Write-Log "Applying Set-MpPreference flags..." INFO
+    $completed = Invoke-DefenderMpPreferencePlan -Mode Disable
+    $level = if ($completed.Succeeded) { 'OK' } else { 'WARN' }
+    Write-Log "MpPreference result: attempted=$($completed.Attempted) changed=$($completed.Changed) verified=$($completed.Verified) errors=$(@($completed.Errors).Count)." $level
+    return $completed
 }
 
 function Clear-MpRuntimePrefs {
     Write-Log "Restoring MpPreference defaults..." INFO
-    foreach ($preference in Get-MpRuntimePreferenceCatalog) {
-        $splat = @{ ErrorAction = 'SilentlyContinue' }
-        $splat[$preference.Name] = $preference.RestoreValue
-        try { Set-MpPreference @splat } catch {}
-    }
-    try {
-        foreach ($exclusion in Get-MpRuntimeExclusionCatalog) {
-            $splat = @{ ErrorAction = 'SilentlyContinue' }
-            $splat[$exclusion.Parameter] = $exclusion.Values
-            Remove-MpPreference @splat
-        }
-    } catch {}
-    Write-Log "MpPreference defaults restored (may require service restart)." OK
+    $completed = Invoke-DefenderMpPreferencePlan -Mode Restore
+    $level = if ($completed.Succeeded) { 'OK' } else { 'WARN' }
+    Write-Log "MpPreference restore result: attempted=$($completed.Attempted) changed=$($completed.Changed) verified=$($completed.Verified) errors=$(@($completed.Errors).Count)." $level
+    return $completed
 }
