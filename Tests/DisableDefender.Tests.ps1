@@ -2235,8 +2235,10 @@ InModuleScope DisableDefender {
         }
 
         It 'requires mutation results and saves the baseline after verified success' {
-            Mock Invoke-DefenderPhasePlan {
+            Mock Invoke-DefenderGuardedPhasePlan {
                 $script:CapturedOperationPhases = $Phases
+                $script:CapturedPreflightPhases = $PreflightPhases
+                $script:CapturedPostflightPhases = $PostflightPhases
                 [PSCustomObject]@{
                     Succeeded = $true
                     Simulation = $false
@@ -2250,15 +2252,24 @@ InModuleScope DisableDefender {
             $result = Invoke-DisableDefender -NoRestorePoint -Confirm:$false
 
             $result.Succeeded | Should -Be $true
-            foreach ($key in @('RestorePoint','Policies','MpPreference','Tasks','Services')) {
+            foreach ($key in @('Policies','MpPreference','Tasks','Services')) {
                 ($script:CapturedOperationPhases | Where-Object Key -eq $key).RequiresResult |
                     Should -Be $true
             }
+            ($script:CapturedPreflightPhases | Where-Object Key -eq 'RestorePoint').RequiresResult |
+                Should -Be $true
+            $script:CapturedPreflightPhases.Key | Should -Be @(
+                'Prerequisites','FirewallPreflight','RestorePoint'
+            )
+            $script:CapturedPostflightPhases.Key | Should -Be @('FirewallPostflight')
+            $script:CapturedOperationPhases.Key | Should -Not -Contain 'Prerequisites'
+            $script:CapturedOperationPhases.Key | Should -Not -Contain 'FirewallPreflight'
+            $script:CapturedOperationPhases.Key | Should -Not -Contain 'FirewallPostflight'
             Should -Invoke Save-DefenderSurfaceBaseline -Times 1 -Exactly
         }
 
         It 'does not save a baseline when the verified plan fails' {
-            Mock Invoke-DefenderPhasePlan { throw 'effect verification failed' }
+            Mock Invoke-DefenderGuardedPhasePlan { throw 'effect verification failed' }
 
             { Invoke-DisableDefender -NoRestorePoint -Confirm:$false } |
                 Should -Throw -ExpectedMessage '*effect verification failed*'
@@ -2267,8 +2278,75 @@ InModuleScope DisableDefender {
             Should -Invoke Stop-RestoreManifest -Times 1 -Exactly
         }
 
+        It 'keeps every Remove safety gate outside the filtered action plan' {
+            Mock Invoke-DefenderGuardedPhasePlan {
+                $script:CapturedRemovePhases = $Phases
+                $script:CapturedRemovePreflight = $PreflightPhases
+                $script:CapturedRemovePostflight = $PostflightPhases
+                [PSCustomObject]@{
+                    Succeeded = $true
+                    Simulation = $false
+                    Attempted = 1
+                    Changed = 1
+                    Verified = 1
+                    Phases = @([PSCustomObject]@{ Result = [PSCustomObject]@{ Succeeded = $true } })
+                }
+            }
+
+            Invoke-RemoveDefender -Force -NoRestorePoint -Only Services -Confirm:$false | Out-Null
+
+            $script:CapturedRemovePreflight.Key | Should -Be @(
+                'Prerequisites','FirewallPreflight','SafeModeGate','KnownBadGate','RestorePoint'
+            )
+            $script:CapturedRemovePostflight.Key | Should -Be @('FirewallPostflight')
+            $script:CapturedRemovePhases.Key | Should -Contain 'Services'
+            foreach ($gate in @(
+                'Prerequisites','FirewallPreflight','SafeModeGate',
+                'KnownBadGate','RestorePoint','FirewallPostflight'
+            )) {
+                $script:CapturedRemovePhases.Key | Should -Not -Contain $gate
+            }
+        }
+
+        It 'allows only action keys in public phase filters' {
+            $disableOnly = (Get-Command Invoke-DisableDefender).Parameters['Only'].Attributes |
+                Where-Object { $_ -is [Management.Automation.ValidateSetAttribute] }
+            $removeOnly = (Get-Command Invoke-RemoveDefender).Parameters['Only'].Attributes |
+                Where-Object { $_ -is [Management.Automation.ValidateSetAttribute] }
+            $restoreOnly = (Get-Command Invoke-RestoreDefender).Parameters['Only'].Attributes |
+                Where-Object { $_ -is [Management.Automation.ValidateSetAttribute] }
+
+            foreach ($values in @(
+                @($disableOnly.ValidValues),
+                @($removeOnly.ValidValues),
+                @($restoreOnly.ValidValues)
+            )) {
+                $values | Should -Not -Contain 'Prerequisites'
+                $values | Should -Not -Contain 'FirewallPreflight'
+                $values | Should -Not -Contain 'FirewallPostflight'
+                $values | Should -Not -Contain 'RestorePoint'
+            }
+            @($removeOnly.ValidValues) | Should -Not -Contain 'SafeModeGate'
+            @($removeOnly.ValidValues) | Should -Not -Contain 'KnownBadGate'
+            @($restoreOnly.ValidValues) | Should -Not -Contain 'ReplayManifest'
+        }
+
+        It 'rejects empty action selections before session or manifest side effects' {
+            Mock Invoke-DefenderGuardedPhasePlan { throw 'guarded plan should not run' }
+
+            { Invoke-DisableDefender -Skip Policies,MpPreference,Tasks,Services -Confirm:$false } |
+                Should -Throw -ExpectedMessage '*no runnable action phases*'
+            { Invoke-RemoveDefender -Skip Policies,MpPreference,Tasks,Services,SafeBoot,Appx,DISM,ContextMenu -Confirm:$false } |
+                Should -Throw -ExpectedMessage '*no runnable action phases*'
+
+            Should -Invoke Set-RunOptions -Times 0 -Exactly
+            Should -Invoke Confirm-LocalSession -Times 0 -Exactly
+            Should -Invoke Start-RestoreManifest -Times 0 -Exactly
+            Should -Invoke Invoke-DefenderGuardedPhasePlan -Times 0 -Exactly
+        }
+
         It 'returns a simulation result under WhatIf without saving a baseline' {
-            Mock Invoke-DefenderPhasePlan {
+            Mock Invoke-DefenderGuardedPhasePlan {
                 [PSCustomObject]@{
                     Succeeded = $true
                     Simulation = $true
@@ -2282,7 +2360,7 @@ InModuleScope DisableDefender {
             $result = Invoke-DisableDefender -NoRestorePoint -Confirm:$false -WhatIf
 
             $result.Simulation | Should -Be $true
-            Should -Invoke Invoke-DefenderPhasePlan -Times 1 -Exactly
+            Should -Invoke Invoke-DefenderGuardedPhasePlan -Times 1 -Exactly
             Should -Invoke Save-DefenderSurfaceBaseline -Times 0 -Exactly
         }
 
@@ -2292,8 +2370,10 @@ InModuleScope DisableDefender {
                     Manifests = @([PSCustomObject]@{ Path = 'restore-manifest.jsonl' })
                 }
             }
-            Mock Invoke-DefenderPhasePlan {
+            Mock Invoke-DefenderGuardedPhasePlan {
                 $script:CapturedRestorePhases = $Phases
+                $script:CapturedRestorePreflight = $PreflightPhases
+                $script:CapturedRestorePostflight = $PostflightPhases
                 [PSCustomObject]@{
                     Succeeded = $true
                     Simulation = $false
@@ -2316,25 +2396,27 @@ InModuleScope DisableDefender {
             $script:CapturedRestorePhases.Key | Should -Not -Contain 'Services'
             $script:CapturedRestorePhases.Key | Should -Not -Contain 'Appx'
             $script:CapturedRestorePhases.Key | Should -Not -Contain 'ContextMenu'
+            $script:CapturedRestorePreflight.Key | Should -Be @('FirewallPreflight')
+            $script:CapturedRestorePostflight.Key | Should -Be @('FirewallPostflight')
         }
 
         It 'requires an explicit repair switch when no manifest exists' {
             Mock Get-RestoreManifestReplayPlan {
                 [PSCustomObject]@{ Manifests = @() }
             }
-            Mock Invoke-DefenderPhasePlan { throw 'should not run' }
+            Mock Invoke-DefenderGuardedPhasePlan { throw 'should not run' }
 
             { Invoke-RestoreDefender -Confirm:$false } |
                 Should -Throw -ExpectedMessage '*-RepairWithoutManifest*'
 
-            Should -Invoke Invoke-DefenderPhasePlan -Times 0 -Exactly
+            Should -Invoke Invoke-DefenderGuardedPhasePlan -Times 0 -Exactly
         }
 
         It 'separates the explicit fixed-default repair plan from exact restore' {
             Mock Get-RestoreManifestReplayPlan {
                 [PSCustomObject]@{ Manifests = @() }
             }
-            Mock Invoke-DefenderPhasePlan {
+            Mock Invoke-DefenderGuardedPhasePlan {
                 $script:CapturedRestorePhases = $Phases
                 [PSCustomObject]@{
                     Succeeded = $true
@@ -2489,6 +2571,88 @@ InModuleScope DisableDefender {
             $state.Phases[0].Status | Should -Be 'Skipped'
             $state.Phases[0].SkipReason | Should -Be 'Skip'
         }
+
+        It 'runs all mandatory gates for every mode, filter shape, and force choice' {
+            $cases = New-Object System.Collections.ArrayList
+            foreach ($mode in @('Disable','Remove','Restore')) {
+                foreach ($force in @($false,$true)) {
+                    foreach ($filter in @('None','Only','Skip')) {
+                        [void]$cases.Add([PSCustomObject]@{
+                            Mode = $mode
+                            Force = $force
+                            Filter = $filter
+                        })
+                    }
+                }
+            }
+
+            foreach ($case in $cases) {
+                $script:ForceMode = $case.Force
+                $script:MandatoryRun = @()
+                $script:ActionRun = @()
+                $preflight = @(
+                    New-DefenderPhase -Name 'Prerequisites' -Key 'Prerequisites' -Action {
+                        $script:MandatoryRun += "pre:$($script:ForceMode)"
+                    }
+                    New-DefenderPhase -Name 'Firewall preflight' -Key 'FirewallPreflight' -Action {
+                        $script:MandatoryRun += 'firewall-pre'
+                    }
+                )
+                $actions = @(
+                    New-DefenderPhase -Name 'Policy keys' -Key 'Policies' -Action {
+                        $script:ActionRun += 'Policies'
+                    }
+                    New-DefenderPhase -Name 'Services' -Key 'Services' -Action {
+                        $script:ActionRun += 'Services'
+                    }
+                )
+                $postflight = @(
+                    New-DefenderPhase -Name 'Firewall postflight' -Key 'FirewallPostflight' -Action {
+                        $script:MandatoryRun += 'firewall-post'
+                    }
+                )
+                $splat = @{
+                    Mode = $case.Mode
+                    Phases = $actions
+                    PreflightPhases = $preflight
+                    PostflightPhases = $postflight
+                }
+                if ($case.Filter -eq 'Only') { $splat.Only = @('Services') }
+                if ($case.Filter -eq 'Skip') { $splat.Skip = @('Policies') }
+
+                Invoke-DefenderGuardedPhasePlan @splat | Out-Null
+
+                $script:MandatoryRun | Should -Be @(
+                    "pre:$($case.Force)",'firewall-pre','firewall-post'
+                )
+                $expectedActions = if ($case.Filter -eq 'None') {
+                    @('Policies','Services')
+                } else {
+                    @('Services')
+                }
+                $script:ActionRun | Should -Be $expectedActions
+            }
+        }
+
+        It 'runs mandatory postflight after an action failure without masking it' {
+            $script:PostflightAfterFailure = $false
+            $actions = @(
+                New-DefenderPhase -Name 'Broken action' -Key 'Services' -Action {
+                    throw 'injected action failure'
+                }
+            )
+            $postflight = @(
+                New-DefenderPhase -Name 'Firewall postflight' -Key 'FirewallPostflight' -Action {
+                    $script:PostflightAfterFailure = $true
+                }
+            )
+
+            { Invoke-DefenderGuardedPhasePlan -Mode Remove -Phases $actions `
+                -PostflightPhases $postflight } |
+                Should -Throw -ExpectedMessage '*injected action failure*'
+
+            $script:PostflightAfterFailure | Should -Be $true
+        }
     }
 }
 
@@ -2560,6 +2724,59 @@ InModuleScope DisableDefender {
             $content | Should -Match 'Task Scheduler'
             $content | Should -Match 'Appx'
             $content | Should -Match 'DISM'
+        }
+
+        It 'never injects Force into the live completion command' {
+            $defaultResult = New-OfflineRemoveBundle -OutputDirectory $script:BundleDir
+            $defaultContent = Get-Content -LiteralPath $defaultResult.ScriptPath -Raw
+
+            $defaultResult.Force | Should -Be $false
+            $defaultContent | Should -Match '-Mode Remove -Only MpPreference,Tasks,Appx,DISM'
+            $defaultContent | Should -Not -Match '-Mode Remove -Force'
+
+            $forcedResult = New-OfflineRemoveBundle -OutputDirectory $script:BundleDir -Force
+            $forcedContent = Get-Content -LiteralPath $forcedResult.ScriptPath -Raw
+
+            $forcedResult.Force | Should -Be $true
+            $forcedContent | Should -Match '-Mode Remove -Force -Only MpPreference,Tasks,Appx,DISM'
+        }
+    }
+}
+
+InModuleScope DisableDefender {
+    Describe 'Invoke-SafeModeRemove force propagation' {
+        BeforeEach {
+            $script:SafeModeEncodedScripts = @()
+            Mock Get-CimInstance {
+                [PSCustomObject]@{ BootupState = 'Normal boot' }
+            }
+            Mock Register-DefenderSafeModeTask {
+                $script:SafeModeEncodedScripts += $EncodedScript
+            }
+            Mock Register-SafeBootWatchdog {}
+            Mock Unregister-ScheduledTask {}
+            Mock Unregister-SafeBootWatchdog {}
+            Mock Write-Log {}
+            Mock bcdedit.exe {
+                $global:LASTEXITCODE = 0
+                'The operation completed successfully.'
+            }
+            Mock shutdown.exe {}
+        }
+
+        It 'omits Force by default and includes it only when explicitly requested' {
+            $defaultResult = Invoke-SafeModeRemove -DelaySeconds 0 -Confirm:$false
+            $forcedResult = Invoke-SafeModeRemove -DelaySeconds 0 -Force -Confirm:$false
+
+            $decodedScripts = @($script:SafeModeEncodedScripts | ForEach-Object {
+                [Text.Encoding]::Unicode.GetString([Convert]::FromBase64String($_))
+            })
+            $decodedScripts.Count | Should -Be 2
+            $decodedScripts[0] | Should -Match '-Mode Remove -Silent -NoReboot'
+            $decodedScripts[0] | Should -Not -Match '-Mode Remove -Force'
+            $decodedScripts[1] | Should -Match '-Mode Remove -Silent -NoReboot -Force'
+            $defaultResult.Force | Should -Be $false
+            $forcedResult.Force | Should -Be $true
         }
     }
 }

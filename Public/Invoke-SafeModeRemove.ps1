@@ -1,3 +1,16 @@
+function Register-DefenderSafeModeTask {
+    param(
+        [Parameter(Mandatory)][string]$TaskName,
+        [Parameter(Mandatory)][string]$EncodedScript
+    )
+
+    $action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument "-NoProfile -ExecutionPolicy Bypass -EncodedCommand $EncodedScript"
+    $trigger = New-ScheduledTaskTrigger -AtStartup
+    $principal = New-ScheduledTaskPrincipal -UserId 'S-1-5-18' -RunLevel Highest
+    $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable
+    Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Force -ErrorAction Stop | Out-Null
+}
+
 function Invoke-SafeModeRemove {
     <#
     .SYNOPSIS
@@ -6,7 +19,7 @@ function Invoke-SafeModeRemove {
         Creates a one-shot scheduled task that:
         1. Sets bcdedit safeboot minimal
         2. Reboots into Safe Mode
-        3. On Safe Mode boot, runs DisableDefender -Mode Remove -Force -Silent -NoReboot
+        3. On Safe Mode boot, runs DisableDefender -Mode Remove -Silent -NoReboot
         4. Clears the safeboot flag
         5. Reboots back to normal
 
@@ -17,17 +30,23 @@ function Invoke-SafeModeRemove {
         Skip creating a System Restore checkpoint before the Remove run.
     .PARAMETER IncludeMDE
         Also target the MDE Sense service during Remove.
+    .PARAMETER Force
+        Preserve an explicit caller choice to bypass managed/domain safety
+        gates in the generated Safe Mode task. Force is never added implicitly.
     .PARAMETER DelaySeconds
         Seconds to wait before rebooting into Safe Mode. Default 10.
     .EXAMPLE
         Invoke-SafeModeRemove
     .EXAMPLE
         Invoke-SafeModeRemove -IncludeMDE -DelaySeconds 30
+    .EXAMPLE
+        Invoke-SafeModeRemove -Force
     #>
     [CmdletBinding(SupportsShouldProcess)]
     param(
         [switch]$NoRestorePoint,
         [switch]$IncludeMDE,
+        [switch]$Force,
         [int]$DelaySeconds = 10
     )
 
@@ -35,8 +54,8 @@ function Invoke-SafeModeRemove {
 
     $safe = (Get-CimInstance Win32_ComputerSystem -ErrorAction SilentlyContinue).BootupState
     if ($safe -like '*Fail-safe*') {
-        Write-Log "Already in Safe Mode. Run -Mode Remove -Force directly instead of scheduling." WARN
-        throw "Already in Safe Mode. Use: .\DisableDefender.ps1 -Mode Remove -Force"
+        Write-Log "Already in Safe Mode. Run -Mode Remove directly instead of scheduling." WARN
+        throw "Already in Safe Mode. Use: .\DisableDefender.ps1 -Mode Remove"
     }
 
     $scriptDir = $PSScriptRoot
@@ -52,10 +71,11 @@ function Invoke-SafeModeRemove {
 
     $mdeFlag = if ($IncludeMDE) { ' -IncludeMDE' } else { '' }
     $rpFlag = if ($NoRestorePoint) { ' -NoRestorePoint' } else { '' }
+    $forceFlag = if ($Force) { ' -Force' } else { '' }
 
     $removeScript = @"
 try {
-    powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$cliPath" -Mode Remove -Force -Silent -NoReboot$mdeFlag$rpFlag
+    powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$cliPath" -Mode Remove -Silent -NoReboot$forceFlag$mdeFlag$rpFlag
 } finally {
     bcdedit.exe /deletevalue '{current}' safeboot 2>`$null
     Unregister-ScheduledTask -TaskName '$taskName' -Confirm:`$false -ErrorAction SilentlyContinue
@@ -67,11 +87,7 @@ try {
     $encodedScript = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($removeScript))
 
     try {
-        $action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument "-NoProfile -ExecutionPolicy Bypass -EncodedCommand $encodedScript"
-        $trigger = New-ScheduledTaskTrigger -AtStartup
-        $principal = New-ScheduledTaskPrincipal -UserId 'S-1-5-18' -RunLevel Highest
-        $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable
-        Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Force -ErrorAction Stop | Out-Null
+        Register-DefenderSafeModeTask -TaskName $taskName -EncodedScript $encodedScript
         Write-Log "Safe Mode Remove task registered: $taskName" OK
     } catch {
         throw "Failed to register Safe Mode Remove task: $_"
@@ -96,5 +112,6 @@ try {
         RebootDelay   = $DelaySeconds
         IncludeMDE    = [bool]$IncludeMDE
         NoRestorePoint = [bool]$NoRestorePoint
+        Force         = [bool]$Force
     }
 }

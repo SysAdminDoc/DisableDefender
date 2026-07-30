@@ -120,6 +120,92 @@ function Assert-DefenderFirewallBoundary {
     Assert-FirewallSafety -Stage "${Boundary}:$Phase"
 }
 
+function Assert-DefenderActionPhaseSelection {
+    param(
+        [Parameter(Mandatory)][object[]]$Phases,
+        [string[]]$Only,
+        [string[]]$Skip
+    )
+
+    $onlySet = New-DefenderPhaseFilterSet -Values $Only
+    $skipSet = New-DefenderPhaseFilterSet -Values $Skip
+    $selected = @($Phases | Where-Object {
+        -not (Get-DefenderPhaseSkipReason -Phase $_ -OnlySet $onlySet -SkipSet $skipSet)
+    })
+    if ($selected.Count -eq 0) {
+        throw 'Phase filters selected no runnable action phases.'
+    }
+}
+
+function Invoke-DefenderUnfilteredPhase {
+    param(
+        [Parameter(Mandatory)]$Phase
+    )
+
+    Write-Log "Starting mandatory phase: $($Phase.Name)" INFO
+    $actionOutput = @(& $Phase.Action)
+    $actionResult = @($actionOutput | Where-Object {
+        Test-DefenderActionResult -Value $_
+    } | Select-Object -Last 1)
+    if ($Phase.RequiresResult) {
+        if ($actionResult.Count -eq 0) {
+            throw "Mandatory phase '$($Phase.Name)' did not return a valid effect result."
+        }
+        Assert-DefenderActionResult -Result $actionResult[0] -Phase $Phase.Name
+    }
+    Write-Log "Completed mandatory phase: $($Phase.Name)" OK
+}
+
+function Invoke-DefenderGuardedPhasePlan {
+    param(
+        [Parameter(Mandatory)][ValidateSet('Disable','Remove','Restore')][string]$Mode,
+        [Parameter(Mandatory)][object[]]$Phases,
+        [object[]]$PreflightPhases = @(),
+        [object[]]$PostflightPhases = @(),
+        [string[]]$Only,
+        [string[]]$Skip
+    )
+
+    # Validate filters before any preflight side effect such as a restore point.
+    Assert-DefenderActionPhaseSelection -Phases $Phases -Only $Only -Skip $Skip
+
+    $primaryFailure = $null
+    $postflightFailure = $null
+    $preflightCompleted = $false
+    $operationResult = $null
+    try {
+        foreach ($phase in @($PreflightPhases)) {
+            Invoke-DefenderUnfilteredPhase -Phase $phase
+        }
+        $preflightCompleted = $true
+        $operationResult = Invoke-DefenderPhasePlan -Mode $Mode -Phases $Phases `
+            -Only $Only -Skip $Skip
+    } catch {
+        $primaryFailure = $_
+    }
+
+    if ($preflightCompleted) {
+        try {
+            foreach ($phase in @($PostflightPhases)) {
+                Invoke-DefenderUnfilteredPhase -Phase $phase
+            }
+        } catch {
+            $postflightFailure = $_
+        }
+    }
+
+    if ($null -ne $primaryFailure) {
+        if ($null -ne $postflightFailure) {
+            Write-Log "Mandatory postflight also failed: $($postflightFailure.Exception.Message)" ERROR
+        }
+        throw $primaryFailure
+    }
+    if ($null -ne $postflightFailure) {
+        throw $postflightFailure
+    }
+    return $operationResult
+}
+
 function Invoke-DefenderPhasePlan {
     param(
         [Parameter(Mandatory)][ValidateSet('Disable','Remove','Restore')][string]$Mode,

@@ -103,9 +103,11 @@ function Invoke-RestoreDefender {
         -RepairWithoutManifest explicitly selects a separate fixed-default repair
         preset. Firewall is verified intact before and after.
     .PARAMETER Only
-        Run only the named phase keys.
+        Run only the named fixed-default repair action phases. This parameter
+        is not supported for recorded-baseline restore.
     .PARAMETER Skip
-        Skip the named phase keys.
+        Skip named fixed-default repair action phases. Firewall checks cannot
+        be skipped.
     .PARAMETER ManifestSelection
         Select which restore manifest chain to replay: newest non-empty manifest, all non-empty manifests newest-first, or only the active manifest.
     .PARAMETER RepairWithoutManifest
@@ -123,9 +125,9 @@ function Invoke-RestoreDefender {
         [switch]$Silent,
         [switch]$AllowRemoting,
         [string]$LogPath,
-        [ValidateSet('FirewallPreflight','FirewallPostflight','ReplayManifest','Policies','MpPreference','Tasks','Services','AclRestore','Appx','ContextMenu','Verification')]
+        [ValidateSet('Policies','MpPreference','Tasks','Services','AclRestore','Appx','ContextMenu','Verification')]
         [string[]]$Only,
-        [ValidateSet('FirewallPreflight','FirewallPostflight','ReplayManifest','Policies','MpPreference','Tasks','Services','AclRestore','Appx','ContextMenu','Verification')]
+        [ValidateSet('Policies','MpPreference','Tasks','Services','AclRestore','Appx','ContextMenu','Verification')]
         [string[]]$Skip,
         [ValidateSet('Newest','All','Active')]
         [string]$ManifestSelection = 'Newest',
@@ -157,20 +159,24 @@ function Invoke-RestoreDefender {
                 throw 'Phase filters are not supported for transactional recorded-baseline restore.'
             }
             $phases = @(
-                New-DefenderPhase -Name 'Firewall preflight' -Key 'FirewallPreflight' -Action { Assert-FirewallSafety -Stage pre }
                 New-DefenderPhase -Name 'Replay recorded baseline' -Key 'ReplayManifest' -RequiresResult -Action { Invoke-DefenderRestoreManifestPlan -Selection $ManifestSelection }
                 New-DefenderPhase -Name 'Registry ACL restore' -Key 'AclRestore' -RequiresResult -Action { Restore-RegKeyACLs }
                 New-DefenderPhase -Name 'Recorded baseline verification' -Key 'Verification' -RequiresResult -Action { Test-RestoreManifestBaseline -Selection $ManifestSelection }
+            )
+            $preflightPhases = @(
+                New-DefenderPhase -Name 'Firewall preflight' -Key 'FirewallPreflight' -Action { Assert-FirewallSafety -Stage pre }
+            )
+            $postflightPhases = @(
                 New-DefenderPhase -Name 'Firewall postflight' -Key 'FirewallPostflight' -Action { Assert-FirewallSafety -Stage post }
             )
-            $operationResult = Invoke-DefenderPhasePlan -Mode Restore -Phases $phases
+            $operationResult = Invoke-DefenderGuardedPhasePlan -Mode Restore -Phases $phases `
+                -PreflightPhases $preflightPhases -PostflightPhases $postflightPhases
             $operationResult | Add-Member -NotePropertyName RestoreStrategy `
                 -NotePropertyValue 'RecordedBaseline' -Force
             Write-Log 'Exact recorded baseline restored and verified. Reboot recommended.' OK
         } else {
             Write-Log 'No manifest selected; running explicit fixed-default repair preset.' WARN
             $phases = @(
-                New-DefenderPhase -Name 'Firewall preflight' -Key 'FirewallPreflight' -Action { Assert-FirewallSafety -Stage pre }
                 New-DefenderPhase -Name 'Policy cleanup' -Key 'Policies' -RequiresResult -Action { Clear-DefenderPolicy }
                 New-DefenderPhase -Name 'MpPreference cleanup' -Key 'MpPreference' -RequiresResult -Action { Clear-MpRuntimePrefs }
                 New-DefenderPhase -Name 'Scheduled task restore' -Key 'Tasks' -RequiresResult -Action { Enable-DefenderTasks }
@@ -179,9 +185,16 @@ function Invoke-RestoreDefender {
                 New-DefenderPhase -Name 'SecHealthUI restore' -Key 'Appx' -RequiresResult -Action { Restore-SecHealthUI }
                 New-DefenderPhase -Name 'Context menu restore' -Key 'ContextMenu' -RequiresResult -Action { Restore-DefenderContextMenu }
                 New-DefenderPhase -Name 'Repair verification' -Key 'Verification' -RequiresResult -Action { Invoke-RestoreVerification }
+            )
+            $preflightPhases = @(
+                New-DefenderPhase -Name 'Firewall preflight' -Key 'FirewallPreflight' -Action { Assert-FirewallSafety -Stage pre }
+            )
+            $postflightPhases = @(
                 New-DefenderPhase -Name 'Firewall postflight' -Key 'FirewallPostflight' -Action { Assert-FirewallSafety -Stage post }
             )
-            $operationResult = Invoke-DefenderPhasePlan -Mode Restore -Phases $phases -Only $Only -Skip $Skip
+            $operationResult = Invoke-DefenderGuardedPhasePlan -Mode Restore -Phases $phases `
+                -PreflightPhases $preflightPhases -PostflightPhases $postflightPhases `
+                -Only $Only -Skip $Skip
             $operationResult | Add-Member -NotePropertyName RestoreStrategy `
                 -NotePropertyValue 'FixedDefaultRepair' -Force
             Write-Log 'Fixed-default repair complete. Reboot recommended. If Defender does not return, run sfc /scannow and DISM /Online /Cleanup-Image /RestoreHealth.' OK

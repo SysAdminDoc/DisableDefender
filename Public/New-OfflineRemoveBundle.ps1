@@ -17,6 +17,9 @@ function New-OfflineRemoveBundle {
     .PARAMETER OutputDirectory
         Directory where the generated script is written. Defaults to the current
         directory.
+    .PARAMETER Force
+        Preserve an explicit caller choice to include -Force in the generated
+        live-completion command. Force is never added implicitly.
     .EXAMPLE
         New-OfflineRemoveBundle -OutputDirectory C:\OfflineBundle
     .EXAMPLE
@@ -24,7 +27,8 @@ function New-OfflineRemoveBundle {
     #>
     [CmdletBinding()]
     param(
-        [string]$OutputDirectory = '.'
+        [string]$OutputDirectory = '.',
+        [switch]$Force
     )
 
     if (-not (Test-Path -LiteralPath $OutputDirectory)) {
@@ -471,7 +475,7 @@ try {
     Write-OfflineLog 'Next steps:' INFO
     Write-OfflineLog '  1. Boot the target volume.' INFO
     Write-OfflineLog '  2. Run: .\DisableDefender.ps1 -Mode Health -HealthTarget Remove' INFO
-    Write-OfflineLog '  3. Run: .\DisableDefender.ps1 -Mode Remove -Force -Only MpPreference,Tasks,Appx,DISM' INFO
+    Write-OfflineLog '  3. Run: .\DisableDefender.ps1 -Mode Remove__FORCE_FLAG__ -Only MpPreference,Tasks,Appx,DISM' INFO
 
     if ($script:ErrorCount -gt 0) {
         exit 1
@@ -484,6 +488,8 @@ try {
 
     $scriptContent = $scriptContent.Replace('__VERSION__', $script:Version)
     $scriptContent = $scriptContent.Replace('__DATE__', $generatedDate)
+    $forceFlag = if ($Force) { ' -Force' } else { '' }
+    $scriptContent = $scriptContent.Replace('__FORCE_FLAG__', $forceFlag)
 
     Set-Content -LiteralPath $outputPath -Value $scriptContent -Encoding UTF8
     Write-Log "Offline remove bundle generated: $outputPath" OK
@@ -492,5 +498,6 @@ try {
         ScriptPath = $outputPath
         Version    = $script:Version
         Generated  = $generatedDate
+        Force      = [bool]$Force
     }
 }

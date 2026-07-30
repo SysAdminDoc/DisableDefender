@@ -10,6 +10,8 @@
 - Added an explicit `-RepairWithoutManifest` fixed-default repair path in the CLI, module command, and GUI.
 
 ### Fixed
+- Phase filters now apply only to mutation phases; prerequisite, managed/domain, Safe Mode, restore-point, and Firewall pre/postflight gates are mandatory, and an empty action selection fails before manifest creation.
+- Safe Mode and offline generators preserve `-Force` only when the caller explicitly requests it instead of injecting a safety override.
 - The GUI now blocks window closure while a privileged operation is active and drains completed runspaces instead of stopping workers abruptly.
 - Minimum-size layouts keep actions, component evidence, and activity output reachable through bounded scrolling instead of overlapping controls.
 - Destructive confirmation defaults keyboard focus to Cancel and separates warning, destructive, and recovery actions visually.

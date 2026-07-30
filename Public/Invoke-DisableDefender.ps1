@@ -18,9 +18,11 @@ function Invoke-DisableDefender {
     .PARAMETER LogPath
         Override the default log file path.
     .PARAMETER Only
-        Run only the named phase keys.
+        Run only the named action phase keys. Safety gates and Firewall checks
+        always run.
     .PARAMETER Skip
-        Skip the named phase keys.
+        Skip the named action phase keys. Safety gates and Firewall checks
+        cannot be skipped.
     .PARAMETER AllowRemoting
         Allow execution inside PSRemoting / PSSession contexts.
     .EXAMPLE
@@ -36,12 +38,20 @@ function Invoke-DisableDefender {
         [switch]$AllowRemoting,
         [switch]$Silent,
         [string]$LogPath,
-        [ValidateSet('Prerequisites','FirewallPreflight','FirewallPostflight','RestorePoint','Policies','MpPreference','Tasks','Services')]
+        [ValidateSet('Policies','MpPreference','Tasks','Services')]
         [string[]]$Only,
-        [ValidateSet('Prerequisites','FirewallPreflight','FirewallPostflight','RestorePoint','Policies','MpPreference','Tasks','Services')]
+        [ValidateSet('Policies','MpPreference','Tasks','Services')]
         [string[]]$Skip,
         [scriptblock]$LogCallback
     )
+
+    $phases = @(
+        New-DefenderPhase -Name 'Policy keys' -Key 'Policies' -RequiresResult -Action { Set-DefenderPolicy }
+        New-DefenderPhase -Name 'MpPreference' -Key 'MpPreference' -RequiresResult -Action { Set-MpRuntimePrefs }
+        New-DefenderPhase -Name 'Scheduled tasks' -Key 'Tasks' -RequiresResult -Action { Disable-DefenderTasks }
+        New-DefenderPhase -Name 'Services' -Key 'Services' -RequiresResult -Action { Disable-DefenderServices }
+    )
+    Assert-DefenderActionPhaseSelection -Phases $phases -Only $Only -Skip $Skip
 
     $shouldProcess = $PSCmdlet.ShouldProcess('Microsoft Defender', 'Disable')
     if (-not $shouldProcess -and -not $WhatIfPreference) { return }
@@ -51,17 +61,17 @@ function Invoke-DisableDefender {
 
     Start-RestoreManifest -Mode Disable
     try {
-        $phases = @(
+        $preflightPhases = @(
             New-DefenderPhase -Name 'Prerequisites' -Key 'Prerequisites' -Action { Confirm-Prereqs }
             New-DefenderPhase -Name 'Firewall preflight' -Key 'FirewallPreflight' -Action { Assert-FirewallSafety -Stage pre }
             New-DefenderPhase -Name 'Restore point' -Key 'RestorePoint' -RequiresResult -Action { New-SafetyRestorePoint }
-            New-DefenderPhase -Name 'Policy keys' -Key 'Policies' -RequiresResult -Action { Set-DefenderPolicy }
-            New-DefenderPhase -Name 'MpPreference' -Key 'MpPreference' -RequiresResult -Action { Set-MpRuntimePrefs }
-            New-DefenderPhase -Name 'Scheduled tasks' -Key 'Tasks' -RequiresResult -Action { Disable-DefenderTasks }
-            New-DefenderPhase -Name 'Services' -Key 'Services' -RequiresResult -Action { Disable-DefenderServices }
+        )
+        $postflightPhases = @(
             New-DefenderPhase -Name 'Firewall postflight' -Key 'FirewallPostflight' -Action { Assert-FirewallSafety -Stage post }
         )
-        $operationResult = Invoke-DefenderPhasePlan -Mode Disable -Phases $phases -Only $Only -Skip $Skip
+        $operationResult = Invoke-DefenderGuardedPhasePlan -Mode Disable -Phases $phases `
+            -PreflightPhases $preflightPhases -PostflightPhases $postflightPhases `
+            -Only $Only -Skip $Skip
         $hasMutationEvidence = @($operationResult.Phases | Where-Object {
             $null -ne $_.Result
         }).Count -gt 0

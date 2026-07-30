@@ -51,6 +51,7 @@ Disable confirmation includes a current-vs-target drift preview before execution
 - **Atomic phase boundaries**: each mode records phase status to `phase-state.json`; failures log partial state plus resume/rollback recovery choices
 - **Per-phase firewall guard**: every executed phase checks firewall services and profiles before and after running
 - **Known-bad Remove gate**: domain-joined machines are refused unless `-Force` is passed and emit JSONL tripwires
+- **Unfilterable safety gates**: `-Only` / `-Skip` apply only to mutation phases; prerequisites, managed/domain and Safe Mode gates, restore-point handling, and Firewall pre/postflight always run
 - **PSRemoting guard**: Disable/Remove/Restore refuse PSSession execution unless `-AllowRemoting` is explicit
 - **Restore point throttle awareness**: Windows restore-point interval refusals are logged with the configured cadence instead of a generic warning
 - **Surgical repair reruns**: `-Only` and `-Skip` phase filters for the explicit no-manifest repair preset; transactional recorded-baseline restore cannot be filtered
@@ -145,6 +146,8 @@ Export-DefenderHtmlReport -OutputPath C:\Reports\defender.html -HealthTarget Rem
 # Automated Safe Mode Remove (reboot -> Remove -> reboot back)
 Invoke-SafeModeRemove
 Invoke-SafeModeRemove -IncludeMDE -DelaySeconds 30
+# Preserve an intentional managed/domain override in the generated task
+Invoke-SafeModeRemove -Force
 
 # Save a state snapshot, then compare later
 Save-DefenderSnapshot -OutputPath C:\Snapshots\before.json
@@ -172,7 +175,7 @@ Copy the generated `Invoke-OfflineDefenderRemove.ps1` to a USB drive, boot into 
 .\Invoke-OfflineDefenderRemove.ps1 -TargetVolume D:\
 ```
 
-The script loads the offline volume's SOFTWARE and SYSTEM registry hives, applies all Defender policy keys, disables services, removes SafeBoot entries, and disables WMI Autologger telemetry. It refuses to run against the live system drive. After booting the target, run `-Mode Health` and `-Mode Remove -Force -Only MpPreference,Tasks,Appx,DISM` to complete the remaining live-only steps.
+The script loads the offline volume's SOFTWARE and SYSTEM registry hives, applies all Defender policy keys, disables services, removes SafeBoot entries, and disables WMI Autologger telemetry. It refuses to run against the live system drive. After booting the target into Safe Mode, run `-Mode Health` and `-Mode Remove -Only MpPreference,Tasks,Appx,DISM` to complete the remaining live-only steps. Pass `-Force` to `New-OfflineRemoveBundle` only when the generated completion command must preserve an intentional managed/domain or normal-boot override.
 
 ### Parameters
 | Flag | Description |
@@ -185,8 +188,8 @@ The script loads the offline volume's SOFTWARE and SYSTEM registry hives, applie
 | `-AllowRemoting` | Allow Disable/Remove/Restore inside PSRemoting or PSSession contexts. |
 | `-IncludeMDE` | Also target the MDE `Sense` service. Disabled by default to preserve enterprise EDR visibility. |
 | `-Json` | Emit JSON output. Applies to `Status`, `Health`, and error envelopes. |
-| `-Only` | Run only matching phase keys. Common keys: `Policies`, `MpPreference`, `Tasks`, `Services`, `Appx`, `DISM`, `SafeBoot`, `ContextMenu`. |
-| `-Skip` | Skip matching phase keys while running the rest of the selected mode. |
+| `-Only` | Run only matching action phases. Common keys: `Policies`, `MpPreference`, `Tasks`, `Services`, `Appx`, `DISM`, `SafeBoot`, `ContextMenu`. Mandatory safety and Firewall phases always run. |
+| `-Skip` | Skip matching action phases while running the rest of the selected mode. Mandatory safety and Firewall phases cannot be skipped. |
 | `-ManifestSelection` | Restore manifest selection for `Restore`: `Newest` (default), `All`, or `Active`. Use `All` after repeated Disable/Remove runs when older undo chains must also be replayed. |
 | `-RepairWithoutManifest` | Explicitly run the fixed-default Restore repair preset when no selected undo manifest exists. This is not an exact baseline restore. |
 | `-HealthTarget` | Expected target for `-Mode Health`: `Disable`, `Remove`, or `Restore`. |

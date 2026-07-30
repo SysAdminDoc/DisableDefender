@@ -21,9 +21,10 @@ function Invoke-RemoveDefender {
     .PARAMETER LogPath
         Override the default log file path.
     .PARAMETER Only
-        Run only the named phase keys.
+        Run only the named action phase keys. Prerequisite, Safe Mode,
+        managed/domain, restore-point, and Firewall gates always run.
     .PARAMETER Skip
-        Skip the named phase keys.
+        Skip the named action phase keys. Safety gates cannot be skipped.
     .PARAMETER AllowRemoting
         Allow execution inside PSRemoting / PSSession contexts.
     .EXAMPLE
@@ -39,12 +40,24 @@ function Invoke-RemoveDefender {
         [switch]$AllowRemoting,
         [switch]$Silent,
         [string]$LogPath,
-        [ValidateSet('Prerequisites','FirewallPreflight','FirewallPostflight','RestorePoint','Policies','MpPreference','Tasks','Services','SafeBoot','Appx','DISM','ContextMenu')]
+        [ValidateSet('Policies','MpPreference','Tasks','Services','SafeBoot','Appx','DISM','ContextMenu')]
         [string[]]$Only,
-        [ValidateSet('Prerequisites','FirewallPreflight','FirewallPostflight','RestorePoint','Policies','MpPreference','Tasks','Services','SafeBoot','Appx','DISM','ContextMenu')]
+        [ValidateSet('Policies','MpPreference','Tasks','Services','SafeBoot','Appx','DISM','ContextMenu')]
         [string[]]$Skip,
         [scriptblock]$LogCallback
     )
+
+    $phases = @(
+        New-DefenderPhase -Name 'Policy keys' -Key 'Policies' -RequiresResult -Action { Set-DefenderPolicy }
+        New-DefenderPhase -Name 'MpPreference' -Key 'MpPreference' -RequiresResult -Action { Set-MpRuntimePrefs }
+        New-DefenderPhase -Name 'Scheduled tasks' -Key 'Tasks' -RequiresResult -Action { Disable-DefenderTasks }
+        New-DefenderPhase -Name 'Services' -Key 'Services' -RequiresResult -Action { Disable-DefenderServices }
+        New-DefenderPhase -Name 'SafeBoot' -Key 'SafeBoot' -RequiresResult -Action { Remove-SafeBootWinDefend }
+        New-DefenderPhase -Name 'SecHealthUI' -Key 'Appx' -RequiresResult -Action { Remove-SecHealthUI }
+        New-DefenderPhase -Name 'DISM packages' -Key 'DISM' -RequiresResult -Action { Remove-DefenderPlatformPackages }
+        New-DefenderPhase -Name 'Context menu' -Key 'ContextMenu' -RequiresResult -Action { Remove-DefenderContextMenu }
+    )
+    Assert-DefenderActionPhaseSelection -Phases $phases -Only $Only -Skip $Skip
 
     $shouldProcess = $PSCmdlet.ShouldProcess('Microsoft Defender', 'Remove')
     if (-not $shouldProcess -and -not $WhatIfPreference) { return }
@@ -54,7 +67,7 @@ function Invoke-RemoveDefender {
 
     Start-RestoreManifest -Mode Remove
     try {
-        $phases = @(
+        $preflightPhases = @(
             New-DefenderPhase -Name 'Prerequisites' -Key 'Prerequisites' -Action { Confirm-Prereqs }
             New-DefenderPhase -Name 'Firewall preflight' -Key 'FirewallPreflight' -Action { Assert-FirewallSafety -Stage pre }
             New-DefenderPhase -Name 'Safe Mode gate' -Key 'SafeModeGate' -Action {
@@ -65,17 +78,13 @@ function Invoke-RemoveDefender {
             }
             New-DefenderPhase -Name 'Known-bad override gate' -Key 'KnownBadGate' -Action { Confirm-RemoveKnownBadOverrides }
             New-DefenderPhase -Name 'Restore point' -Key 'RestorePoint' -RequiresResult -Action { New-SafetyRestorePoint }
-            New-DefenderPhase -Name 'Policy keys' -Key 'Policies' -RequiresResult -Action { Set-DefenderPolicy }
-            New-DefenderPhase -Name 'MpPreference' -Key 'MpPreference' -RequiresResult -Action { Set-MpRuntimePrefs }
-            New-DefenderPhase -Name 'Scheduled tasks' -Key 'Tasks' -RequiresResult -Action { Disable-DefenderTasks }
-            New-DefenderPhase -Name 'Services' -Key 'Services' -RequiresResult -Action { Disable-DefenderServices }
-            New-DefenderPhase -Name 'SafeBoot' -Key 'SafeBoot' -RequiresResult -Action { Remove-SafeBootWinDefend }
-            New-DefenderPhase -Name 'SecHealthUI' -Key 'Appx' -RequiresResult -Action { Remove-SecHealthUI }
-            New-DefenderPhase -Name 'DISM packages' -Key 'DISM' -RequiresResult -Action { Remove-DefenderPlatformPackages }
-            New-DefenderPhase -Name 'Context menu' -Key 'ContextMenu' -RequiresResult -Action { Remove-DefenderContextMenu }
+        )
+        $postflightPhases = @(
             New-DefenderPhase -Name 'Firewall postflight' -Key 'FirewallPostflight' -Action { Assert-FirewallSafety -Stage post }
         )
-        $operationResult = Invoke-DefenderPhasePlan -Mode Remove -Phases $phases -Only $Only -Skip $Skip
+        $operationResult = Invoke-DefenderGuardedPhasePlan -Mode Remove -Phases $phases `
+            -PreflightPhases $preflightPhases -PostflightPhases $postflightPhases `
+            -Only $Only -Skip $Skip
         $hasMutationEvidence = @($operationResult.Phases | Where-Object {
             $null -ne $_.Result
         }).Count -gt 0

@@ -127,7 +127,7 @@ function Invoke-SelectedMode {
         }
         'PrepareOffline' {
             $outputDir = Join-Path $PSScriptRoot 'dist'
-            $bundle = New-OfflineRemoveBundle -OutputDirectory $outputDir
+            $bundle = New-OfflineRemoveBundle -OutputDirectory $outputDir -Force:$Force
             Write-Host ''
             Write-Host 'Offline remove bundle generated:' -ForegroundColor Cyan
             Write-Host "  Script: $($bundle.ScriptPath)" -ForegroundColor White
