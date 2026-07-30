@@ -72,6 +72,26 @@ function Merge-DefenderActionResult {
     }
 }
 
+function New-DefenderSingleEffectResult {
+    param(
+        [Parameter(Mandatory)][string]$Name,
+        [Parameter(Mandatory)][string]$Target,
+        [bool]$Attempted,
+        [bool]$Changed,
+        [bool]$Verified,
+        [AllowNull()]$Evidence,
+        [string[]]$Errors,
+        [bool]$Required = $true,
+        [switch]$Simulation
+    )
+
+    $result = New-DefenderActionResult -Name $Name -Simulation:$Simulation
+    Add-DefenderEffect -Result $result -Target $Target -Attempted $Attempted `
+        -Changed $Changed -Verified $Verified -Evidence $Evidence -Errors $Errors `
+        -Required $Required
+    return (Complete-DefenderActionResult -Result $result)
+}
+
 function Complete-DefenderActionResult {
     param(
         [Parameter(Mandatory)]$Result

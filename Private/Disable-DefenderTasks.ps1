@@ -61,12 +61,13 @@ function Invoke-DefenderScheduledTaskFallback {
 
 function Invoke-DefenderScheduledTaskPlan {
     param(
-        [Parameter(Mandatory)][ValidateSet('Disable','Enable')][string]$Mode
+        [Parameter(Mandatory)][ValidateSet('Disable','Enable')][string]$Mode,
+        [string[]]$TaskPaths = $script:DefenderTasks
     )
 
     $result = New-DefenderActionResult -Name "ScheduledTasks:$Mode" -Simulation:$WhatIfPreference
     $expectedEnabled = ($Mode -eq 'Enable')
-    foreach ($taskPath in $script:DefenderTasks) {
+    foreach ($taskPath in $TaskPaths) {
         $before = Get-DefenderScheduledTaskState -TaskPath $taskPath
         if (-not $before.Readable) {
             Add-DefenderEffect -Result $result -Target $taskPath -Attempted $false -Changed $false `

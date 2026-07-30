@@ -6,6 +6,8 @@
 - Reimagined the WPF shell as a safety-first security control center with a command rail, six protection-state cards, component-health and policy-change views, and a compact live-activity panel.
 - Added UI Automation names, keyboard focus treatment, maximize/restore chrome, F5 refresh, and accessible text labels for every status.
 - Added one structured operation-result contract across phase state, logs, CLI JSON, and GUI completion feedback, with per-effect attempted, changed, verified, evidence, and error fields.
+- Added durable restore replay/finalization state so partial manifest replay, failed baseline verification, and interrupted multi-manifest archival remain resumable.
+- Added an explicit `-RepairWithoutManifest` fixed-default repair path in the CLI, module command, and GUI.
 
 ### Fixed
 - The GUI now blocks window closure while a privileged operation is active and drains completed runspaces instead of stopping workers abruptly.
@@ -13,6 +15,8 @@
 - Destructive confirmation defaults keyboard focus to Cancel and separates warning, destructive, and recovery actions visually.
 - Registry, MpPreference, task, service, SafeBoot, Appx, DISM, context-menu, restore-point, and ACL phases now fail on unverified required postconditions instead of accepting swallowed or zero-effect mutations.
 - Disable and Remove save a surface baseline only after a verified non-simulation plan; action-mode JSON emits one success envelope and the GUI consumes the same verified result.
+- Restore now replays and verifies the exact recorded registry, preference, task, service, SafeBoot, context-menu, Security Health, and DISM baseline before archiving the manifest; unreadable registry pre-state aborts before mutation.
+- Repeated-run restore collapses final expectations to the oldest selected baseline, while exact Restore refuses partial phase filters and never falls through to fixed defaults.
 
 ## v0.0.40 - 2026-06-30
 

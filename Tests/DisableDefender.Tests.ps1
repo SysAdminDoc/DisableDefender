@@ -1492,11 +1492,25 @@ InModuleScope DisableDefender {
         }
     }
 
+    function script:New-TestRestoreActionResult {
+        param(
+            [string]$Target = 'TestRestoreTarget',
+            [bool]$Verified = $true,
+            [string]$ErrorMessage
+        )
+
+        return (New-DefenderSingleEffectResult -Name 'TestRestoreAction' -Target $Target `
+            -Attempted $true -Changed $Verified -Verified $Verified -Evidence 'Test' `
+            -Errors $(if ($Verified) { @() } else { @($ErrorMessage) }))
+    }
+
     Describe 'Restore replay manifest' {
         BeforeEach {
             $script:RestoreManifestPath = Join-Path $TestDrive 'restore-manifest.jsonl'
             $script:AppDir = $TestDrive
             Get-ChildItem -Path $TestDrive -Filter 'restore-manifest*.jsonl' -ErrorAction SilentlyContinue | Remove-Item -Force
+            Remove-Item -LiteralPath (Join-Path $TestDrive 'restore-replay-state.json') `
+                -Force -ErrorAction SilentlyContinue
             $script:RestoreManifestActive = $false
             $script:RestoreManifestReplayMode = $false
             $script:RestoreManifestRunId = $null
@@ -1519,7 +1533,7 @@ InModuleScope DisableDefender {
             $entries[0].Data.Service | Should -Be 'WinDefend'
         }
 
-        It 'replays entries in reverse order and archives the manifest' {
+        It 'replays entries in reverse order and archives only after exact verification' {
             Start-RestoreManifest -Mode Disable
             Write-RestoreManifestEntry -Phase 'Services' -Action 'SetServiceStart' -Target 'FirstService' -Data ([ordered]@{
                 Service = 'FirstService'
@@ -1532,15 +1546,24 @@ InModuleScope DisableDefender {
             Stop-RestoreManifest
 
             $script:ReplayOrder = @()
-            Mock Set-ServiceStart {
-                param($Service, $State)
-                $script:ReplayOrder += "$Service=$State"
-                return $true
+            Mock Invoke-RestoreManifestEntry {
+                $script:ReplayOrder += "$($Entry.Data.Service)=$($Entry.Data.State)"
+                New-TestRestoreActionResult -Target $Entry.Target
             }
 
             Invoke-RestoreManifest | Should -Be $true
             $script:ReplayOrder | Should -Be @('SecondService=Automatic','FirstService=Manual')
+            Test-Path -LiteralPath $script:RestoreManifestPath | Should -Be $true
+            (Read-RestoreReplayState).Status | Should -Be 'AwaitingVerification'
+
+            Mock Test-RestoreManifestEntryBaseline {
+                New-TestRestoreActionResult -Target $Entry.Target
+            }
+            $verification = Test-RestoreManifestBaseline
+
+            $verification.Succeeded | Should -Be $true
             Test-Path -LiteralPath $script:RestoreManifestPath | Should -Be $false
+            Test-Path -LiteralPath (Get-RestoreReplayStatePath) | Should -Be $false
             Get-ChildItem -Path $TestDrive -Filter 'restore-manifest.restored.*.jsonl' | Should -Not -BeNullOrEmpty
         }
 
@@ -1564,17 +1587,23 @@ InModuleScope DisableDefender {
             Stop-RestoreManifest
 
             $script:ManifestReplayLogs = @()
-            Mock Set-ServiceStart { return $true }
+            Mock Invoke-RestoreManifestEntry {
+                New-TestRestoreActionResult -Target $Entry.Target
+            }
+            Mock Test-RestoreManifestEntryBaseline {
+                New-TestRestoreActionResult -Target $Entry.Target
+            }
             Mock Write-Log {
                 param($Message, $Level)
                 $script:ManifestReplayLogs += "$Level|$Message"
             }
 
             Invoke-RestoreManifest | Should -Be $true
+            Test-RestoreManifestBaseline | Out-Null
 
             $joined = $script:ManifestReplayLogs -join "`n"
             $joined | Should -Match 'INFO\|Restore manifest integrity: RunIds=[0-9a-f-]+ Entries=1 SHA256=[0-9a-f]{64}'
-            $joined | Should -Match 'INFO\|Archived replayed restore manifest .+RunIds=[0-9a-f-]+; Entries=1; SHA256=[0-9a-f]{64}'
+            $joined | Should -Match 'INFO\|Archived verified restore manifest .+RunIds=[0-9a-f-]+; Entries=1; SHA256=[0-9a-f]{64}'
         }
 
         It 'warns when newest selection leaves older archived manifests' {
@@ -1599,10 +1628,12 @@ InModuleScope DisableDefender {
 
             $script:ReplayOrder = @()
             $script:ManifestReplayLogs = @()
-            Mock Set-ServiceStart {
-                param($Service, $State)
-                $script:ReplayOrder += "$Service=$State"
-                return $true
+            Mock Invoke-RestoreManifestEntry {
+                $script:ReplayOrder += "$($Entry.Data.Service)=$($Entry.Data.State)"
+                New-TestRestoreActionResult -Target $Entry.Target
+            }
+            Mock Test-RestoreManifestEntryBaseline {
+                New-TestRestoreActionResult -Target $Entry.Target
             }
             Mock Write-Log {
                 param($Message, $Level)
@@ -1612,6 +1643,8 @@ InModuleScope DisableDefender {
             Invoke-RestoreManifest | Should -Be $true
 
             $script:ReplayOrder | Should -Be @('WinDefend=Disabled')
+            Test-Path -LiteralPath $script:RestoreManifestPath | Should -Be $true
+            Test-RestoreManifestBaseline | Out-Null
             Test-Path -LiteralPath $script:RestoreManifestPath | Should -Be $false
             Test-Path -LiteralPath $archived[0].FullName | Should -Be $true
             ($script:ManifestReplayLogs -join "`n") | Should -Match 'WARN\|1 archived restore manifest\(s\) were not selected\..*-ManifestSelection All'
@@ -1638,19 +1671,167 @@ InModuleScope DisableDefender {
             (Get-Item -LiteralPath $script:RestoreManifestPath).LastWriteTimeUtc = [datetime]::UtcNow
 
             $script:ReplayOrder = @()
-            Mock Set-ServiceStart {
-                param($Service, $State)
-                $script:ReplayOrder += "$Service=$State"
-                return $true
+            Mock Invoke-RestoreManifestEntry {
+                $script:ReplayOrder += "$($Entry.Data.Service)=$($Entry.Data.State)"
+                New-TestRestoreActionResult -Target $Entry.Target
+            }
+            Mock Test-RestoreManifestEntryBaseline {
+                New-TestRestoreActionResult -Target $Entry.Target
             }
             Mock Write-Log {}
+
+            $finalExpectations = @(Get-RestoreManifestFinalExpectations `
+                -Plan (Get-RestoreManifestReplayPlan -Selection All))
+            $finalExpectations.Count | Should -Be 1
+            $finalExpectations[0].Data.State | Should -Be 'Automatic'
 
             Invoke-RestoreManifest -Selection All | Should -Be $true
 
             $script:ReplayOrder | Should -Be @('WinDefend=Disabled','WinDefend=Automatic')
+            Test-RestoreManifestBaseline -Selection All | Out-Null
             Test-Path -LiteralPath $script:RestoreManifestPath | Should -Be $false
             @(Get-ChildItem -Path $TestDrive -Filter 'restore-manifest.*.jsonl' | Where-Object { $_.Name -match '^restore-manifest\.\d{14}(?:\.\d+)?\.jsonl$' }).Count | Should -Be 0
             @(Get-ChildItem -Path $TestDrive -Filter 'restore-manifest.restored.*.jsonl').Count | Should -Be 2
+        }
+
+        It 'preserves the manifest and resumes from the first failed entry' {
+            Start-RestoreManifest -Mode Disable
+            Write-RestoreManifestEntry -Phase 'Services' -Action 'SetServiceStart' -Target 'FirstService' -Data ([ordered]@{
+                Service = 'FirstService'
+                State   = 'Manual'
+            })
+            Write-RestoreManifestEntry -Phase 'Services' -Action 'SetServiceStart' -Target 'SecondService' -Data ([ordered]@{
+                Service = 'SecondService'
+                State   = 'Automatic'
+            })
+            Stop-RestoreManifest
+
+            $script:ReplayAttempts = @()
+            $script:FailFirstService = $true
+            Mock Invoke-RestoreManifestEntry {
+                $script:ReplayAttempts += $Entry.Data.Service
+                if ($Entry.Data.Service -eq 'FirstService' -and $script:FailFirstService) {
+                    return (New-TestRestoreActionResult -Target $Entry.Target -Verified $false `
+                        -ErrorMessage 'injected replay failure')
+                }
+                return (New-TestRestoreActionResult -Target $Entry.Target)
+            }
+
+            Invoke-RestoreManifest | Should -Be $false
+
+            Test-Path -LiteralPath $script:RestoreManifestPath | Should -Be $true
+            $failedState = Read-RestoreReplayState
+            $failedState.Status | Should -Be 'Failed'
+            $failedState.CompletedKeys.Count | Should -Be 1
+            $failedState.NextEntryKey | Should -Match ':1$'
+
+            $script:FailFirstService = $false
+            Invoke-RestoreManifest | Should -Be $true
+
+            $script:ReplayAttempts | Should -Be @('SecondService','FirstService','FirstService')
+            (Read-RestoreReplayState).Status | Should -Be 'AwaitingVerification'
+            Test-Path -LiteralPath $script:RestoreManifestPath | Should -Be $true
+        }
+
+        It 'preserves replay artifacts when exact verification fails' {
+            Start-RestoreManifest -Mode Disable
+            Write-RestoreManifestEntry -Phase 'Services' -Action 'SetServiceStart' -Target 'WinDefend' -Data ([ordered]@{
+                Service = 'WinDefend'
+                State   = 'Automatic'
+            })
+            Stop-RestoreManifest
+
+            Mock Invoke-RestoreManifestEntry {
+                New-TestRestoreActionResult -Target $Entry.Target
+            }
+            $script:FailBaselineVerification = $true
+            Mock Test-RestoreManifestEntryBaseline {
+                New-TestRestoreActionResult -Target $Entry.Target `
+                    -Verified (-not $script:FailBaselineVerification) `
+                    -ErrorMessage $(if ($script:FailBaselineVerification) { 'injected drift' } else { $null })
+            }
+
+            Invoke-RestoreManifest | Should -Be $true
+            $failedVerification = Test-RestoreManifestBaseline
+
+            $failedVerification.Succeeded | Should -Be $false
+            Test-Path -LiteralPath $script:RestoreManifestPath | Should -Be $true
+            (Read-RestoreReplayState).Status | Should -Be 'VerificationFailed'
+            @(Get-ChildItem -Path $TestDrive -Filter 'restore-manifest.restored.*.jsonl').Count |
+                Should -Be 0
+
+            $script:FailBaselineVerification = $false
+            Invoke-RestoreManifest | Should -Be $true
+            (Test-RestoreManifestBaseline).Succeeded | Should -Be $true
+            Test-Path -LiteralPath (Get-RestoreReplayStatePath) | Should -Be $false
+        }
+
+        It 'resumes finalization after one manifest archive move is interrupted' {
+            Start-RestoreManifest -Mode Disable
+            Write-RestoreManifestEntry -Phase 'Services' -Action 'SetServiceStart' -Target 'FirstService' -Data ([ordered]@{
+                Service = 'FirstService'
+                State   = 'Automatic'
+            })
+            Stop-RestoreManifest
+            Start-Sleep -Milliseconds 1100
+            Start-RestoreManifest -Mode Disable
+            Write-RestoreManifestEntry -Phase 'Services' -Action 'SetServiceStart' -Target 'SecondService' -Data ([ordered]@{
+                Service = 'SecondService'
+                State   = 'Manual'
+            })
+            Stop-RestoreManifest
+
+            Mock Invoke-RestoreManifestEntry {
+                New-TestRestoreActionResult -Target $Entry.Target
+            }
+            Mock Test-RestoreManifestEntryBaseline {
+                New-TestRestoreActionResult -Target $Entry.Target
+            }
+            $script:ArchiveMoveCount = 0
+            $script:InjectArchiveFailure = $true
+            Mock Move-RestoreManifestToArchive {
+                $script:ArchiveMoveCount++
+                if ($script:InjectArchiveFailure -and $script:ArchiveMoveCount -eq 2) {
+                    throw 'injected archive interruption'
+                }
+                [System.IO.File]::Move($Source, $Destination)
+            }
+
+            Invoke-RestoreManifest -Selection All | Should -Be $true
+            (Test-RestoreManifestBaseline -Selection All).Succeeded | Should -Be $false
+
+            (Read-RestoreReplayState).Status | Should -Be 'FinalizeFailed'
+            @(Get-ChildItem -Path $TestDrive -Filter 'restore-manifest.restored.*.jsonl').Count |
+                Should -Be 1
+            @(Get-RestoreManifestCandidates).Count | Should -Be 1
+
+            $script:InjectArchiveFailure = $false
+            Invoke-RestoreManifest -Selection All | Should -Be $true
+            (Test-RestoreManifestBaseline -Selection All).Succeeded | Should -Be $true
+
+            Test-Path -LiteralPath (Get-RestoreReplayStatePath) | Should -Be $false
+            @(Get-RestoreManifestCandidates).Count | Should -Be 0
+            @(Get-ChildItem -Path $TestDrive -Filter 'restore-manifest.restored.*.jsonl').Count |
+                Should -Be 2
+        }
+
+        It 'refuses to encode an unreadable registry pre-state as absent' {
+            Start-RestoreManifest -Mode Disable
+            Mock Get-RestoreRegistryValueState {
+                [PSCustomObject]@{
+                    Readable = $false
+                    Exists = $null
+                    Kind = $null
+                    Value = $null
+                    Error = 'access denied'
+                }
+            }
+
+            { Register-RegistryValueUndo -Path 'HKLM:\SOFTWARE\Example' -Name 'Value' -Phase 'Policies' } |
+                Should -Throw -ExpectedMessage '*mutation refused*'
+
+            Stop-RestoreManifest
+            @(Read-RestoreManifestEntries).Count | Should -Be 0
         }
 
         It 'refuses unexpected actions before replay' {
@@ -1666,10 +1847,10 @@ InModuleScope DisableDefender {
                 Data          = [ordered]@{ Service = 'WinDefend' }
             }
             $entry | ConvertTo-Json -Depth 8 -Compress | Set-Content -LiteralPath $script:RestoreManifestPath
-            Mock Set-ServiceStart { throw 'should not replay' }
+            Mock Invoke-RestoreManifestEntry { throw 'should not replay' }
 
             { Invoke-RestoreManifest } | Should -Throw -ExpectedMessage '*unexpected action*'
-            Should -Invoke Set-ServiceStart -Times 0 -Exactly
+            Should -Invoke Invoke-RestoreManifestEntry -Times 0 -Exactly
         }
 
         It 'refuses manifest entries missing required action fields' {
@@ -1685,10 +1866,257 @@ InModuleScope DisableDefender {
                 Data          = [ordered]@{ Service = 'WinDefend' }
             }
             $entry | ConvertTo-Json -Depth 8 -Compress | Set-Content -LiteralPath $script:RestoreManifestPath
-            Mock Set-ServiceStart { throw 'should not replay' }
+            Mock Invoke-RestoreManifestEntry { throw 'should not replay' }
 
             { Invoke-RestoreManifest } | Should -Throw -ExpectedMessage '*missing Data.State*'
-            Should -Invoke Set-ServiceStart -Times 0 -Exactly
+            Should -Invoke Invoke-RestoreManifestEntry -Times 0 -Exactly
+        }
+    }
+
+    Describe 'Restore entry exact postconditions' {
+        It 'restores a non-default registry value with its original kind' {
+            $script:RestoreRegistryKind = 'DWord'
+            $script:RestoreRegistryValue = 0
+            Mock Set-RegistryValueFromManifest {
+                $script:RestoreRegistryKind = $Kind
+                $script:RestoreRegistryValue = $Value
+            }
+            Mock Get-RestoreRegistryValueState {
+                [PSCustomObject]@{
+                    Readable = $true
+                    Exists = $true
+                    Kind = $script:RestoreRegistryKind
+                    Value = $script:RestoreRegistryValue
+                    Error = $null
+                }
+            }
+            $entry = [PSCustomObject]@{
+                Action = 'RestoreRegistryValue'
+                Target = 'HKLM:\SOFTWARE\Example\NonDefault'
+                Data = [PSCustomObject]@{
+                    Path = 'HKLM:\SOFTWARE\Example'
+                    Name = 'NonDefault'
+                    Kind = 'QWord'
+                    Value = [int64]4294967297
+                }
+            }
+
+            $result = Invoke-RestoreManifestEntry -Entry $entry
+
+            $result.Succeeded | Should -Be $true
+            $result.Effects[0].Evidence.ActualKind | Should -Be 'QWord'
+            $result.Effects[0].Evidence.ActualValue | Should -Be 4294967297
+        }
+
+        It 'replaces a registry tree before importing the recorded tree' {
+            $expectedTree = [PSCustomObject]@{
+                Name = 'EPP'
+                Values = @([PSCustomObject]@{
+                    Name = ''
+                    Kind = 'String'
+                    Value = '{non-default-handler}'
+                })
+                Children = @([PSCustomObject]@{
+                    Name = 'Child'
+                    Values = @([PSCustomObject]@{ Name = 'Enabled'; Kind = 'DWord'; Value = 0 })
+                    Children = @()
+                })
+            }
+            $script:RestoredTree = $null
+            Mock Test-Path { $true }
+            Mock Remove-Item {}
+            Mock Import-RegistryTree { $script:RestoredTree = $Tree }
+            Mock Export-RegistryTree { $script:RestoredTree }
+            $entry = [PSCustomObject]@{
+                Action = 'RestoreRegistryTree'
+                Target = 'HKLM:\SOFTWARE\Classes\Example'
+                Data = [PSCustomObject]@{
+                    Path = 'HKLM:\SOFTWARE\Classes\Example'
+                    Tree = $expectedTree
+                }
+            }
+
+            $result = Invoke-RestoreManifestEntry -Entry $entry
+
+            $result.Succeeded | Should -Be $true
+            Should -Invoke Remove-Item -Times 1 -Exactly
+            Should -Invoke Import-RegistryTree -Times 1 -Exactly
+        }
+
+        It 'routes recorded service and task states through verified mutators' {
+            Mock Set-ServiceStart {
+                New-TestRestoreActionResult -Target "Service:${Service}:Start"
+            }
+            Mock Invoke-DefenderScheduledTaskPlan {
+                New-TestRestoreActionResult -Target $TaskPaths[0]
+            }
+            Mock Invoke-DefenderRestoreServiceRuntime {
+                New-TestRestoreActionResult -Target "Service:${Service}:Runtime"
+            }
+            $entries = @(
+                [PSCustomObject]@{
+                    Action = 'SetServiceStart'
+                    Target = 'WinDefend'
+                    Data = [PSCustomObject]@{ Service = 'WinDefend'; State = 'Manual' }
+                }
+                [PSCustomObject]@{
+                    Action = 'StartService'
+                    Target = 'WinDefend'
+                    Data = [PSCustomObject]@{ Service = 'WinDefend' }
+                }
+                [PSCustomObject]@{
+                    Action = 'SetScheduledTaskState'
+                    Target = '\Microsoft\Windows\Windows Defender\Custom'
+                    Data = [PSCustomObject]@{
+                        TaskPath = '\Microsoft\Windows\Windows Defender\Custom'
+                        Enabled = $false
+                    }
+                }
+            )
+
+            $results = @($entries | ForEach-Object { Invoke-RestoreManifestEntry -Entry $_ })
+
+            @($results | Where-Object { -not $_.Succeeded }).Count | Should -Be 0
+            Should -Invoke Set-ServiceStart -ParameterFilter { $State -eq 'Manual' } -Times 1 -Exactly
+            Should -Invoke Invoke-DefenderScheduledTaskPlan `
+                -ParameterFilter { $Mode -eq 'Disable' } -Times 1 -Exactly
+        }
+
+        It 'restores non-default MpPreference and exclusion baselines' {
+            $script:RestoreMapsValue = 'Disabled'
+            $script:RestoreExclusions = @('C:\')
+            Mock Set-MpPreference { $script:RestoreMapsValue = $MAPSReporting }
+            Mock Remove-MpPreference { $script:RestoreExclusions = @() }
+            Mock Get-MpPreference {
+                [PSCustomObject]@{
+                    MAPSReporting = $script:RestoreMapsValue
+                    ExclusionPath = @($script:RestoreExclusions)
+                }
+            }
+            $preferenceEntry = [PSCustomObject]@{
+                Action = 'SetMpPreference'
+                Target = 'MAPSReporting'
+                Data = [PSCustomObject]@{ Name = 'MAPSReporting'; Value = 'Advanced' }
+            }
+            $exclusionEntry = [PSCustomObject]@{
+                Action = 'RemoveMpPreferenceValue'
+                Target = 'ExclusionPath:C:\'
+                Data = [PSCustomObject]@{ Parameter = 'ExclusionPath'; Value = 'C:\' }
+            }
+
+            $preferenceResult = Invoke-RestoreManifestEntry -Entry $preferenceEntry
+            $exclusionResult = Invoke-RestoreManifestEntry -Entry $exclusionEntry
+
+            $preferenceResult.Succeeded | Should -Be $true
+            $preferenceResult.Effects[0].Evidence.Actual | Should -Be 'Advanced'
+            $exclusionResult.Succeeded | Should -Be $true
+            $exclusionResult.Effects[0].Evidence.Actual | Should -Be 'Absent'
+        }
+
+        It 'verifies the exact recorded SecHealthUI package and marker sets' {
+            $marker = (Get-SecHealthUIDeprovisionPaths)[1]
+            $baseline = [PSCustomObject]@{
+                InstalledPackages = @([PSCustomObject]@{
+                    Name = 'Microsoft.Windows.SecHealthUI'
+                    PackageFullName = 'Microsoft.Windows.SecHealthUI_9.9.9.9_x64__cw5n1h2txyewy'
+                })
+                ProvisionedPackages = @([PSCustomObject]@{
+                    DisplayName = 'Microsoft.Windows.SecHealthUI'
+                    PackageName = 'Microsoft.Windows.SecHealthUI_9.9.9.9_neutral__cw5n1h2txyewy'
+                })
+                DeprovisionMarkers = @($marker)
+            }
+            Mock Get-DefenderSecHealthUIState {
+                [PSCustomObject]@{
+                    Supported = $true
+                    Readable = $true
+                    InstalledPackages = @([PSCustomObject]@{
+                        Name = 'Microsoft.Windows.SecHealthUI'
+                        PackageFullName = 'Microsoft.Windows.SecHealthUI_9.9.9.9_x64__cw5n1h2txyewy'
+                    })
+                    ProvisionedPackages = @([PSCustomObject]@{
+                        DisplayName = 'Microsoft.Windows.SecHealthUI'
+                        PackageName = 'Microsoft.Windows.SecHealthUI_9.9.9.9_neutral__cw5n1h2txyewy'
+                    })
+                    Markers = @($marker)
+                    Error = $null
+                }
+            }
+            Mock Test-Path { return ($LiteralPath -eq $marker) }
+            Mock New-Item {}
+            Mock Remove-Item {}
+
+            $result = Restore-SecHealthUI -Baseline $baseline
+
+            $result.Succeeded | Should -Be $true
+            $result.Attempted | Should -Be 0
+            $result.Verified | Should -Be 3
+            Should -Invoke New-Item -Times 0 -Exactly
+            Should -Invoke Remove-Item -Times 0 -Exactly
+        }
+
+        It 'removes unexpected SecHealthUI packages to match an absent baseline' {
+            $script:InstalledSecHealthPackages = @([PSCustomObject]@{
+                Name = 'Microsoft.Windows.SecHealthUI'
+                PackageFullName = 'Microsoft.Windows.SecHealthUI_10.0.0.0_x64__cw5n1h2txyewy'
+            })
+            $script:ProvisionedSecHealthPackages = @([PSCustomObject]@{
+                DisplayName = 'Microsoft.Windows.SecHealthUI'
+                PackageName = 'Microsoft.Windows.SecHealthUI_10.0.0.0_neutral__cw5n1h2txyewy'
+            })
+            Mock Get-DefenderSecHealthUIState {
+                [PSCustomObject]@{
+                    Supported = $true
+                    Readable = $true
+                    InstalledPackages = @($script:InstalledSecHealthPackages)
+                    ProvisionedPackages = @($script:ProvisionedSecHealthPackages)
+                    Markers = @()
+                    Error = $null
+                }
+            }
+            Mock Remove-AppxPackage {
+                $script:InstalledSecHealthPackages = @()
+            }
+            Mock Remove-AppxProvisionedPackage {
+                $script:ProvisionedSecHealthPackages = @()
+            }
+            Mock Test-Path { $false }
+            $baseline = [PSCustomObject]@{
+                InstalledPackages = @()
+                ProvisionedPackages = @()
+                DeprovisionMarkers = @()
+            }
+
+            $result = Restore-SecHealthUI -Baseline $baseline
+
+            $result.Succeeded | Should -Be $true
+            $result.Attempted | Should -Be 2
+            Should -Invoke Remove-AppxPackage -Times 1 -Exactly
+            Should -Invoke Remove-AppxProvisionedPackage -Times 1 -Exactly
+        }
+
+        It 'requires a removed DISM package to return before replay succeeds' {
+            Mock Invoke-DefenderDismRestoreHealth {
+                [PSCustomObject]@{ ExitCode = 0; Output = @() }
+            }
+            Mock Get-DefenderPlatformPackageState {
+                [PSCustomObject]@{
+                    Readable = $true
+                    ExitCode = 0
+                    Packages = @('Microsoft-Windows-Defender-Package')
+                    Error = $null
+                }
+            }
+            $entry = [PSCustomObject]@{
+                Action = 'DismRestoreHealth'
+                Target = 'Microsoft-Windows-Defender-Package'
+                Data = [PSCustomObject]@{ PackageName = 'Microsoft-Windows-Defender-Package' }
+            }
+
+            $result = Invoke-RestoreManifestEntry -Entry $entry
+
+            $result.Succeeded | Should -Be $true
+            $result.Effects[0].Evidence.RestoreExitCode | Should -Be 0
         }
     }
 
@@ -1856,6 +2284,74 @@ InModuleScope DisableDefender {
             $result.Simulation | Should -Be $true
             Should -Invoke Invoke-DefenderPhasePlan -Times 1 -Exactly
             Should -Invoke Save-DefenderSurfaceBaseline -Times 0 -Exactly
+        }
+
+        It 'uses only recorded-baseline phases when a manifest exists' {
+            Mock Get-RestoreManifestReplayPlan {
+                [PSCustomObject]@{
+                    Manifests = @([PSCustomObject]@{ Path = 'restore-manifest.jsonl' })
+                }
+            }
+            Mock Invoke-DefenderPhasePlan {
+                $script:CapturedRestorePhases = $Phases
+                [PSCustomObject]@{
+                    Succeeded = $true
+                    Simulation = $false
+                    Attempted = 3
+                    Changed = 3
+                    Verified = 3
+                    Phases = @()
+                }
+            }
+
+            $result = Invoke-RestoreDefender -Confirm:$false
+
+            $result.RestoreStrategy | Should -Be 'RecordedBaseline'
+            $script:CapturedRestorePhases.Key | Should -Contain 'ReplayManifest'
+            $script:CapturedRestorePhases.Key | Should -Contain 'AclRestore'
+            $script:CapturedRestorePhases.Key | Should -Contain 'Verification'
+            $script:CapturedRestorePhases.Key | Should -Not -Contain 'Policies'
+            $script:CapturedRestorePhases.Key | Should -Not -Contain 'MpPreference'
+            $script:CapturedRestorePhases.Key | Should -Not -Contain 'Tasks'
+            $script:CapturedRestorePhases.Key | Should -Not -Contain 'Services'
+            $script:CapturedRestorePhases.Key | Should -Not -Contain 'Appx'
+            $script:CapturedRestorePhases.Key | Should -Not -Contain 'ContextMenu'
+        }
+
+        It 'requires an explicit repair switch when no manifest exists' {
+            Mock Get-RestoreManifestReplayPlan {
+                [PSCustomObject]@{ Manifests = @() }
+            }
+            Mock Invoke-DefenderPhasePlan { throw 'should not run' }
+
+            { Invoke-RestoreDefender -Confirm:$false } |
+                Should -Throw -ExpectedMessage '*-RepairWithoutManifest*'
+
+            Should -Invoke Invoke-DefenderPhasePlan -Times 0 -Exactly
+        }
+
+        It 'separates the explicit fixed-default repair plan from exact restore' {
+            Mock Get-RestoreManifestReplayPlan {
+                [PSCustomObject]@{ Manifests = @() }
+            }
+            Mock Invoke-DefenderPhasePlan {
+                $script:CapturedRestorePhases = $Phases
+                [PSCustomObject]@{
+                    Succeeded = $true
+                    Simulation = $false
+                    Attempted = 3
+                    Changed = 3
+                    Verified = 3
+                    Phases = @()
+                }
+            }
+
+            $result = Invoke-RestoreDefender -RepairWithoutManifest -Confirm:$false
+
+            $result.RestoreStrategy | Should -Be 'FixedDefaultRepair'
+            $script:CapturedRestorePhases.Key | Should -Contain 'Policies'
+            $script:CapturedRestorePhases.Key | Should -Contain 'MpPreference'
+            $script:CapturedRestorePhases.Key | Should -Not -Contain 'ReplayManifest'
         }
     }
 
@@ -2411,7 +2907,7 @@ Describe 'DisableDefender GUI safety wiring' {
     It 'gives custom chrome and action controls explicit accessible names' {
         $namedButtons = @(
             'btnMin', 'btnMax', 'btnClose',
-            'btnDisable', 'btnRemove', 'btnRestore', 'btnRefresh',
+            'btnDisable', 'btnRemove', 'btnRestore', 'btnRepair', 'btnRefresh',
             'btnCopyLog', 'btnExportLog', 'btnClearLog',
             'btnConfirmCancel', 'btnConfirmOk'
         )
@@ -2444,6 +2940,12 @@ Describe 'DisableDefender GUI safety wiring' {
         $script:GuiSource | Should -Match '\$result\.Succeeded'
         $script:GuiSource | Should -Match '\$result\.Verified'
         $script:GuiSource | Should -Not -Match "LastResult\s*=\s*'ok'"
+    }
+
+    It 'keeps exact baseline restore separate from fixed-default repair' {
+        $script:GuiSource | Should -Match 'Invoke-RestoreDefender\s+-RepairWithoutManifest:\$RepairWithoutManifest'
+        $script:GuiSource | Should -Match "Start-ModeAsync\s+-ActionMode 'Restore'\s+-RepairWithoutManifest"
+        $script:GuiSource | Should -Match 'If no undo manifest exists, this action stops without changing the machine'
     }
 }
 

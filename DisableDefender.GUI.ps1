@@ -511,6 +511,18 @@ function Write-Log {
                                     <TextBlock Grid.Column="2" Text="&#xE76C;" FontFamily="Segoe MDL2 Assets" Foreground="{StaticResource Green}" FontSize="11" VerticalAlignment="Center"/>
                                 </Grid>
                             </Button>
+                            <Button x:Name="btnRepair" Style="{StaticResource PrimaryAction}" AutomationProperties.Name="Repair Defender defaults">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="28"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="&#xE90F;" FontFamily="Segoe MDL2 Assets" Foreground="{StaticResource Lavender}" FontSize="17" VerticalAlignment="Center"/>
+                                    <TextBlock Grid.Column="1" Text="Repair defaults" VerticalAlignment="Center"/>
+                                    <TextBlock Grid.Column="2" Text="NO UNDO" Foreground="{StaticResource Overlay0}" FontSize="9" VerticalAlignment="Center"/>
+                                </Grid>
+                            </Button>
                             <Button x:Name="btnRefresh" Style="{StaticResource PrimaryAction}" AutomationProperties.Name="Refresh security status">
                                 <Grid>
                                     <Grid.ColumnDefinitions>
@@ -1368,6 +1380,7 @@ function Set-Busy {
     $ui.btnDisable.IsEnabled = -not $IsBusy
     $ui.btnRemove.IsEnabled  = -not $IsBusy
     $ui.btnRestore.IsEnabled = -not $IsBusy
+    $ui.btnRepair.IsEnabled = -not $IsBusy
     $ui.btnRefresh.IsEnabled = -not $IsBusy
 }
 
@@ -1495,7 +1508,8 @@ $script:AsyncPS = $null
 function Start-ModeAsync {
     param(
         [ValidateSet('Disable','Remove','Restore')][string]$ActionMode,
-        [switch]$ForceOverride
+        [switch]$ForceOverride,
+        [switch]$RepairWithoutManifest
     )
     if ($script:UIState.Busy) { return }
     Set-Busy -IsBusy $true -Label "Running $ActionMode..."
@@ -1510,6 +1524,7 @@ function Start-ModeAsync {
     $rs.SessionStateProxy.SetVariable('ActionMode', $ActionMode)
     $rs.SessionStateProxy.SetVariable('LogPath', $script:LogPath)
     $rs.SessionStateProxy.SetVariable('ForceOverride', [bool]$ForceOverride)
+    $rs.SessionStateProxy.SetVariable('RepairWithoutManifest', [bool]$RepairWithoutManifest)
 
     $worker = {
         Import-Module -Name $ModulePath -Force -ErrorAction Stop
@@ -1527,7 +1542,10 @@ function Start-ModeAsync {
             $operationOutput = @(switch ($ActionMode) {
                 'Disable' { Invoke-DisableDefender -Force:$ForceOverride -LogPath $LogPath -LogCallback $logCallback -Confirm:$false }
                 'Remove'  { Invoke-RemoveDefender -Force:$ForceOverride -LogPath $LogPath -LogCallback $logCallback -Confirm:$false }
-                'Restore' { Invoke-RestoreDefender -LogPath $LogPath -LogCallback $logCallback -Confirm:$false }
+                'Restore' {
+                    Invoke-RestoreDefender -RepairWithoutManifest:$RepairWithoutManifest `
+                        -LogPath $LogPath -LogCallback $logCallback -Confirm:$false
+                }
             })
             $operationResult = @($operationOutput | Where-Object {
                 $_.PSObject.Properties.Name -contains 'Succeeded' -and
@@ -1693,8 +1711,14 @@ $ui.btnRemove.Add_Click({
 })
 
 $ui.btnRestore.Add_Click({
-    Show-Confirm -Title 'Restore Microsoft Defender?' -Body "DisableDefender will clear its policy overrides, restore supported service and task defaults, and reprovision Windows Security where possible. A Defender health check runs afterward." -Kind Recovery -ConfirmLabel 'Restore Defender' -OnProceed {
+    Show-Confirm -Title 'Restore the recorded baseline?' -Body "DisableDefender will replay the selected undo manifest, restore the exact recorded policy, preference, task, service, Security Health, SafeBoot, and context-menu state, then verify it before archiving the manifest.`n`nIf no undo manifest exists, this action stops without changing the machine." -Kind Recovery -ConfirmLabel 'Restore baseline' -OnProceed {
         Start-ModeAsync -ActionMode 'Restore'
+    }
+})
+
+$ui.btnRepair.Add_Click({
+    Show-Confirm -Title 'Repair Defender defaults without an undo manifest?' -Body "This is a separate fixed-default repair preset. It does not reconstruct the machine's original non-default settings and cannot be used while an undo manifest is available.`n`nUse this only when no recorded baseline exists." -Kind Warning -ConfirmLabel 'Repair defaults' -OnProceed {
+        Start-ModeAsync -ActionMode 'Restore' -RepairWithoutManifest
     }
 })
 

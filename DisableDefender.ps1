@@ -24,6 +24,7 @@ param(
     [string[]]$Skip,
     [ValidateSet('Newest','All','Active')]
     [string]$ManifestSelection = 'Newest',
+    [switch]$RepairWithoutManifest,
     [ValidateSet('Disable','Remove','Restore')]
     [string]$HealthTarget = 'Disable',
     [string]$LogPath = "$env:ProgramData\DisableDefender\DisableDefender.log"
@@ -60,7 +61,7 @@ function Show-Menu {
     Write-CliBanner
     Write-Host '  [1] Disable  (reversible; policy + tasks + passive mode + services)' -ForegroundColor White
     Write-Host '  [2] Remove   (aggressive; Safe Mode recommended; SecHealthUI + SafeBoot trap)' -ForegroundColor Red
-    Write-Host '  [3] Restore  (undo: clear policy, re-enable services, reprovision UI)' -ForegroundColor Green
+    Write-Host '  [3] Restore  (replay and verify the recorded baseline)' -ForegroundColor Green
     Write-Host '  [4] Status   (show current Defender + firewall state)' -ForegroundColor Cyan
     Write-Host '  [5] Health   (compare current state to expected target)' -ForegroundColor Cyan
     Write-Host '  [6] Prepare Offline (generate WinRE/offline remove script bundle)' -ForegroundColor Magenta
@@ -101,7 +102,8 @@ function Invoke-SelectedMode {
             Invoke-RemoveDefender @common -Force:$Force -NoRestorePoint:$NoRestorePoint -IncludeMDE:$IncludeMDE -AllowRemoting:$AllowRemoting -Only $Only -Skip $Skip
         }
         'Restore' {
-            Invoke-RestoreDefender @common -AllowRemoting:$AllowRemoting -Only $Only -Skip $Skip -ManifestSelection $ManifestSelection
+            Invoke-RestoreDefender @common -AllowRemoting:$AllowRemoting -Only $Only -Skip $Skip `
+                -ManifestSelection $ManifestSelection -RepairWithoutManifest:$RepairWithoutManifest
         }
         'Status' {
             Show-DefenderStatus -Json:$Json

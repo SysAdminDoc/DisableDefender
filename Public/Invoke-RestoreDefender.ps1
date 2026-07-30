@@ -21,31 +21,31 @@ function Get-RestoreRepairCommands {
             $startToken = ConvertTo-ServiceConfigStartToken -StartType $Item.Expected
             return @(
                 "sc.exe config $($Item.Name) start= $startToken",
-                'powershell -ExecutionPolicy Bypass -File .\DisableDefender.ps1 -Mode Restore -Only Services -NoReboot'
+                'powershell -ExecutionPolicy Bypass -File .\DisableDefender.ps1 -Mode Restore -RepairWithoutManifest -Only Services -NoReboot'
             )
         }
         'Appx' {
             return @(
                 'sfc /scannow',
                 'DISM /Online /Cleanup-Image /RestoreHealth',
-                'powershell -ExecutionPolicy Bypass -File .\DisableDefender.ps1 -Mode Restore -Only Appx -NoReboot'
+                'powershell -ExecutionPolicy Bypass -File .\DisableDefender.ps1 -Mode Restore -RepairWithoutManifest -Only Appx -NoReboot'
             )
         }
         'MpPreference' {
-            return @('powershell -ExecutionPolicy Bypass -File .\DisableDefender.ps1 -Mode Restore -Only MpPreference -NoReboot')
+            return @('powershell -ExecutionPolicy Bypass -File .\DisableDefender.ps1 -Mode Restore -RepairWithoutManifest -Only MpPreference -NoReboot')
         }
         'Task' {
             return @(
                 "schtasks.exe /Change /TN `"$($Item.Name)`" /Enable",
-                'powershell -ExecutionPolicy Bypass -File .\DisableDefender.ps1 -Mode Restore -Only Tasks -NoReboot'
+                'powershell -ExecutionPolicy Bypass -File .\DisableDefender.ps1 -Mode Restore -RepairWithoutManifest -Only Tasks -NoReboot'
             )
         }
         'Policy' {
-            return @('powershell -ExecutionPolicy Bypass -File .\DisableDefender.ps1 -Mode Restore -Only Policies -NoReboot')
+            return @('powershell -ExecutionPolicy Bypass -File .\DisableDefender.ps1 -Mode Restore -RepairWithoutManifest -Only Policies -NoReboot')
         }
         default {
             return @(
-                'powershell -ExecutionPolicy Bypass -File .\DisableDefender.ps1 -Mode Restore -NoReboot',
+                'powershell -ExecutionPolicy Bypass -File .\DisableDefender.ps1 -Mode Restore -RepairWithoutManifest -NoReboot',
                 'DISM /Online /Cleanup-Image /RestoreHealth'
             )
         }
@@ -97,20 +97,26 @@ function Invoke-RestoreDefender {
     .SYNOPSIS
         Undoes all changes made by Invoke-DisableDefender or Invoke-RemoveDefender.
     .DESCRIPTION
-        Clears Defender policy keys, restores MpPreference defaults, re-enables
-        scheduled tasks, restores service start types, restores registry ACLs,
-        reprovisions SecHealthUI, and restores context menu entries.
-        Firewall is verified intact before and after.
+        Replays a selected undo manifest and verifies the exact recorded registry,
+        preference, task, service, Security Health, SafeBoot, and context-menu
+        baseline before archiving that manifest. If no manifest exists,
+        -RepairWithoutManifest explicitly selects a separate fixed-default repair
+        preset. Firewall is verified intact before and after.
     .PARAMETER Only
         Run only the named phase keys.
     .PARAMETER Skip
         Skip the named phase keys.
     .PARAMETER ManifestSelection
         Select which restore manifest chain to replay: newest non-empty manifest, all non-empty manifests newest-first, or only the active manifest.
+    .PARAMETER RepairWithoutManifest
+        Explicitly run the fixed-default repair preset when no restore manifest exists.
+        This is not an exact baseline restore.
     .PARAMETER AllowRemoting
         Allow execution inside PSRemoting / PSSession contexts.
     .EXAMPLE
         Invoke-RestoreDefender
+    .EXAMPLE
+        Invoke-RestoreDefender -RepairWithoutManifest
     #>
     [CmdletBinding(SupportsShouldProcess)]
     param(
@@ -123,6 +129,7 @@ function Invoke-RestoreDefender {
         [string[]]$Skip,
         [ValidateSet('Newest','All','Active')]
         [string]$ManifestSelection = 'Newest',
+        [switch]$RepairWithoutManifest,
         [scriptblock]$LogCallback
     )
 
@@ -135,21 +142,50 @@ function Invoke-RestoreDefender {
     $previousReplayMode = [bool]$script:RestoreManifestReplayMode
     $script:RestoreManifestReplayMode = $true
     try {
-        $phases = @(
-            New-DefenderPhase -Name 'Firewall preflight' -Key 'FirewallPreflight' -Action { Assert-FirewallSafety -Stage pre }
-            New-DefenderPhase -Name 'Replay manifest' -Key 'ReplayManifest' -RequiresResult -Action { Invoke-DefenderRestoreManifestPlan -Selection $ManifestSelection }
-            New-DefenderPhase -Name 'Policy cleanup' -Key 'Policies' -RequiresResult -Action { Clear-DefenderPolicy }
-            New-DefenderPhase -Name 'MpPreference cleanup' -Key 'MpPreference' -RequiresResult -Action { Clear-MpRuntimePrefs }
-            New-DefenderPhase -Name 'Scheduled task restore' -Key 'Tasks' -RequiresResult -Action { Enable-DefenderTasks }
-            New-DefenderPhase -Name 'Service restore' -Key 'Services' -RequiresResult -Action { Restore-DefenderServices }
-            New-DefenderPhase -Name 'Registry ACL restore' -Key 'AclRestore' -RequiresResult -Action { Restore-RegKeyACLs }
-            New-DefenderPhase -Name 'SecHealthUI restore' -Key 'Appx' -RequiresResult -Action { Restore-SecHealthUI }
-            New-DefenderPhase -Name 'Context menu restore' -Key 'ContextMenu' -RequiresResult -Action { Restore-DefenderContextMenu }
-            New-DefenderPhase -Name 'Restore verification' -Key 'Verification' -RequiresResult -Action { Invoke-RestoreVerification }
-            New-DefenderPhase -Name 'Firewall postflight' -Key 'FirewallPostflight' -Action { Assert-FirewallSafety -Stage post }
-        )
-        $operationResult = Invoke-DefenderPhasePlan -Mode Restore -Phases $phases -Only $Only -Skip $Skip
-        Write-Log "Restore complete. Reboot recommended. If Defender does not come back: sfc /scannow then DISM /Online /Cleanup-Image /RestoreHealth." OK
+        $manifestPlan = Get-RestoreManifestReplayPlan -Selection $ManifestSelection
+        $hasManifest = $manifestPlan.Manifests.Count -gt 0
+        if ($hasManifest -and $RepairWithoutManifest) {
+            throw '-RepairWithoutManifest is only valid when the selected restore manifest does not exist.'
+        }
+        if (-not $hasManifest -and -not $RepairWithoutManifest) {
+            throw 'No restore manifest is available for exact baseline restoration. Use -RepairWithoutManifest only to run the explicit fixed-default repair preset.'
+        }
+
+        if ($hasManifest) {
+            if (@($Only | Where-Object { $_ }).Count -gt 0 -or
+                @($Skip | Where-Object { $_ }).Count -gt 0) {
+                throw 'Phase filters are not supported for transactional recorded-baseline restore.'
+            }
+            $phases = @(
+                New-DefenderPhase -Name 'Firewall preflight' -Key 'FirewallPreflight' -Action { Assert-FirewallSafety -Stage pre }
+                New-DefenderPhase -Name 'Replay recorded baseline' -Key 'ReplayManifest' -RequiresResult -Action { Invoke-DefenderRestoreManifestPlan -Selection $ManifestSelection }
+                New-DefenderPhase -Name 'Registry ACL restore' -Key 'AclRestore' -RequiresResult -Action { Restore-RegKeyACLs }
+                New-DefenderPhase -Name 'Recorded baseline verification' -Key 'Verification' -RequiresResult -Action { Test-RestoreManifestBaseline -Selection $ManifestSelection }
+                New-DefenderPhase -Name 'Firewall postflight' -Key 'FirewallPostflight' -Action { Assert-FirewallSafety -Stage post }
+            )
+            $operationResult = Invoke-DefenderPhasePlan -Mode Restore -Phases $phases
+            $operationResult | Add-Member -NotePropertyName RestoreStrategy `
+                -NotePropertyValue 'RecordedBaseline' -Force
+            Write-Log 'Exact recorded baseline restored and verified. Reboot recommended.' OK
+        } else {
+            Write-Log 'No manifest selected; running explicit fixed-default repair preset.' WARN
+            $phases = @(
+                New-DefenderPhase -Name 'Firewall preflight' -Key 'FirewallPreflight' -Action { Assert-FirewallSafety -Stage pre }
+                New-DefenderPhase -Name 'Policy cleanup' -Key 'Policies' -RequiresResult -Action { Clear-DefenderPolicy }
+                New-DefenderPhase -Name 'MpPreference cleanup' -Key 'MpPreference' -RequiresResult -Action { Clear-MpRuntimePrefs }
+                New-DefenderPhase -Name 'Scheduled task restore' -Key 'Tasks' -RequiresResult -Action { Enable-DefenderTasks }
+                New-DefenderPhase -Name 'Service restore' -Key 'Services' -RequiresResult -Action { Restore-DefenderServices }
+                New-DefenderPhase -Name 'Registry ACL restore' -Key 'AclRestore' -RequiresResult -Action { Restore-RegKeyACLs }
+                New-DefenderPhase -Name 'SecHealthUI restore' -Key 'Appx' -RequiresResult -Action { Restore-SecHealthUI }
+                New-DefenderPhase -Name 'Context menu restore' -Key 'ContextMenu' -RequiresResult -Action { Restore-DefenderContextMenu }
+                New-DefenderPhase -Name 'Repair verification' -Key 'Verification' -RequiresResult -Action { Invoke-RestoreVerification }
+                New-DefenderPhase -Name 'Firewall postflight' -Key 'FirewallPostflight' -Action { Assert-FirewallSafety -Stage post }
+            )
+            $operationResult = Invoke-DefenderPhasePlan -Mode Restore -Phases $phases -Only $Only -Skip $Skip
+            $operationResult | Add-Member -NotePropertyName RestoreStrategy `
+                -NotePropertyValue 'FixedDefaultRepair' -Force
+            Write-Log 'Fixed-default repair complete. Reboot recommended. If Defender does not return, run sfc /scannow and DISM /Online /Cleanup-Image /RestoreHealth.' OK
+        }
         return $operationResult
     } finally {
         $script:RestoreManifestReplayMode = $previousReplayMode

@@ -52,6 +52,14 @@ function Invoke-DefenderDismPackageRemoval {
     }
 }
 
+function Invoke-DefenderDismRestoreHealth {
+    $output = @(& dism.exe /Online /Cleanup-Image /RestoreHealth /NoRestart 2>&1)
+    return [PSCustomObject]@{
+        ExitCode = [int]$LASTEXITCODE
+        Output   = @($output)
+    }
+}
+
 function Remove-DefenderPlatformPackages {
     Write-Log "Enumerating Defender platform packages..." INFO
     $result = New-DefenderActionResult -Name 'DismPackages:Remove' -Simulation:$WhatIfPreference

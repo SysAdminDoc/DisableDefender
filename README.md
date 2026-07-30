@@ -46,14 +46,15 @@ Disable confirmation includes a current-vs-target drift preview before execution
 - **SafeBoot trap** (Remove mode): nukes `SafeBoot\{Minimal,Network}\WinDefend` so the service can't load even in Safe Mode
 - **Restore point** before any destructive op (opt-out with `-NoRestorePoint`)
 - **Runtime directory preflight**: `%ProgramData%\DisableDefender` refuses junctions/symlinks and repairs weak ACLs before writing logs, manifests, phase state, tripwires, ACL backups, or SYSTEM task output
-- **Replay restore manifest**: Disable/Remove record validated JSONL undo entries; Restore logs run IDs, entry count, and SHA256 before reverse-order replay, detects archived undo chains, and can replay newest or all manifests deterministically
+- **Transactional exact restore**: Disable/Remove record JSONL undo entries; Restore prevalidates the selected chain, replays it in reverse order, verifies the exact recorded baseline, and only then archives it. Interrupted replay and archive finalization resume from durable state.
+- **Explicit no-manifest repair**: `-RepairWithoutManifest` runs the separate fixed-default repair preset and is refused while a selected undo manifest exists
 - **Atomic phase boundaries**: each mode records phase status to `phase-state.json`; failures log partial state plus resume/rollback recovery choices
 - **Per-phase firewall guard**: every executed phase checks firewall services and profiles before and after running
 - **Known-bad Remove gate**: domain-joined machines are refused unless `-Force` is passed and emit JSONL tripwires
 - **PSRemoting guard**: Disable/Remove/Restore refuse PSSession execution unless `-AllowRemoting` is explicit
 - **Restore point throttle awareness**: Windows restore-point interval refusals are logged with the configured cadence instead of a generic warning
-- **Surgical reruns**: `-Only` and `-Skip` phase filters for Policies, MpPreference, Tasks, Services, Appx, DISM, SafeBoot, and ContextMenu
-- **Health mode + Restore verification**: compares current state to Disable/Remove/Restore targets and reports drift for services, policy keys, tasks, Appx, SafeBoot, and MpPreference; Restore ends with a health summary and repair commands when drift remains
+- **Surgical repair reruns**: `-Only` and `-Skip` phase filters for the explicit no-manifest repair preset; transactional recorded-baseline restore cannot be filtered
+- **Health mode + Restore verification**: compares current state to Disable/Remove/fixed-default Restore targets and reports drift for services, policy keys, tasks, Appx, SafeBoot, and MpPreference; recorded-baseline Restore verifies its manifest expectations directly
 - **Feature-update drift detection**: Disable/Remove record a Defender surface baseline; Health flags changed Windows builds plus unknown Defender-like services, tasks, and packages and prints a reapply plan that preserves firewall and MDE Sense by default
 - **Local release builder**: creates a clean zip, SHA256 file, release metadata JSON, and optional Authenticode signatures when a code-signing certificate is supplied
 - **Safe Mode bootstrap**: `Invoke-SafeModeRemove` schedules a one-shot task that boots into Safe Mode, runs Remove, clears the safeboot flag, and reboots back to normal; a watchdog task prevents Safe Mode traps if the script fails
@@ -93,11 +94,14 @@ A menu appears with Disable / Remove / Restore / Status / Health / Prepare Offli
 # Full removal (Safe Mode recommended)
 .\DisableDefender.ps1 -Mode Remove
 
-# Undo everything
+# Restore the exact recorded baseline (requires an undo manifest)
 .\DisableDefender.ps1 -Mode Restore
 
 # Undo every archived run chain after repeated Disable/Remove runs
 .\DisableDefender.ps1 -Mode Restore -ManifestSelection All
+
+# Explicit fixed-default repair when no undo manifest exists
+.\DisableDefender.ps1 -Mode Restore -RepairWithoutManifest
 
 # Just show state
 .\DisableDefender.ps1 -Mode Status
@@ -128,6 +132,7 @@ Get-DefenderHealth -Target Disable
 Invoke-DisableDefender -Force -NoRestorePoint
 Invoke-RestoreDefender
 Invoke-RestoreDefender -ManifestSelection All
+Invoke-RestoreDefender -RepairWithoutManifest
 
 # Export diagnostic bundle
 Export-DefenderSupportBundle -OutputDirectory C:\Support
@@ -183,6 +188,7 @@ The script loads the offline volume's SOFTWARE and SYSTEM registry hives, applie
 | `-Only` | Run only matching phase keys. Common keys: `Policies`, `MpPreference`, `Tasks`, `Services`, `Appx`, `DISM`, `SafeBoot`, `ContextMenu`. |
 | `-Skip` | Skip matching phase keys while running the rest of the selected mode. |
 | `-ManifestSelection` | Restore manifest selection for `Restore`: `Newest` (default), `All`, or `Active`. Use `All` after repeated Disable/Remove runs when older undo chains must also be replayed. |
+| `-RepairWithoutManifest` | Explicitly run the fixed-default Restore repair preset when no selected undo manifest exists. This is not an exact baseline restore. |
 | `-HealthTarget` | Expected target for `-Mode Health`: `Disable`, `Remove`, or `Restore`. |
 | `-LogPath` | Override log path (default `%ProgramData%\DisableDefender\DisableDefender.log`). |
 
@@ -262,16 +268,13 @@ Everything Disable does, plus:
 - **Best run from Safe Mode** for service registry key edits to stick
 
 ### Restore (undo)
-- Validates and replays the newest non-empty `%ProgramData%\DisableDefender\restore-manifest*.jsonl` in reverse order, with run ID / entry count / SHA256 integrity logging
+- Prevalidates and replays the newest non-empty `%ProgramData%\DisableDefender\restore-manifest*.jsonl` in reverse order, with run ID / entry count / SHA256 integrity logging
 - Warns when older archived undo chains exist; use `-ManifestSelection All` to replay active and archived manifests newest-first
-- Removes all Defender policy keys
-- Resets `MpPreference` flags to default
-- Re-enables scheduled tasks
-- Restores default service start types
+- Restores each recorded registry value/tree, `MpPreference`, task, service, SafeBoot, context-menu, DISM package, and Security Health package/marker set to its exact pre-run state
 - Restores backed-up registry ACLs when ACL takeover was used
-- Re-registers SecHealthUI from `%ProgramFiles%\WindowsApps`
-- Verifies Restore target health and logs exact repair commands for remaining drift; silent CLI exits non-zero when verification fails
-- If the Security app does not come back: `sfc /scannow` then `DISM /Online /Cleanup-Image /RestoreHealth`
+- Preserves the selected manifests and a durable resume point after replay, verification, or archive interruption; archives manifests only after exact verification
+- Refuses `-Only`/`-Skip`, so a recorded transaction cannot bypass part of its baseline
+- With no manifest, stops before mutation unless `-RepairWithoutManifest` explicitly selects fixed-default repair; that repair supports `-Only`/`-Skip` and ends with fixed-target health guidance
 
 ## Firewall preservation (explicit guarantee)
 
@@ -291,7 +294,7 @@ v0.0.2 fixed a false-positive where `SharedAccess` (ICS, off by default) tripped
 
 - **Your PC will have no antivirus after running this.** Install an alternative AV if that matters to you.
 - Tamper Protection must be off first. No workaround exists on Windows 11 24H2+.
-- `Remove` mode partially bricks the Windows Security UI. `Restore` reprovisions it but may require `DISM /RestoreHealth` if Windows Update has installed a Security Intelligence Update.
+- `Remove` mode partially bricks the Windows Security UI. Exact Restore attempts to reinstate the recorded package set but can fail safely if its package payload is no longer available; use `-RepairWithoutManifest` only when no undo manifest remains.
 - Windows Update may periodically re-install parts of Defender; re-run `-Mode Disable` after major feature updates.
 - Use at your own risk on production systems. Authored for lab / workstation / dedicated-purpose machines (medical imaging, PACS/DICOM, VM hosts).
 
@@ -302,8 +305,9 @@ v0.0.2 fixed a false-positive where `SharedAccess` (ICS, off by default) tripped
 | "Tamper Protection blocks changes" | Toggle off in Windows Security UI, rerun |
 | Services come back after reboot | Boot to Safe Mode, run `-Mode Remove` |
 | Get-MpComputerStatus errors in Status | Defender platform is partly removed — expected |
-| Restore didn't bring back UI | `sfc /scannow && DISM /Online /Cleanup-Image /RestoreHealth` |
-| Firewall got disabled | Run `-Mode Restore`, or `netsh advfirewall set allprofiles state on` |
+| Exact Restore reports a missing Security Health package payload | Preserve the manifest, run `sfc /scannow` then `DISM /Online /Cleanup-Image /RestoreHealth`, and retry the same Restore selection |
+| No restore manifest exists | Run `-Mode Restore -RepairWithoutManifest` to request the separate fixed-default repair preset |
+| Firewall got disabled | Run `-Mode Restore -RepairWithoutManifest`, or `netsh advfirewall set allprofiles state on` |
 
 ## Log locations
 - `%ProgramData%\DisableDefender\DisableDefender.log` (human-readable text)

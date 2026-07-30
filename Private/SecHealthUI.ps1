@@ -101,9 +101,19 @@ function Remove-SecHealthUI {
 
     if (Test-RestoreManifestRecording) {
         Write-RestoreManifestEntry -Phase 'Appx' -Action 'RestoreSecHealthUI' -Target 'Microsoft.SecHealthUI' -Data ([ordered]@{
-            InstalledPackages        = @($before.InstalledPackages | ForEach-Object PackageFullName)
-            ProvisionedPackages      = @($before.ProvisionedPackages | ForEach-Object PackageName)
-            DeprovisionMarkerExisted = ($before.Markers.Count -gt 0)
+            InstalledPackages = @($before.InstalledPackages | ForEach-Object {
+                [ordered]@{
+                    Name            = $_.Name
+                    PackageFullName = $_.PackageFullName
+                }
+            })
+            ProvisionedPackages = @($before.ProvisionedPackages | ForEach-Object {
+                [ordered]@{
+                    DisplayName = $_.DisplayName
+                    PackageName = $_.PackageName
+                }
+            })
+            DeprovisionMarkers = @($before.Markers)
         })
     }
 
@@ -165,7 +175,192 @@ function Remove-SecHealthUI {
     return $completed
 }
 
+function Test-DefenderStringSetEqual {
+    param(
+        [string[]]$Expected,
+        [string[]]$Actual
+    )
+
+    $expectedSet = @($Expected | Where-Object { $_ } | ForEach-Object {
+        $_.ToLowerInvariant()
+    } | Sort-Object -Unique)
+    $actualSet = @($Actual | Where-Object { $_ } | ForEach-Object {
+        $_.ToLowerInvariant()
+    } | Sort-Object -Unique)
+    return ((ConvertTo-Json $expectedSet -Compress) -eq (ConvertTo-Json $actualSet -Compress))
+}
+
+function Get-DefenderBaselinePackageProperty {
+    param(
+        [AllowNull()]$Item,
+        [Parameter(Mandatory)][string]$Property
+    )
+
+    if ($null -eq $Item) { return $null }
+    if ($Item -is [string]) { return [string]$Item }
+    if ($Item.PSObject.Properties.Name -contains $Property) {
+        return [string]$Item.$Property
+    }
+    return $null
+}
+
+function Restore-DefenderSecHealthUIBaseline {
+    param(
+        [Parameter(Mandatory)]$Baseline
+    )
+
+    $result = New-DefenderActionResult -Name 'SecHealthUI:RestoreRecordedBaseline' -Simulation:$WhatIfPreference
+    $before = Get-DefenderSecHealthUIState
+    if (-not $before.Readable) {
+        return (New-DefenderSingleEffectResult -Name $result.Name -Target 'Microsoft.SecHealthUI' `
+            -Attempted $false -Changed $false -Verified $false `
+            -Evidence @{ Expected = 'Readable'; Actual = 'Unavailable' } -Errors $before.Error)
+    }
+
+    $expectedInstalled = @($Baseline.InstalledPackages | ForEach-Object {
+        Get-DefenderBaselinePackageProperty -Item $_ -Property 'PackageFullName'
+    } | Where-Object { $_ })
+    $expectedProvisioned = @($Baseline.ProvisionedPackages | ForEach-Object {
+        Get-DefenderBaselinePackageProperty -Item $_ -Property 'PackageName'
+    } | Where-Object { $_ })
+    if ($Baseline.PSObject.Properties.Name -contains 'DeprovisionMarkers') {
+        $expectedMarkers = @($Baseline.DeprovisionMarkers | ForEach-Object { [string]$_ })
+    } elseif ($Baseline.PSObject.Properties.Name -contains 'DeprovisionMarkerExisted' -and
+        [bool]$Baseline.DeprovisionMarkerExisted) {
+        $expectedMarkers = @((Get-SecHealthUIDeprovisionPaths)[0])
+    } else {
+        $expectedMarkers = @()
+    }
+
+    if ($WhatIfPreference) {
+        foreach ($target in @('SecHealthUI:Installed','SecHealthUI:Provisioned','SecHealthUI:DeprovisionMarkers')) {
+            Add-DefenderEffect -Result $result -Target $target -Required $false `
+                -Attempted $false -Changed $false -Verified $false `
+                -Evidence @{ Expected = 'RecordedBaseline'; Actual = 'Simulation' }
+        }
+        return (Complete-DefenderActionResult -Result $result)
+    }
+
+    $mutationErrors = New-Object System.Collections.ArrayList
+    $actualInstalled = @($before.InstalledPackages | ForEach-Object PackageFullName)
+    foreach ($package in @($before.InstalledPackages)) {
+        if ($expectedInstalled -contains [string]$package.PackageFullName) { continue }
+        try {
+            Remove-AppxPackage -Package $package.PackageFullName -AllUsers -ErrorAction Stop
+        } catch {
+            [void]$mutationErrors.Add($_.Exception.Message)
+        }
+    }
+    foreach ($packageFullName in $expectedInstalled) {
+        if ($actualInstalled -contains $packageFullName) { continue }
+        try {
+            $windowsApps = Join-Path $env:ProgramFiles 'WindowsApps'
+            $packageDirectory = Get-ChildItem -LiteralPath $windowsApps -Directory -ErrorAction Stop |
+                Where-Object { $_.Name -eq $packageFullName } |
+                Select-Object -First 1
+            if ($null -eq $packageDirectory) {
+                throw "Recorded SecHealthUI package directory is unavailable: $packageFullName"
+            }
+            Add-AppxPackage -DisableDevelopmentMode `
+                -Register (Join-Path $packageDirectory.FullName 'AppxManifest.xml') -ErrorAction Stop
+        } catch {
+            [void]$mutationErrors.Add($_.Exception.Message)
+        }
+    }
+
+    $actualProvisioned = @($before.ProvisionedPackages | ForEach-Object PackageName)
+    foreach ($package in @($before.ProvisionedPackages)) {
+        if ($expectedProvisioned -contains [string]$package.PackageName) { continue }
+        try {
+            Remove-AppxProvisionedPackage -Online -PackageName $package.PackageName `
+                -AllUsers -ErrorAction Stop | Out-Null
+        } catch {
+            [void]$mutationErrors.Add($_.Exception.Message)
+        }
+    }
+    foreach ($packageName in $expectedProvisioned) {
+        if ($actualProvisioned -contains $packageName) { continue }
+        try {
+            $baselineItem = @($Baseline.ProvisionedPackages | Where-Object {
+                (Get-DefenderBaselinePackageProperty -Item $_ -Property 'PackageName') -eq $packageName
+            } | Select-Object -First 1)
+            $displayName = if ($baselineItem.Count -gt 0) {
+                Get-DefenderBaselinePackageProperty -Item $baselineItem[0] -Property 'DisplayName'
+            } else {
+                'Microsoft.SecHealthUI'
+            }
+            $windowsApps = Join-Path $env:ProgramFiles 'WindowsApps'
+            $packageDirectory = Get-ChildItem -LiteralPath $windowsApps -Directory -ErrorAction Stop |
+                Where-Object { $_.Name -like "$displayName*" -or $_.Name -eq $packageName } |
+                Select-Object -First 1
+            if ($null -eq $packageDirectory) {
+                throw "Recorded provisioned SecHealthUI package directory is unavailable: $packageName"
+            }
+            Add-AppxProvisionedPackage -Online -FolderPath $packageDirectory.FullName `
+                -SkipLicense -ErrorAction Stop | Out-Null
+        } catch {
+            [void]$mutationErrors.Add($_.Exception.Message)
+        }
+    }
+
+    foreach ($markerPath in (Get-SecHealthUIDeprovisionPaths)) {
+        $shouldExist = $expectedMarkers -contains $markerPath
+        $exists = Test-Path -LiteralPath $markerPath
+        try {
+            if ($shouldExist -and -not $exists) {
+                New-Item -Path $markerPath -Force -ErrorAction Stop | Out-Null
+            } elseif (-not $shouldExist -and $exists) {
+                Remove-Item -LiteralPath $markerPath -Recurse -Force -ErrorAction Stop
+            }
+        } catch {
+            [void]$mutationErrors.Add($_.Exception.Message)
+        }
+    }
+
+    $after = Get-DefenderSecHealthUIState
+    $afterInstalled = @($after.InstalledPackages | ForEach-Object PackageFullName)
+    $afterProvisioned = @($after.ProvisionedPackages | ForEach-Object PackageName)
+    $afterMarkers = @($after.Markers | ForEach-Object { [string]$_ })
+    $installedVerified = $after.Readable -and
+        (Test-DefenderStringSetEqual -Expected $expectedInstalled -Actual $afterInstalled)
+    $provisionedVerified = $after.Readable -and
+        (Test-DefenderStringSetEqual -Expected $expectedProvisioned -Actual $afterProvisioned)
+    $markersVerified = $after.Readable -and
+        (Test-DefenderStringSetEqual -Expected $expectedMarkers -Actual $afterMarkers)
+    $installedAttempted = -not (Test-DefenderStringSetEqual `
+        -Expected $expectedInstalled -Actual $actualInstalled)
+    $provisionedAttempted = -not (Test-DefenderStringSetEqual `
+        -Expected $expectedProvisioned -Actual $actualProvisioned)
+    $markersAttempted = -not (Test-DefenderStringSetEqual `
+        -Expected $expectedMarkers -Actual @($before.Markers))
+
+    Add-DefenderEffect -Result $result -Target 'SecHealthUI:Installed' `
+        -Attempted $installedAttempted -Changed ($installedAttempted -and $installedVerified) `
+        -Verified $installedVerified `
+        -Evidence @{ Expected = $expectedInstalled; Actual = $afterInstalled; MutationErrors = @($mutationErrors) } `
+        -Errors $(if ($installedVerified) { @() } else { @('Installed SecHealthUI package set differs from the recorded baseline.') })
+    Add-DefenderEffect -Result $result -Target 'SecHealthUI:Provisioned' `
+        -Attempted $provisionedAttempted -Changed ($provisionedAttempted -and $provisionedVerified) `
+        -Verified $provisionedVerified `
+        -Evidence @{ Expected = $expectedProvisioned; Actual = $afterProvisioned; MutationErrors = @($mutationErrors) } `
+        -Errors $(if ($provisionedVerified) { @() } else { @('Provisioned SecHealthUI package set differs from the recorded baseline.') })
+    Add-DefenderEffect -Result $result -Target 'SecHealthUI:DeprovisionMarkers' `
+        -Attempted $markersAttempted -Changed ($markersAttempted -and $markersVerified) `
+        -Verified $markersVerified `
+        -Evidence @{ Expected = $expectedMarkers; Actual = $afterMarkers; MutationErrors = @($mutationErrors) } `
+        -Errors $(if ($markersVerified) { @() } else { @('SecHealthUI marker set differs from the recorded baseline.') })
+    return (Complete-DefenderActionResult -Result $result)
+}
+
 function Restore-SecHealthUI {
+    param(
+        [AllowNull()]$Baseline
+    )
+
+    if ($null -ne $Baseline) {
+        return (Restore-DefenderSecHealthUIBaseline -Baseline $Baseline)
+    }
+
     Write-Log "Re-provisioning Windows Security (SecHealthUI)..." INFO
     $result = New-DefenderActionResult -Name 'SecHealthUI:Restore' -Simulation:$WhatIfPreference
     $before = Get-DefenderSecHealthUIState
