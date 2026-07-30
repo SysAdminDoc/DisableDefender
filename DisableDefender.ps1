@@ -86,7 +86,7 @@ function Invoke-SelectedMode {
     param([Parameter(Mandatory)][ValidateSet('Disable','Remove','Restore','Status','Health','PrepareOffline')][string]$SelectedMode)
 
     $common = @{
-        Silent      = [bool]$Silent
+        Silent      = [bool]($Silent -or $Json)
         LogPath     = $LogPath
         ErrorAction = 'Stop'
         Confirm     = $false
@@ -153,11 +153,26 @@ if (-not $Mode) {
 }
 
 try {
-    Invoke-SelectedMode -SelectedMode $Mode
-    if ($Mode -eq 'Disable' -or $Mode -eq 'Remove') {
-        Show-DefenderStatus -Json:$Json
+    $actionModes = @('Disable','Remove','Restore')
+    if ($actionModes -contains $Mode) {
+        $operationResult = Invoke-SelectedMode -SelectedMode $Mode
+        if ($null -eq $operationResult -or -not $operationResult.Succeeded) {
+            throw "$Mode did not return a successful verified operation result."
+        }
+        if ($Json) {
+            $operationResult | ConvertTo-Json -Depth 12
+        } elseif (-not $Silent) {
+            Write-Host ("Verified operation: attempted={0} changed={1} verified={2}" -f `
+                $operationResult.Attempted, $operationResult.Changed, $operationResult.Verified) -ForegroundColor Cyan
+        }
+    } else {
+        Invoke-SelectedMode -SelectedMode $Mode
     }
-    if (-not $NoReboot -and -not $WhatIfPreference -and ($Mode -eq 'Disable' -or $Mode -eq 'Remove')) {
+    if (($Mode -eq 'Disable' -or $Mode -eq 'Remove') -and -not $Json) {
+        Show-DefenderStatus
+    }
+    if (-not $NoReboot -and -not $WhatIfPreference -and
+        ($Mode -eq 'Disable' -or $Mode -eq 'Remove')) {
         if ($Silent) {
             Add-Content -LiteralPath $LogPath -Value "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')] [WARN] Rebooting in 15 seconds..." -ErrorAction SilentlyContinue
             shutdown.exe /r /t 15 /c "$script:AppName reboot" | Out-Null

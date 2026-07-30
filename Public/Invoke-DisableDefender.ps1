@@ -43,7 +43,8 @@ function Invoke-DisableDefender {
         [scriptblock]$LogCallback
     )
 
-    if (-not $PSCmdlet.ShouldProcess('Microsoft Defender', 'Disable')) { return }
+    $shouldProcess = $PSCmdlet.ShouldProcess('Microsoft Defender', 'Disable')
+    if (-not $shouldProcess -and -not $WhatIfPreference) { return }
 
     Set-RunOptions -Force:$Force -NoRestorePoint:$NoRestorePoint -IncludeMDE:$IncludeMDE -AllowRemoting:$AllowRemoting -Silent:$Silent -LogPath $LogPath -LogCallback $LogCallback
     Confirm-LocalSession -Mode Disable
@@ -53,16 +54,22 @@ function Invoke-DisableDefender {
         $phases = @(
             New-DefenderPhase -Name 'Prerequisites' -Key 'Prerequisites' -Action { Confirm-Prereqs }
             New-DefenderPhase -Name 'Firewall preflight' -Key 'FirewallPreflight' -Action { Assert-FirewallSafety -Stage pre }
-            New-DefenderPhase -Name 'Restore point' -Key 'RestorePoint' -Action { New-SafetyRestorePoint }
-            New-DefenderPhase -Name 'Policy keys' -Key 'Policies' -Action { Set-DefenderPolicy }
-            New-DefenderPhase -Name 'MpPreference' -Key 'MpPreference' -Action { Set-MpRuntimePrefs }
-            New-DefenderPhase -Name 'Scheduled tasks' -Key 'Tasks' -Action { Disable-DefenderTasks }
-            New-DefenderPhase -Name 'Services' -Key 'Services' -Action { Disable-DefenderServices }
+            New-DefenderPhase -Name 'Restore point' -Key 'RestorePoint' -RequiresResult -Action { New-SafetyRestorePoint }
+            New-DefenderPhase -Name 'Policy keys' -Key 'Policies' -RequiresResult -Action { Set-DefenderPolicy }
+            New-DefenderPhase -Name 'MpPreference' -Key 'MpPreference' -RequiresResult -Action { Set-MpRuntimePrefs }
+            New-DefenderPhase -Name 'Scheduled tasks' -Key 'Tasks' -RequiresResult -Action { Disable-DefenderTasks }
+            New-DefenderPhase -Name 'Services' -Key 'Services' -RequiresResult -Action { Disable-DefenderServices }
             New-DefenderPhase -Name 'Firewall postflight' -Key 'FirewallPostflight' -Action { Assert-FirewallSafety -Stage post }
         )
-        Invoke-DefenderPhasePlan -Mode Disable -Phases $phases -Only $Only -Skip $Skip
-        Save-DefenderSurfaceBaseline -Mode Disable
+        $operationResult = Invoke-DefenderPhasePlan -Mode Disable -Phases $phases -Only $Only -Skip $Skip
+        $hasMutationEvidence = @($operationResult.Phases | Where-Object {
+            $null -ne $_.Result
+        }).Count -gt 0
+        if (-not $operationResult.Simulation -and $hasMutationEvidence) {
+            Save-DefenderSurfaceBaseline -Mode Disable
+        }
         Write-Log "Disable complete. Reboot recommended." OK
+        return $operationResult
     } finally {
         Stop-RestoreManifest
     }

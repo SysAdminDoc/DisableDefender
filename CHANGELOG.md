@@ -5,11 +5,14 @@
 ### Added
 - Reimagined the WPF shell as a safety-first security control center with a command rail, six protection-state cards, component-health and policy-change views, and a compact live-activity panel.
 - Added UI Automation names, keyboard focus treatment, maximize/restore chrome, F5 refresh, and accessible text labels for every status.
+- Added one structured operation-result contract across phase state, logs, CLI JSON, and GUI completion feedback, with per-effect attempted, changed, verified, evidence, and error fields.
 
 ### Fixed
 - The GUI now blocks window closure while a privileged operation is active and drains completed runspaces instead of stopping workers abruptly.
 - Minimum-size layouts keep actions, component evidence, and activity output reachable through bounded scrolling instead of overlapping controls.
 - Destructive confirmation defaults keyboard focus to Cancel and separates warning, destructive, and recovery actions visually.
+- Registry, MpPreference, task, service, SafeBoot, Appx, DISM, context-menu, restore-point, and ACL phases now fail on unverified required postconditions instead of accepting swallowed or zero-effect mutations.
+- Disable and Remove save a surface baseline only after a verified non-simulation plan; action-mode JSON emits one success envelope and the GUI consumes the same verified result.
 
 ## v0.0.40 - 2026-06-30
 

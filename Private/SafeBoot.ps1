@@ -27,40 +27,74 @@ function Unregister-SafeBootWatchdog {
 # ---------------------------------------------------------------------------
 function Remove-SafeBootWinDefend {
     Write-Log "Removing SafeBoot\WinDefend entries..." INFO
-    $failed = New-Object System.Collections.ArrayList
+    $result = New-DefenderActionResult -Name 'SafeBoot:RemoveWinDefend' -Simulation:$WhatIfPreference
     foreach ($path in @($script:SafeBootMin, $script:SafeBootNet)) {
-        if (Test-Path -LiteralPath $path) {
-            Register-RegistryTreeUndo -Path $path -Phase 'SafeBoot'
+        $exists = Test-Path -LiteralPath $path
+        if (-not $exists) {
+            Add-DefenderEffect -Result $result -Target $path -Attempted $false -Changed $false `
+                -Verified $true -Evidence @{ Expected = 'Absent'; Actual = 'Absent'; State = 'AlreadyCorrect' }
+            continue
+        }
+        if ($WhatIfPreference) {
+            Add-DefenderEffect -Result $result -Target $path -Required $false `
+                -Attempted $false -Changed $false -Verified $false `
+                -Evidence @{ Expected = 'Absent'; Actual = 'Present'; State = 'Simulation' }
+            continue
+        }
+
+        Register-RegistryTreeUndo -Path $path -Phase 'SafeBoot'
+        $attempts = New-Object System.Collections.ArrayList
+        try {
+            Remove-Item -LiteralPath $path -Recurse -Force -ErrorAction Stop
+            [void]$attempts.Add([PSCustomObject]@{ Method = 'Direct'; Error = $null })
+            if (-not (Test-Path -LiteralPath $path)) {
+                Write-Log "Removed $path" DEBUG
+                Add-DefenderEffect -Result $result -Target $path -Attempted $true -Changed $true `
+                    -Verified $true -Evidence @{ Expected = 'Absent'; Actual = 'Absent'; Method = 'Direct'; Attempts = @($attempts) }
+                continue
+            }
+            [void]$attempts.Add([PSCustomObject]@{ Method = 'DirectReadback'; Error = 'Path remained after direct removal.' })
+        } catch {
+            [void]$attempts.Add([PSCustomObject]@{ Method = 'Direct'; Error = $_.Exception.Message })
+        }
+
+        $sub = $path -replace '^HKLM:\\',''
+        if (Grant-RegKeyControl -SubKey (Split-Path $sub -Parent)) {
             try {
                 Remove-Item -LiteralPath $path -Recurse -Force -ErrorAction Stop
+                [void]$attempts.Add([PSCustomObject]@{ Method = 'AclTakeover'; Error = $null })
                 if (-not (Test-Path -LiteralPath $path)) {
-                    Write-Log "Removed $path" DEBUG
+                    Write-Log "Removed $path (ACL takeover)" DEBUG
+                    Add-DefenderEffect -Result $result -Target $path -Attempted $true -Changed $true `
+                        -Verified $true -Evidence @{ Expected = 'Absent'; Actual = 'Absent'; Method = 'AclTakeover'; Attempts = @($attempts) }
                     continue
                 }
-                throw "Path remained after direct removal."
+                [void]$attempts.Add([PSCustomObject]@{ Method = 'AclReadback'; Error = 'Path remained after ACL removal.' })
             } catch {
-                $sub = $path -replace '^HKLM:\\',''
-                if (Grant-RegKeyControl -SubKey (Split-Path $sub -Parent)) {
-                    Remove-Item -LiteralPath $path -Recurse -Force -ErrorAction SilentlyContinue
-                    if (-not (Test-Path -LiteralPath $path)) {
-                        Write-Log "Removed $path (ACL takeover)" DEBUG
-                        continue
-                    }
-                    Write-Log "SafeBoot path remained after ACL takeover: $path" WARN
-                }
-                if (Invoke-AsSystem -Execute 'reg.exe' -Argument "delete `"$($path -replace '^HKLM:\\','HKLM\')`" /f") {
-                    Start-Sleep -Milliseconds 300
-                    if (-not (Test-Path -LiteralPath $path)) {
-                        Write-Log "Removed $path (SYSTEM task)" DEBUG
-                        continue
-                    }
-                }
-                Write-Log "SafeBoot path could not be removed: $path" WARN
-                [void]$failed.Add($path)
+                [void]$attempts.Add([PSCustomObject]@{ Method = 'AclTakeover'; Error = $_.Exception.Message })
             }
         }
+
+        $systemSucceeded = Invoke-AsSystem -Execute 'reg.exe' -Argument "delete `"$($path -replace '^HKLM:\\','HKLM\')`" /f"
+        [void]$attempts.Add([PSCustomObject]@{
+            Method = 'SystemTask'
+            Error  = if ($systemSucceeded) { $null } else { 'SYSTEM task failed.' }
+        })
+        if ($systemSucceeded) {
+            Start-Sleep -Milliseconds 300
+            if (-not (Test-Path -LiteralPath $path)) {
+                Write-Log "Removed $path (SYSTEM task)" DEBUG
+                Add-DefenderEffect -Result $result -Target $path -Attempted $true -Changed $true `
+                    -Verified $true -Evidence @{ Expected = 'Absent'; Actual = 'Absent'; Method = 'SystemTask'; Attempts = @($attempts) }
+                continue
+            }
+        }
+
+        Write-Log "SafeBoot path could not be removed: $path" WARN
+        Add-DefenderEffect -Result $result -Target $path -Attempted $true -Changed $false `
+            -Verified $false -Evidence @{ Expected = 'Absent'; Actual = 'Present'; Attempts = @($attempts) } `
+            -Errors "SafeBoot WinDefend removal failed for $path."
     }
-    if ($failed.Count -gt 0) {
-        throw "SafeBoot WinDefend removal failed for: $($failed -join ', ')"
-    }
+
+    return (Complete-DefenderActionResult -Result $result)
 }

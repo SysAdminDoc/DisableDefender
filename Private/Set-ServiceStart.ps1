@@ -283,7 +283,8 @@ function Disable-DefenderServices {
         $childResult = Set-ServiceStart -Service $s -State Disabled
         Merge-DefenderActionResult -Result $result -ChildResult $childResult
     }
-    Save-AclBackup
+    $backupResult = Save-AclBackup
+    Merge-DefenderActionResult -Result $result -ChildResult $backupResult
     $completed = Complete-DefenderActionResult -Result $result
     $level = if ($completed.Succeeded) { 'OK' } else { 'WARN' }
     Write-Log "Service result: attempted=$($completed.Attempted) changed=$($completed.Changed) verified=$($completed.Verified) errors=$(@($completed.Errors).Count)." $level

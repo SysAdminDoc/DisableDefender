@@ -46,7 +46,8 @@ function Invoke-RemoveDefender {
         [scriptblock]$LogCallback
     )
 
-    if (-not $PSCmdlet.ShouldProcess('Microsoft Defender', 'Remove')) { return }
+    $shouldProcess = $PSCmdlet.ShouldProcess('Microsoft Defender', 'Remove')
+    if (-not $shouldProcess -and -not $WhatIfPreference) { return }
 
     Set-RunOptions -Force:$Force -NoRestorePoint:$NoRestorePoint -IncludeMDE:$IncludeMDE -AllowRemoting:$AllowRemoting -Silent:$Silent -LogPath $LogPath -LogCallback $LogCallback
     Confirm-LocalSession -Mode Remove
@@ -63,20 +64,26 @@ function Invoke-RemoveDefender {
                 }
             }
             New-DefenderPhase -Name 'Known-bad override gate' -Key 'KnownBadGate' -Action { Confirm-RemoveKnownBadOverrides }
-            New-DefenderPhase -Name 'Restore point' -Key 'RestorePoint' -Action { New-SafetyRestorePoint }
-            New-DefenderPhase -Name 'Policy keys' -Key 'Policies' -Action { Set-DefenderPolicy }
-            New-DefenderPhase -Name 'MpPreference' -Key 'MpPreference' -Action { Set-MpRuntimePrefs }
-            New-DefenderPhase -Name 'Scheduled tasks' -Key 'Tasks' -Action { Disable-DefenderTasks }
-            New-DefenderPhase -Name 'Services' -Key 'Services' -Action { Disable-DefenderServices }
-            New-DefenderPhase -Name 'SafeBoot' -Key 'SafeBoot' -Action { Remove-SafeBootWinDefend }
-            New-DefenderPhase -Name 'SecHealthUI' -Key 'Appx' -Action { Remove-SecHealthUI }
-            New-DefenderPhase -Name 'DISM packages' -Key 'DISM' -Action { Remove-DefenderPlatformPackages }
-            New-DefenderPhase -Name 'Context menu' -Key 'ContextMenu' -Action { Remove-DefenderContextMenu }
+            New-DefenderPhase -Name 'Restore point' -Key 'RestorePoint' -RequiresResult -Action { New-SafetyRestorePoint }
+            New-DefenderPhase -Name 'Policy keys' -Key 'Policies' -RequiresResult -Action { Set-DefenderPolicy }
+            New-DefenderPhase -Name 'MpPreference' -Key 'MpPreference' -RequiresResult -Action { Set-MpRuntimePrefs }
+            New-DefenderPhase -Name 'Scheduled tasks' -Key 'Tasks' -RequiresResult -Action { Disable-DefenderTasks }
+            New-DefenderPhase -Name 'Services' -Key 'Services' -RequiresResult -Action { Disable-DefenderServices }
+            New-DefenderPhase -Name 'SafeBoot' -Key 'SafeBoot' -RequiresResult -Action { Remove-SafeBootWinDefend }
+            New-DefenderPhase -Name 'SecHealthUI' -Key 'Appx' -RequiresResult -Action { Remove-SecHealthUI }
+            New-DefenderPhase -Name 'DISM packages' -Key 'DISM' -RequiresResult -Action { Remove-DefenderPlatformPackages }
+            New-DefenderPhase -Name 'Context menu' -Key 'ContextMenu' -RequiresResult -Action { Remove-DefenderContextMenu }
             New-DefenderPhase -Name 'Firewall postflight' -Key 'FirewallPostflight' -Action { Assert-FirewallSafety -Stage post }
         )
-        Invoke-DefenderPhasePlan -Mode Remove -Phases $phases -Only $Only -Skip $Skip
-        Save-DefenderSurfaceBaseline -Mode Remove
+        $operationResult = Invoke-DefenderPhasePlan -Mode Remove -Phases $phases -Only $Only -Skip $Skip
+        $hasMutationEvidence = @($operationResult.Phases | Where-Object {
+            $null -ne $_.Result
+        }).Count -gt 0
+        if (-not $operationResult.Simulation -and $hasMutationEvidence) {
+            Save-DefenderSurfaceBaseline -Mode Remove
+        }
         Write-Log "Remove complete. Reboot required." OK
+        return $operationResult
     } finally {
         Stop-RestoreManifest
     }

@@ -75,7 +75,7 @@ $script:UIState = [hashtable]::Synchronized(@{
     LogQueue  = [System.Collections.Queue]::Synchronized([System.Collections.Queue]::new())
     Busy      = $false
     LastAction = ''
-    LastResult = ''
+    LastResult = $null
     StatusSnapshot = $null
 })
 
@@ -1524,15 +1524,28 @@ function Start-ModeAsync {
         }
 
         try {
-            switch ($ActionMode) {
+            $operationOutput = @(switch ($ActionMode) {
                 'Disable' { Invoke-DisableDefender -Force:$ForceOverride -LogPath $LogPath -LogCallback $logCallback -Confirm:$false }
                 'Remove'  { Invoke-RemoveDefender -Force:$ForceOverride -LogPath $LogPath -LogCallback $logCallback -Confirm:$false }
                 'Restore' { Invoke-RestoreDefender -LogPath $LogPath -LogCallback $logCallback -Confirm:$false }
+            })
+            $operationResult = @($operationOutput | Where-Object {
+                $_.PSObject.Properties.Name -contains 'Succeeded' -and
+                $_.PSObject.Properties.Name -contains 'Phases'
+            } | Select-Object -Last 1)
+            if ($operationResult.Count -eq 0 -or -not $operationResult[0].Succeeded) {
+                throw "$ActionMode did not return a successful verified operation result."
             }
-            $UIState.LastResult = 'ok'
+            $UIState.LastResult = $operationResult[0]
         } catch {
             & $logCallback -Message "FATAL: $_" -Level ERROR
-            $UIState.LastResult = "error: $($_.Exception.Message)"
+            $UIState.LastResult = [PSCustomObject]@{
+                Succeeded = $false
+                Attempted = 0
+                Changed   = 0
+                Verified  = 0
+                Errors    = @($_.Exception.Message)
+            }
         }
     }
 
@@ -1543,7 +1556,7 @@ function Start-ModeAsync {
     $script:Runspace = $rs
     $script:AsyncResult = $ps.BeginInvoke()
     $script:UIState.LastAction = $ActionMode
-    $script:UIState.LastResult = ''
+    $script:UIState.LastResult = $null
 }
 
 # ---------------------------------------------------------------------------
@@ -1570,10 +1583,16 @@ $drainTimer.Add_Tick({
         $result = $script:UIState.LastResult
         $action = $script:UIState.LastAction
         Set-Busy -IsBusy $false -Label 'Idle'
-        if ($result -eq 'ok') {
-            Show-Toast "$action complete." ok
+        if ($null -ne $result -and $result.Succeeded) {
+            Show-Toast ("{0} complete - {1} verified, {2} changed." -f `
+                $action, $result.Verified, $result.Changed) ok
         } else {
-            Show-Toast "$action failed. $result" error
+            $errorText = if ($null -ne $result -and @($result.Errors).Count -gt 0) {
+                @($result.Errors) -join '; '
+            } else {
+                'No verified operation result was returned.'
+            }
+            Show-Toast "$action failed. $errorText" error
         }
         Update-StatusTiles
     }

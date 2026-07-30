@@ -523,7 +523,12 @@ InModuleScope DisableDefender {
             $script:DefenderServices = @('WinDefend')
             $script:IncludeMDEMode = $false
             Mock Test-RestoreManifestRecording { $false }
-            Mock Save-AclBackup {}
+            Mock Save-AclBackup {
+                $backup = New-DefenderActionResult -Name 'RegistryAclBackup'
+                Add-DefenderEffect -Result $backup -Target 'acl-backup.clixml' -Required $false `
+                    -Attempted $false -Changed $false -Verified $true -Evidence 'NoAclChanges'
+                Complete-DefenderActionResult -Result $backup
+            }
             Mock Write-Log {}
             Mock Set-ServiceStart {
                 $child = New-DefenderActionResult -Name "ServiceStart:$Service"
@@ -555,7 +560,7 @@ InModuleScope DisableDefender {
             $result.Succeeded | Should -Be $true
             $result.Attempted | Should -Be 2
             $result.Changed | Should -Be 2
-            $result.Verified | Should -Be 2
+            $result.Verified | Should -Be 3
         }
 
         It 'fails when a stoppable service remains running' {
@@ -591,6 +596,75 @@ InModuleScope DisableDefender {
             $runtimeEffect.Required | Should -Be $false
             $runtimeEffect.Verified | Should -Be $false
             Should -Invoke Invoke-DefenderServiceStop -Times 0 -Exactly
+        }
+    }
+
+    Describe 'Registry ACL effect verification' {
+        BeforeEach {
+            $script:AppDir = $TestDrive
+            Remove-Item -LiteralPath (Join-Path $TestDrive 'acl-backup.clixml') `
+                -Force -ErrorAction SilentlyContinue
+            Mock Assert-DefenderRuntimeDirectory {}
+            Mock Initialize-Priv {}
+            Mock Write-Log {}
+        }
+
+        It 'records an absent backup as not applicable' {
+            $result = Restore-RegKeyACLs
+
+            $result.Succeeded | Should -Be $true
+            $result.Attempted | Should -Be 0
+            $result.Effects[0].Required | Should -Be $false
+        }
+
+        It 'removes the backup only after every ACL is verified' {
+            $path = Join-Path $TestDrive 'acl-backup.clixml'
+            @{
+                'SYSTEM\Example' = @{
+                    OwnerSid = 'S-1-5-18'
+                    Dacl = 'D:'
+                }
+            } | Export-Clixml -Path $path
+            Mock Restore-DefenderRegistryAclEntry {
+                [PSCustomObject]@{
+                    Exists = $true
+                    Verified = $true
+                    OwnerSid = $Entry.OwnerSid
+                    Dacl = $Entry.Dacl
+                    Error = $null
+                }
+            }
+
+            $result = Restore-RegKeyACLs
+
+            $result.Succeeded | Should -Be $true
+            $result.Verified | Should -Be 1
+            Test-Path -LiteralPath $path | Should -Be $false
+        }
+
+        It 'retains the backup when any ACL fails verification' {
+            $path = Join-Path $TestDrive 'acl-backup.clixml'
+            @{
+                'SYSTEM\Example' = @{
+                    OwnerSid = 'S-1-5-18'
+                    Dacl = 'D:'
+                }
+            } | Export-Clixml -Path $path
+            Mock Restore-DefenderRegistryAclEntry {
+                [PSCustomObject]@{
+                    Exists = $true
+                    Verified = $false
+                    OwnerSid = 'S-1-5-32-544'
+                    Dacl = 'D:(A;;KA;;;BA)'
+                    Error = 'readback mismatch'
+                }
+            }
+
+            $result = Restore-RegKeyACLs
+
+            $result.Succeeded | Should -Be $false
+            $result.Errors | Should -Contain 'readback mismatch'
+            Test-Path -LiteralPath $path | Should -Be $true
         }
     }
 
@@ -1089,6 +1163,12 @@ InModuleScope DisableDefender {
             $script:NoRestorePointMode = $false
             $script:RestorePointLogs = @()
             Mock Enable-ComputerRestore {}
+            Mock Get-ComputerRestorePoint {
+                [PSCustomObject]@{
+                    SequenceNumber = 10
+                    Description = 'Existing restore point'
+                }
+            }
             Mock Write-Log {
                 param($Message, $Level)
                 $script:RestorePointLogs += "$Level|$Message"
@@ -1101,13 +1181,48 @@ InModuleScope DisableDefender {
                 [PSCustomObject]@{ SystemRestorePointCreationFrequency = 720 }
             } -ParameterFilter { $Name -eq 'SystemRestorePointCreationFrequency' }
 
-            New-SafetyRestorePoint
+            $result = New-SafetyRestorePoint
 
+            $result.Succeeded | Should -Be $true
+            $result.Effects[0].Evidence.ThrottleMinutes | Should -Be 720
             ($script:RestorePointLogs -join "`n") | Should -Match 'WARN\|System Restore point skipped by Windows throttle interval \(720 minutes\)'
         }
 
         It 'recognizes SystemRestorePointCreationFrequency errors' {
             Test-SystemRestoreThrottleError -Message 'SystemRestorePointCreationFrequency policy blocked this request.' | Should -Be $true
+        }
+
+        It 'verifies a newly created restore point by sequence and description' {
+            $script:RestorePointQuery = 0
+            Mock Get-ComputerRestorePoint {
+                $script:RestorePointQuery++
+                if ($script:RestorePointQuery -eq 1) {
+                    return [PSCustomObject]@{
+                        SequenceNumber = 10
+                        Description = 'Existing restore point'
+                    }
+                }
+                return [PSCustomObject]@{
+                    SequenceNumber = 11
+                    Description = "$script:AppName v$script:Version pre-op"
+                }
+            }
+            Mock Checkpoint-Computer {}
+
+            $result = New-SafetyRestorePoint
+
+            $result.Succeeded | Should -Be $true
+            $result.Changed | Should -Be 1
+            $result.Verified | Should -Be 1
+        }
+
+        It 'returns a failed effect for an unthrottled checkpoint error' {
+            Mock Checkpoint-Computer { throw 'Volume Shadow Copy service failed' }
+
+            $result = New-SafetyRestorePoint
+
+            $result.Succeeded | Should -Be $false
+            $result.Errors[0] | Should -Match 'Volume Shadow Copy'
         }
     }
 
@@ -1143,10 +1258,237 @@ InModuleScope DisableDefender {
             Mock Write-Log {}
         }
 
-        It 'throws when a SafeBoot WinDefend key remains after SYSTEM fallback' {
-            { Remove-SafeBootWinDefend } | Should -Throw -ExpectedMessage '*SafeBoot WinDefend removal failed*'
+        It 'returns a failed effect when a SafeBoot WinDefend key remains after SYSTEM fallback' {
+            $result = Remove-SafeBootWinDefend
+
+            $result.Succeeded | Should -Be $false
+            $result.Verified | Should -Be 1
+            $result.Errors[0] | Should -Match 'SafeBoot WinDefend removal failed'
 
             Should -Invoke Invoke-AsSystem -Times 1 -Exactly
+        }
+
+        It 'returns verified effects when present keys are removed' {
+            $script:SafeBootTestPathCall = 0
+            Mock Test-Path {
+                if ($LiteralPath -eq $script:SafeBootMin) {
+                    $script:SafeBootTestPathCall++
+                    return ($script:SafeBootTestPathCall -eq 1)
+                }
+                return $false
+            }
+            Mock Remove-Item {}
+
+            $result = Remove-SafeBootWinDefend
+
+            $result.Succeeded | Should -Be $true
+            $result.Attempted | Should -Be 1
+            $result.Changed | Should -Be 1
+            $result.Verified | Should -Be 2
+            Should -Invoke Invoke-AsSystem -Times 0 -Exactly
+        }
+    }
+
+    Describe 'Context-menu effect verification' {
+        BeforeEach {
+            $script:ContextMenuState = @{}
+            foreach ($path in @(
+                'HKLM:\SOFTWARE\Classes\*\shellex\ContextMenuHandlers\EPP',
+                'HKLM:\SOFTWARE\Classes\Directory\shellex\ContextMenuHandlers\EPP',
+                'HKLM:\SOFTWARE\Classes\Drive\shellex\ContextMenuHandlers\EPP'
+            )) {
+                $script:ContextMenuState[$path] = $true
+            }
+            Mock Test-Path { [bool]$script:ContextMenuState[$LiteralPath] }
+            Mock Register-RegistryTreeUndo {}
+            Mock Write-Log {}
+        }
+
+        It 'verifies every context-menu key was removed' {
+            $script:ContextMenuPathCalls = @{}
+            Mock Test-Path {
+                $key = [string]$LiteralPath
+                if (-not $script:ContextMenuPathCalls.ContainsKey($key)) {
+                    $script:ContextMenuPathCalls[$key] = 0
+                }
+                $callCount = [int]$script:ContextMenuPathCalls[$key] + 1
+                $script:ContextMenuPathCalls[$key] = $callCount
+                return ($callCount -eq 1)
+            }
+            Mock Remove-Item {}
+
+            $result = Remove-DefenderContextMenu
+
+            $result.Succeeded | Should -Be $true
+            $result.Attempted | Should -Be 3
+            $result.Changed | Should -Be 3
+            $result.Verified | Should -Be 3
+        }
+
+        It 'fails when removal returns but a key remains' {
+            Mock Remove-Item {}
+
+            $result = Remove-DefenderContextMenu
+
+            $result.Succeeded | Should -Be $false
+            $result.Verified | Should -Be 0
+            $result.Errors.Count | Should -Be 3
+        }
+    }
+
+    Describe 'DISM package effect verification' {
+        BeforeEach {
+            Mock Write-RestoreManifestEntry {}
+            Mock Write-Log {}
+        }
+
+        It 'verifies enumerated packages are absent after removal' {
+            $script:DismStateCall = 0
+            Mock Get-DefenderPlatformPackageState {
+                $script:DismStateCall++
+                if ($script:DismStateCall -eq 1) {
+                    return [PSCustomObject]@{
+                        Readable = $true
+                        ExitCode = 0
+                        Packages = @('Microsoft-Windows-Defender-Package')
+                        Error = $null
+                    }
+                }
+                return [PSCustomObject]@{
+                    Readable = $true
+                    ExitCode = 0
+                    Packages = @()
+                    Error = $null
+                }
+            }
+            Mock Invoke-DefenderDismPackageRemoval {
+                [PSCustomObject]@{ ExitCode = 0; Output = @() }
+            }
+
+            $result = Remove-DefenderPlatformPackages
+
+            $result.Succeeded | Should -Be $true
+            $result.Attempted | Should -Be 1
+            $result.Changed | Should -Be 1
+            $result.Effects[0].Evidence.RemovalExitCode | Should -Be 0
+        }
+
+        It 'fails when DISM reports failure and the package remains' {
+            Mock Get-DefenderPlatformPackageState {
+                [PSCustomObject]@{
+                    Readable = $true
+                    ExitCode = 0
+                    Packages = @('Microsoft-Windows-Defender-Package')
+                    Error = $null
+                }
+            }
+            Mock Invoke-DefenderDismPackageRemoval {
+                [PSCustomObject]@{ ExitCode = 5; Output = @('Access denied') }
+            }
+
+            $result = Remove-DefenderPlatformPackages
+
+            $result.Succeeded | Should -Be $false
+            $result.Verified | Should -Be 0
+            $result.Errors[0] | Should -Match 'exited 5'
+        }
+
+        It 'fails before mutation when package enumeration fails' {
+            Mock Get-DefenderPlatformPackageState {
+                [PSCustomObject]@{
+                    Readable = $false
+                    ExitCode = 87
+                    Packages = @()
+                    Error = 'DISM package enumeration exited 87.'
+                }
+            }
+            Mock Invoke-DefenderDismPackageRemoval { throw 'should not remove' }
+
+            $result = Remove-DefenderPlatformPackages
+
+            $result.Succeeded | Should -Be $false
+            $result.Effects[0].Target | Should -Be 'DISM:Get-Packages'
+            Should -Invoke Invoke-DefenderDismPackageRemoval -Times 0 -Exactly
+        }
+    }
+
+    Describe 'SecHealthUI effect verification' {
+        BeforeEach {
+            Mock Test-RestoreManifestRecording { $false }
+            Mock Write-Log {}
+        }
+
+        It 'verifies installed packages and deprovision markers after removal' {
+            $markerPaths = @(Get-SecHealthUIDeprovisionPaths)
+            $script:SecHealthStateCall = 0
+            Mock Get-DefenderSecHealthUIState {
+                $script:SecHealthStateCall++
+                if ($script:SecHealthStateCall -eq 1) {
+                    return [PSCustomObject]@{
+                        Supported = $true
+                        Readable = $true
+                        InstalledPackages = @([PSCustomObject]@{ PackageFullName = 'SecHealthUI_1'; Name = 'Microsoft.SecHealthUI' })
+                        ProvisionedPackages = @()
+                        Markers = @()
+                        Error = $null
+                    }
+                }
+                return [PSCustomObject]@{
+                    Supported = $true
+                    Readable = $true
+                    InstalledPackages = @()
+                    ProvisionedPackages = @()
+                    Markers = $markerPaths
+                    Error = $null
+                }
+            }
+            Mock Remove-AppxPackage {}
+            Mock New-Item {}
+
+            $result = Remove-SecHealthUI
+
+            $result.Succeeded | Should -Be $true
+            $result.Verified | Should -Be 3
+            ($result.Effects | Where-Object Target -eq 'SecHealthUI:Installed').Changed | Should -Be $true
+        }
+
+        It 'fails when an installed package remains after removal' {
+            $markerPaths = @(Get-SecHealthUIDeprovisionPaths)
+            Mock Get-DefenderSecHealthUIState {
+                [PSCustomObject]@{
+                    Supported = $true
+                    Readable = $true
+                    InstalledPackages = @([PSCustomObject]@{ PackageFullName = 'SecHealthUI_1'; Name = 'Microsoft.SecHealthUI' })
+                    ProvisionedPackages = @()
+                    Markers = $markerPaths
+                    Error = $null
+                }
+            }
+            Mock Remove-AppxPackage {}
+
+            $result = Remove-SecHealthUI
+
+            $result.Succeeded | Should -Be $false
+            ($result.Effects | Where-Object Target -eq 'SecHealthUI:Installed').Verified | Should -Be $false
+        }
+
+        It 'records Appx-unavailable systems as not applicable' {
+            Mock Get-DefenderSecHealthUIState {
+                [PSCustomObject]@{
+                    Supported = $false
+                    Readable = $true
+                    InstalledPackages = @()
+                    ProvisionedPackages = @()
+                    Markers = @()
+                    Error = $null
+                }
+            }
+
+            $result = Remove-SecHealthUI
+
+            $result.Succeeded | Should -Be $true
+            $result.Effects[0].Required | Should -Be $false
+            $result.Effects[0].Evidence.Actual | Should -Be 'AppxUnsupported'
         }
     }
 
@@ -1370,8 +1712,10 @@ InModuleScope DisableDefender {
                 }
             }
 
-            { Invoke-RestoreVerification } | Should -Not -Throw
+            $result = Invoke-RestoreVerification
 
+            $result.Succeeded | Should -Be $true
+            $result.Verified | Should -Be 1
             ($script:RestoreVerificationLogs -join "`n") | Should -Match 'OK\|Restore verification: OK=3 Drift=0 Unknown=0 Total=3'
         }
 
@@ -1386,8 +1730,11 @@ InModuleScope DisableDefender {
                 }
             }
 
-            { Invoke-RestoreVerification } | Should -Not -Throw
+            $result = Invoke-RestoreVerification
 
+            $result.Succeeded | Should -Be $false
+            $result.Verified | Should -Be 0
+            $result.RepairCommands | Should -Contain 'sfc /scannow'
             $joined = $script:RestoreVerificationLogs -join "`n"
             $joined | Should -Match 'WARN\|Restore verification: OK=1 Drift=2 Unknown=0 Total=3'
             $joined | Should -Match 'Repair command: sc\.exe config WinDefend start= auto'
@@ -1395,7 +1742,7 @@ InModuleScope DisableDefender {
             $joined | Should -Match 'Repair command: DISM /Online /Cleanup-Image /RestoreHealth'
         }
 
-        It 'throws in silent mode when Restore verification fails' {
+        It 'returns a failed contract in silent mode when Restore verification fails' {
             $script:SilentMode = $true
             try {
                 Mock Get-DefenderHealth {
@@ -1407,7 +1754,10 @@ InModuleScope DisableDefender {
                     }
                 }
 
-                { Invoke-RestoreVerification } | Should -Throw -ExpectedMessage '*Restore verification failed*'
+                $result = Invoke-RestoreVerification
+
+                $result.Succeeded | Should -Be $false
+                $result.Errors[0] | Should -Match "Expected 'Automatic', actual 'Disabled'"
             } finally {
                 $script:SilentMode = $false
             }
@@ -1443,6 +1793,69 @@ InModuleScope DisableDefender {
             $completed.Errors | Should -Contain 'value did not converge'
             { Assert-DefenderActionResult -Result $completed -Phase 'Policy' } |
                 Should -Throw -ExpectedMessage '*HKLM:\Example*'
+        }
+    }
+
+    Describe 'Public operation-result orchestration' {
+        BeforeEach {
+            Mock Set-RunOptions {}
+            Mock Confirm-LocalSession {}
+            Mock Start-RestoreManifest {}
+            Mock Stop-RestoreManifest {}
+            Mock Save-DefenderSurfaceBaseline {}
+            Mock Write-Log {}
+        }
+
+        It 'requires mutation results and saves the baseline after verified success' {
+            Mock Invoke-DefenderPhasePlan {
+                $script:CapturedOperationPhases = $Phases
+                [PSCustomObject]@{
+                    Succeeded = $true
+                    Simulation = $false
+                    Attempted = 4
+                    Changed = 4
+                    Verified = 4
+                    Phases = @([PSCustomObject]@{ Result = [PSCustomObject]@{ Succeeded = $true } })
+                }
+            }
+
+            $result = Invoke-DisableDefender -NoRestorePoint -Confirm:$false
+
+            $result.Succeeded | Should -Be $true
+            foreach ($key in @('RestorePoint','Policies','MpPreference','Tasks','Services')) {
+                ($script:CapturedOperationPhases | Where-Object Key -eq $key).RequiresResult |
+                    Should -Be $true
+            }
+            Should -Invoke Save-DefenderSurfaceBaseline -Times 1 -Exactly
+        }
+
+        It 'does not save a baseline when the verified plan fails' {
+            Mock Invoke-DefenderPhasePlan { throw 'effect verification failed' }
+
+            { Invoke-DisableDefender -NoRestorePoint -Confirm:$false } |
+                Should -Throw -ExpectedMessage '*effect verification failed*'
+
+            Should -Invoke Save-DefenderSurfaceBaseline -Times 0 -Exactly
+            Should -Invoke Stop-RestoreManifest -Times 1 -Exactly
+        }
+
+        It 'returns a simulation result under WhatIf without saving a baseline' {
+            Mock Invoke-DefenderPhasePlan {
+                [PSCustomObject]@{
+                    Succeeded = $true
+                    Simulation = $true
+                    Attempted = 0
+                    Changed = 0
+                    Verified = 0
+                    Phases = @([PSCustomObject]@{ Result = [PSCustomObject]@{ Succeeded = $true } })
+                }
+            }
+
+            $result = Invoke-DisableDefender -NoRestorePoint -Confirm:$false -WhatIf
+
+            $result.Simulation | Should -Be $true
+            Should -Invoke Invoke-DefenderPhasePlan -Times 1 -Exactly
+            Should -Invoke Save-DefenderSurfaceBaseline -Times 0 -Exactly
         }
     }
 
@@ -1930,6 +2343,9 @@ InModuleScope DisableDefender {
             $mapping = Get-DefenderErrorMapping -Message 'Restore verification failed: Drift=3'
             $mapping.ExitCode | Should -Be 6
             $mapping.Code | Should -Be 'RESTORE_FAILED'
+
+            $phaseMapping = Get-DefenderErrorMapping -Message "Phase 'Restore verification' failed effect verification: Service:WinDefend"
+            $phaseMapping.ExitCode | Should -Be 6
         }
 
         It 'maps phase filter errors to exit code 7' {
@@ -2021,5 +2437,25 @@ Describe 'DisableDefender GUI safety wiring' {
     It 'blocks unsafe window close while a phase is busy and does not abruptly stop the worker' {
         $script:GuiSource | Should -Match '(?s)\$window\.Add_Closing\(\{.*?\$script:UIState\.Busy.*?\$closingArgs\.Cancel\s*=\s*\$true'
         $script:GuiSource | Should -Not -Match '\$script:AsyncPS\.Stop\('
+    }
+
+    It 'uses the shared verified operation result for completion state' {
+        $script:GuiSource | Should -Match '\$UIState\.LastResult\s*=\s*\$operationResult\[0\]'
+        $script:GuiSource | Should -Match '\$result\.Succeeded'
+        $script:GuiSource | Should -Match '\$result\.Verified'
+        $script:GuiSource | Should -Not -Match "LastResult\s*=\s*'ok'"
+    }
+}
+
+Describe 'DisableDefender CLI result wiring' {
+    BeforeAll {
+        $script:CliSource = Get-Content -LiteralPath (Join-Path $PSScriptRoot '..\DisableDefender.ps1') -Raw
+    }
+
+    It 'serializes one shared success envelope for action-mode JSON output' {
+        $script:CliSource | Should -Match '\$operationResult\s*\|\s*ConvertTo-Json\s+-Depth 12'
+        $script:CliSource | Should -Match 'Silent\s*=\s*\[bool\]\(\$Silent -or \$Json\)'
+        $script:CliSource | Should -Match '\$operationResult\.Succeeded'
+        $script:CliSource | Should -Match '(?s)\(\$Mode -eq ''Disable'' -or \$Mode -eq ''Remove''\) -and -not \$Json.*?Show-DefenderStatus'
     }
 }

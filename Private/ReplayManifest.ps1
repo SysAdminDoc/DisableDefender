@@ -525,7 +525,7 @@ function Invoke-RestoreManifest {
 
             foreach ($entry in ($entries | Sort-Object -Property Sequence -Descending)) {
                 try {
-                    Invoke-RestoreManifestEntry -Entry $entry
+                    Invoke-RestoreManifestEntry -Entry $entry | Out-Null
                     Write-Log "Replayed undo entry $($entry.Sequence): $($entry.Action) $($entry.Target)" DEBUG
                 } catch {
                     $failures++
@@ -561,4 +561,36 @@ function Invoke-RestoreManifest {
 
     Write-Log "$failures restore manifest entries failed; manifest left in place for inspection." WARN
     return $false
+}
+
+function Invoke-DefenderRestoreManifestPlan {
+    param(
+        [ValidateSet('Newest','All','Active')]
+        [string]$Selection = 'Newest'
+    )
+
+    $result = New-DefenderActionResult -Name 'RestoreManifestReplay' -Simulation:$WhatIfPreference
+    $candidateCount = @(Get-RestoreManifestCandidates).Count
+    if ($WhatIfPreference) {
+        Add-DefenderEffect -Result $result -Target 'RestoreManifestReplay' -Required $false `
+            -Attempted $false -Changed $false -Verified $false `
+            -Evidence @{ Selection = $Selection; CandidateCount = $candidateCount; State = 'Simulation' }
+        return (Complete-DefenderActionResult -Result $result)
+    }
+
+    try {
+        $succeeded = [bool](Invoke-RestoreManifest -Selection $Selection)
+        Add-DefenderEffect -Result $result -Target 'RestoreManifestReplay' `
+            -Required ($candidateCount -gt 0) -Attempted ($candidateCount -gt 0) `
+            -Changed ($candidateCount -gt 0 -and $succeeded) -Verified $succeeded `
+            -Evidence @{ Selection = $Selection; CandidateCount = $candidateCount; ReplayCompleted = $succeeded } `
+            -Errors $(if ($succeeded) { @() } else { @('One or more restore manifest entries failed to replay.') })
+    } catch {
+        Add-DefenderEffect -Result $result -Target 'RestoreManifestReplay' `
+            -Required ($candidateCount -gt 0) -Attempted ($candidateCount -gt 0) `
+            -Changed $false -Verified $false `
+            -Evidence @{ Selection = $Selection; CandidateCount = $candidateCount; ReplayCompleted = $false } `
+            -Errors $_.Exception.Message
+    }
+    return (Complete-DefenderActionResult -Result $result)
 }
