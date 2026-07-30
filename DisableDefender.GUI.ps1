@@ -1041,36 +1041,10 @@ function Update-ComponentTiles {
     }
 }
 
-function Get-GuiFirewallIssues {
-    $issues = New-Object System.Collections.ArrayList
-    foreach ($serviceName in @('mpssvc','BFE')) {
-        try {
-            $service = Get-Service -Name $serviceName -ErrorAction Stop
-            if ($service.StartType -eq 'Disabled') {
-                [void]$issues.Add("$serviceName is Disabled")
-            }
-        } catch {
-            [void]$issues.Add("$serviceName unavailable")
-        }
-    }
-
-    try {
-        foreach ($fwProfile in @(Get-NetFirewallProfile -ErrorAction Stop)) {
-            if (-not $fwProfile.Enabled) {
-                [void]$issues.Add("$($fwProfile.Name) profile is off")
-            }
-        }
-    } catch {
-        [void]$issues.Add("Firewall profile query failed")
-    }
-
-    return @($issues)
-}
-
 function Test-FirewallGuardTripMessage {
     param([string]$Message)
     return ($Message -match '^Firewall issues at .+ stage:' -or
-            $Message -match '^Firewall integrity broken after operation')
+            $Message -match '^Firewall integrity broken at .+ stage')
 }
 
 function Start-FirewallBannerFlash {
@@ -1412,21 +1386,19 @@ function Update-StatusTiles {
         }
 
         # Firewall
-        $firewallIssues = Get-GuiFirewallIssues
+        $firewallStatus = Get-DefenderFirewallStatus
+        $firewallIssues = @($firewallStatus.Issues)
         Set-FirewallBannerState -Issues $firewallIssues -Source 'live poll'
-        try {
-            $fwp = Get-NetFirewallProfile -ErrorAction Stop
-            $allOn = $fwp | ForEach-Object { $_.Enabled } | Where-Object { -not $_ } | Measure-Object | Select-Object -ExpandProperty Count
-            $fwOn  = $allOn -eq 0
-            $ui.dotFW.Fill = if ($fwOn) { $window.Resources['Green'] } else { $window.Resources['Yellow'] }
-            $ui.valFW.Text = if ($fwOn) { 'ON' } else { 'PARTIAL' }
-            $ui.valFW.Foreground = if ($fwOn) { $window.Resources['Green'] } else { $window.Resources['Yellow'] }
-            $prof = ($fwp | ForEach-Object { "$($_.Name)=$($_.Enabled)" }) -join ', '
-            $ui.subFW.Text = $prof
-        } catch {
-            $ui.dotFW.Fill = $window.Resources['Yellow']
-            $ui.valFW.Text = 'N/A'
-            $ui.valFW.Foreground = $window.Resources['Yellow']
+        $fwOn = [bool]$firewallStatus.Healthy
+        $ui.dotFW.Fill = if ($fwOn) { $window.Resources['Green'] } else { $window.Resources['Red'] }
+        $ui.valFW.Text = if ($fwOn) { 'ON' } else { 'TRIPPED' }
+        $ui.valFW.Foreground = if ($fwOn) { $window.Resources['Green'] } else { $window.Resources['Red'] }
+        if ($fwOn) {
+            $ui.subFW.Text = ($firewallStatus.Profiles | ForEach-Object {
+                "$($_.Name)=On"
+            }) -join ', '
+        } else {
+            $ui.subFW.Text = (@($firewallIssues) | Select-Object -First 2) -join '; '
         }
 
         # Services disabled count

@@ -14,6 +14,7 @@ $script:AppDir  = Join-Path $env:ProgramData $script:AppName
 #         Only mpssvc + BFE are actually required for firewall to function.
 # ---------------------------------------------------------------------------
 $script:CriticalFirewallServices = @('mpssvc','BFE')
+$script:CriticalFirewallProfiles = @('Domain','Private','Public')
 
 $script:RefuseTouchServices = @(
     'mpssvc','BFE','SharedAccess','MpsDrv','mpsdrv','MsSecWfp',

@@ -49,7 +49,7 @@ Disable confirmation includes a current-vs-target drift preview before execution
 - **Transactional exact restore**: Disable/Remove record JSONL undo entries; Restore prevalidates the selected chain, replays it in reverse order, verifies the exact recorded baseline, and only then archives it. Interrupted replay and archive finalization resume from durable state.
 - **Explicit no-manifest repair**: `-RepairWithoutManifest` runs the separate fixed-default repair preset and is refused while a selected undo manifest exists
 - **Atomic phase boundaries**: each mode records phase status to `phase-state.json`; failures log partial state plus resume/rollback recovery choices
-- **Per-phase firewall guard**: every executed phase checks firewall services and profiles before and after running
+- **Shared fail-closed Firewall guard**: every mutation phase and the GUI use the same read-only check; missing, disabled, or stopped `mpssvc` / `BFE`, unavailable required profiles, or any profile switched off abort the operation
 - **Known-bad Remove gate**: domain-joined machines are refused unless `-Force` is passed and emit JSONL tripwires
 - **Unfilterable safety gates**: `-Only` / `-Skip` apply only to mutation phases; prerequisites, managed/domain and Safe Mode gates, restore-point handling, and Firewall pre/postflight always run
 - **PSRemoting guard**: Disable/Remove/Restore refuse PSSession execution unless `-AllowRemoting` is explicit
@@ -129,6 +129,7 @@ A menu appears with Disable / Remove / Restore / Status / Health / Prepare Offli
 ```powershell
 Import-Module .\DisableDefender.psd1
 Get-DefenderStatus
+Get-DefenderFirewallStatus
 Get-DefenderHealth -Target Disable
 Invoke-DisableDefender -Force -NoRestorePoint
 Invoke-RestoreDefender

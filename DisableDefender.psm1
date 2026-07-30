@@ -34,6 +34,7 @@ Initialize-DefenderRuntimeDirectory -Path $script:AppDir | Out-Null
 
 # Dot-source all public functions (alphabetical)
 . "$moduleRoot\Public\Get-DefenderStatus.ps1"
+. "$moduleRoot\Public\Get-DefenderFirewallStatus.ps1"
 . "$moduleRoot\Public\Get-DefenderHealth.ps1"
 . "$moduleRoot\Public\Get-DefenderComponentStatus.ps1"
 . "$moduleRoot\Public\Show-DefenderStatus.ps1"
@@ -48,6 +49,7 @@ Initialize-DefenderRuntimeDirectory -Path $script:AppDir | Out-Null
 
 Export-ModuleMember -Function @(
     'Get-DefenderStatus',
+    'Get-DefenderFirewallStatus',
     'Get-DefenderHealth',
     'Get-DefenderComponentStatus',
     'Show-DefenderStatus',

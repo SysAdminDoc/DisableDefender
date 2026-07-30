@@ -3,6 +3,7 @@
 ## Unreleased
 
 ### Added
+- Added exported `Get-DefenderFirewallStatus` evidence for `mpssvc`, `BFE`, and the Domain, Private, and Public profiles; Health now reports the same shared evidence.
 - Reimagined the WPF shell as a safety-first security control center with a command rail, six protection-state cards, component-health and policy-change views, and a compact live-activity panel.
 - Added UI Automation names, keyboard focus treatment, maximize/restore chrome, F5 refresh, and accessible text labels for every status.
 - Added one structured operation-result contract across phase state, logs, CLI JSON, and GUI completion feedback, with per-effect attempted, changed, verified, evidence, and error fields.
@@ -10,6 +11,7 @@
 - Added an explicit `-RepairWithoutManifest` fixed-default repair path in the CLI, module command, and GUI.
 
 ### Fixed
+- Firewall guards now fail closed when `mpssvc` or `BFE` is missing, disabled, stopped, or unverifiable, or when a required profile is missing, unavailable, or off; the GUI no longer maintains a weaker duplicate probe.
 - Phase filters now apply only to mutation phases; prerequisite, managed/domain, Safe Mode, restore-point, and Firewall pre/postflight gates are mandatory, and an empty action selection fails before manifest creation.
 - Safe Mode and offline generators preserve `-Force` only when the caller explicitly requests it instead of injecting a safety override.
 - The GUI now blocks window closure while a privileged operation is active and drains completed runspaces instead of stopping workers abruptly.

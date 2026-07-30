@@ -19,6 +19,7 @@ Describe 'Module manifest' {
             'Export-DefenderHtmlReport'
             'Export-DefenderSupportBundle'
             'Get-DefenderComponentStatus'
+            'Get-DefenderFirewallStatus'
             'Get-DefenderHealth'
             'Get-DefenderStatus'
             'Invoke-DisableDefender'
@@ -668,6 +669,103 @@ InModuleScope DisableDefender {
         }
     }
 
+    Describe 'Get-DefenderFirewallStatus' {
+        BeforeEach {
+            Mock Get-Service {
+                [PSCustomObject]@{ Name = $Name; Status = 'Running'; StartType = 'Automatic' }
+            }
+            Mock Get-NetFirewallProfile {
+                @(
+                    [PSCustomObject]@{ Name = 'Domain'; Enabled = $true },
+                    [PSCustomObject]@{ Name = 'Private'; Enabled = $true },
+                    [PSCustomObject]@{ Name = 'Public'; Enabled = $true }
+                )
+            }
+        }
+
+        It 'returns a healthy read-only snapshot when every invariant holds' {
+            Mock Set-Service {}
+            Mock Start-Service {}
+            Mock Set-NetFirewallProfile {}
+            Mock netsh.exe {}
+
+            $result = Get-DefenderFirewallStatus
+
+            $result.Healthy | Should -Be $true
+            $result.Issues.Count | Should -Be 0
+            $result.Services.Name | Should -Be @('mpssvc','BFE')
+            $result.Profiles.Name | Should -Be @('Domain','Private','Public')
+            Should -Invoke Get-Service -Times 2 -Exactly
+            Should -Invoke Get-NetFirewallProfile -Times 1 -Exactly
+            Should -Invoke Set-Service -Times 0 -Exactly
+            Should -Invoke Start-Service -Times 0 -Exactly
+            Should -Invoke Set-NetFirewallProfile -Times 0 -Exactly
+            Should -Invoke netsh.exe -Times 0 -Exactly
+        }
+
+        It 'fails closed when a critical service is missing' {
+            Mock Get-Service {
+                if ($Name -eq 'BFE') { return $null }
+                [PSCustomObject]@{ Name = $Name; Status = 'Running'; StartType = 'Automatic' }
+            }
+
+            $result = Get-DefenderFirewallStatus
+
+            $result.Healthy | Should -Be $false
+            $result.Issues | Should -Contain 'BFE is missing or unavailable'
+            ($result.Services | Where-Object Name -eq 'BFE').Present | Should -Be $false
+        }
+
+        It 'fails closed when a critical service is stopped but not disabled' {
+            Mock Get-Service {
+                [PSCustomObject]@{ Name = $Name; Status = 'Stopped'; StartType = 'Automatic' }
+            } -ParameterFilter { $Name -eq 'mpssvc' }
+
+            $result = Get-DefenderFirewallStatus
+
+            $result.Healthy | Should -Be $false
+            ($result.Issues -join ' ') | Should -Match 'mpssvc is not running'
+        }
+
+        It 'fails closed when a critical service start type is disabled' {
+            Mock Get-Service {
+                [PSCustomObject]@{ Name = $Name; Status = 'Running'; StartType = 'Disabled' }
+            } -ParameterFilter { $Name -eq 'BFE' }
+
+            $result = Get-DefenderFirewallStatus
+
+            $result.Healthy | Should -Be $false
+            $result.Issues | Should -Contain 'BFE is Disabled'
+        }
+
+        It 'fails closed when a required profile is off or absent' {
+            Mock Get-NetFirewallProfile {
+                @(
+                    [PSCustomObject]@{ Name = 'Domain'; Enabled = $true },
+                    [PSCustomObject]@{ Name = 'Private'; Enabled = $false }
+                )
+            }
+
+            $result = Get-DefenderFirewallStatus
+
+            $result.Healthy | Should -Be $false
+            $result.Issues | Should -Contain 'Firewall profile Private is off'
+            $result.Issues | Should -Contain 'Firewall profile Public is missing'
+        }
+
+        It 'reports every required profile when the profile query fails' {
+            Mock Get-NetFirewallProfile { throw 'NetSecurity unavailable' }
+
+            $result = Get-DefenderFirewallStatus
+
+            $result.Healthy | Should -Be $false
+            $result.Profiles.Healthy | Should -Not -Contain $true
+            ($result.Issues -join ' ') | Should -Match 'Domain could not be queried'
+            ($result.Issues -join ' ') | Should -Match 'Private could not be queried'
+            ($result.Issues -join ' ') | Should -Match 'Public could not be queried'
+        }
+    }
+
     Describe 'Test-FirewallIntact' {
         Context 'All services running and profiles enabled' {
             It 'returns empty array when firewall is healthy' {
@@ -725,18 +823,15 @@ InModuleScope DisableDefender {
         }
 
         It 'does not throw when firewall is healthy' {
-            Mock Get-Service {
-                [PSCustomObject]@{ Name = $Name; Status = 'Running'; StartType = 'Automatic' }
-            }
-            Mock Get-NetFirewallProfile {
-                @(
-                    [PSCustomObject]@{ Name = 'Domain'; Enabled = $true },
-                    [PSCustomObject]@{ Name = 'Private'; Enabled = $true },
-                    [PSCustomObject]@{ Name = 'Public'; Enabled = $true }
-                )
+            Mock Get-DefenderFirewallStatus {
+                [PSCustomObject]@{
+                    Healthy = $true
+                    Issues = @()
+                }
             }
 
             { Assert-FirewallSafety -Stage pre } | Should -Not -Throw
+            Should -Invoke Get-DefenderFirewallStatus -Times 1 -Exactly
         }
 
         It 'fails closed during preflight when firewall is already broken' {
@@ -818,6 +913,34 @@ InModuleScope DisableDefender {
     }
 
     Describe 'Get-DefenderHealth' {
+        It 'includes shared Firewall service and profile integrity evidence' {
+            Mock Get-DefenderFirewallStatus {
+                [PSCustomObject]@{
+                    Healthy = $false
+                    Issues = @('BFE is not running (Status=Stopped)','Firewall profile Public is off')
+                    Services = @(
+                        [PSCustomObject]@{ Name = 'mpssvc'; Present = $true; Status = 'Running'; StartType = 'Automatic'; Healthy = $true; QueryError = $null },
+                        [PSCustomObject]@{ Name = 'BFE'; Present = $true; Status = 'Stopped'; StartType = 'Automatic'; Healthy = $false; QueryError = $null }
+                    )
+                    Profiles = @(
+                        [PSCustomObject]@{ Name = 'Domain'; Present = $true; Enabled = $true; Healthy = $true; QueryError = $null },
+                        [PSCustomObject]@{ Name = 'Private'; Present = $true; Enabled = $true; Healthy = $true; QueryError = $null },
+                        [PSCustomObject]@{ Name = 'Public'; Present = $true; Enabled = $false; Healthy = $false; QueryError = $null }
+                    )
+                }
+            }
+            $items = New-Object System.Collections.ArrayList
+
+            Add-FirewallHealthItems -Items $items
+
+            ($items | Where-Object { $_.Category -eq 'FirewallService' -and $_.Name -eq 'mpssvc' }).Status |
+                Should -Be 'OK'
+            ($items | Where-Object { $_.Category -eq 'FirewallService' -and $_.Name -eq 'BFE' }).Status |
+                Should -Be 'Drift'
+            ($items | Where-Object { $_.Category -eq 'FirewallProfile' -and $_.Name -eq 'Public' }).Status |
+                Should -Be 'Drift'
+        }
+
         It 'returns summary and drift items for the default target' {
             Mock Get-MpPreference {
                 [PSCustomObject]@{
@@ -2461,6 +2584,27 @@ InModuleScope DisableDefender {
             Should -Invoke Assert-FirewallSafety -Times 4 -Exactly
         }
 
+        It 'routes every action boundary through the shared read-only Firewall check' {
+            Mock Get-DefenderFirewallStatus {
+                [PSCustomObject]@{
+                    Healthy = $true
+                    Issues = @()
+                }
+            }
+            Mock Assert-FirewallSafety {
+                $null = Get-DefenderFirewallStatus
+            }
+            $phases = @(
+                New-DefenderPhase -Name 'First' -Action { $script:FirewallBoundaryTest = 1 }
+                New-DefenderPhase -Name 'Second' -Action { $script:FirewallBoundaryTest = 2 }
+            )
+
+            Invoke-DefenderPhasePlan -Mode Disable -Phases $phases | Out-Null
+
+            Should -Invoke Get-DefenderFirewallStatus -Times 4 -Exactly
+            $script:FirewallBoundaryTest | Should -Be 2
+        }
+
         It 'returns and persists a verified operation result' {
             $phases = @(
                 New-DefenderPhase -Name 'Verified policy' -RequiresResult -Action {
@@ -3163,6 +3307,12 @@ Describe 'DisableDefender GUI safety wiring' {
         $script:GuiSource | Should -Match 'Invoke-RestoreDefender\s+-RepairWithoutManifest:\$RepairWithoutManifest'
         $script:GuiSource | Should -Match "Start-ModeAsync\s+-ActionMode 'Restore'\s+-RepairWithoutManifest"
         $script:GuiSource | Should -Match 'If no undo manifest exists, this action stops without changing the machine'
+    }
+
+    It 'uses the shared read-only Firewall status instead of a GUI-specific probe' {
+        $script:GuiSource | Should -Match '\$firewallStatus\s*=\s*Get-DefenderFirewallStatus'
+        $script:GuiSource | Should -Not -Match 'function Get-GuiFirewallIssues'
+        $script:GuiSource | Should -Match '\$ui\.valFW\.Text = if \(\$fwOn\) \{ ''ON'' \} else \{ ''TRIPPED'' \}'
     }
 }
 

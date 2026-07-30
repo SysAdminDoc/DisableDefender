@@ -67,6 +67,38 @@ function Get-ExpectedPolicyValues {
     return @(Get-DefenderPolicyCatalog)
 }
 
+function Add-FirewallHealthItems {
+    param(
+        [Parameter(Mandatory)]$Items
+    )
+
+    $firewall = Get-DefenderFirewallStatus
+    foreach ($service in $firewall.Services) {
+        $observed = if ($service.Present) {
+            "$($service.Status) / $($service.StartType)"
+        } else {
+            'Missing or unavailable'
+        }
+        $actual = if ($service.Healthy) { 'Running / not Disabled' } else { $observed }
+        [void]$Items.Add((New-DefenderHealthItem -Category 'FirewallService' `
+            -Name $service.Name -Expected 'Running / not Disabled' -Actual $actual `
+            -Detail "Observed: $observed"))
+    }
+
+    foreach ($firewallProfile in $firewall.Profiles) {
+        $observed = if (-not $firewallProfile.Present) {
+            'Missing or unavailable'
+        } elseif ($firewallProfile.Enabled) {
+            'Enabled'
+        } else {
+            'Off'
+        }
+        [void]$Items.Add((New-DefenderHealthItem -Category 'FirewallProfile' `
+            -Name $firewallProfile.Name -Expected 'Enabled' -Actual $observed `
+            -Detail $firewallProfile.QueryError))
+    }
+}
+
 function Add-PolicyHealthItems {
     param(
         [Parameter(Mandatory)]$Items,
@@ -274,6 +306,7 @@ function Get-DefenderHealth {
     )
 
     $items = New-Object System.Collections.ArrayList
+    Add-FirewallHealthItems -Items $items
     Add-PolicyHealthItems -Items $items -Target $Target
     Add-ServiceHealthItems -Items $items -Target $Target -IncludeMDE:$IncludeMDE
     Add-TaskHealthItems -Items $items -Target $Target

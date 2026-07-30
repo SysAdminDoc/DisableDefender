@@ -11,6 +11,7 @@
 
     FunctionsToExport = @(
         'Get-DefenderStatus'
+        'Get-DefenderFirewallStatus'
         'Get-DefenderHealth'
         'Get-DefenderComponentStatus'
         'Show-DefenderStatus'
