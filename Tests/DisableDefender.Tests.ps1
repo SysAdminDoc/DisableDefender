@@ -266,6 +266,75 @@ InModuleScope DisableDefender {
             $result.Repaired | Should -Be $true
             Should -Invoke Set-DefenderRuntimeDirectoryAcl -Times 1 -Exactly
         }
+
+        It 'leases exact runtime-file bytes while denying concurrent writes and replacement' {
+            $originalAppDir = $script:AppDir
+            $script:AppDir = $TestDrive
+            $path = Join-Path $TestDrive 'privileged-input.json'
+            [System.IO.File]::WriteAllText(
+                $path,
+                '{"trusted":true}',
+                (New-Object System.Text.UTF8Encoding($false)))
+            $lease = $null
+            try {
+                $lease = Open-DefenderPrivilegedRuntimeFile -Path $path -MaximumBytes 1024
+                (ConvertFrom-DefenderRuntimeFileBytes -Bytes $lease.Bytes) |
+                    Should -Be '{"trusted":true}'
+                {
+                    $writer = [System.IO.File]::Open(
+                        $path,
+                        [System.IO.FileMode]::Open,
+                        [System.IO.FileAccess]::Write,
+                        [System.IO.FileShare]::ReadWrite)
+                    $writer.Dispose()
+                } | Should -Throw
+                {
+                    Move-Item -LiteralPath $path -Destination "$path.replaced" `
+                        -ErrorAction Stop
+                } |
+                    Should -Throw
+                { $lease.AssertUnchanged() } | Should -Not -Throw
+            } finally {
+                if ($null -ne $lease) { $lease.Dispose() }
+                $script:AppDir = $originalAppDir
+            }
+        }
+
+        It 'rejects broad write access in a privileged runtime-file DACL' {
+            $descriptor = [System.Security.AccessControl.RawSecurityDescriptor]::new(
+                'O:SYG:SYD:(A;;FA;;;BU)')
+            $bytes = New-Object byte[] $descriptor.BinaryLength
+            $descriptor.GetBinaryForm($bytes, 0)
+            $lease = [PSCustomObject]@{ SecurityDescriptor = $bytes }
+
+            { Assert-DefenderPrivilegedFileSecurity -Lease $lease -EnforcePrivilegedAcl $true } |
+                Should -Throw -ExpectedMessage '*non-admin principal*'
+        }
+
+        It 'rejects a reparse point in a privileged runtime-file path' {
+            $originalAppDir = $script:AppDir
+            $script:AppDir = $TestDrive
+            $target = Join-Path $TestDrive 'runtime-target'
+            $junction = Join-Path $TestDrive 'runtime-junction'
+            New-Item -ItemType Directory -Path $target | Out-Null
+            [System.IO.File]::WriteAllText(
+                (Join-Path $target 'restore-manifest.jsonl'),
+                '{}',
+                (New-Object System.Text.UTF8Encoding($false)))
+            New-Item -ItemType Junction -Path $junction -Target $target | Out-Null
+            try {
+                {
+                    Open-DefenderPrivilegedRuntimeFile `
+                        -Path (Join-Path $junction 'restore-manifest.jsonl') `
+                        -MaximumBytes 1024
+                } | Should -Throw -ExpectedMessage '*reparse point*'
+            } finally {
+                if (Test-Path -LiteralPath $junction) {
+                    [System.IO.Directory]::Delete($junction)
+                }
+                $script:AppDir = $originalAppDir
+            }
+        }
     }
 
     Describe 'Set-RegValue' {
@@ -734,7 +803,7 @@ InModuleScope DisableDefender {
         It 'removes the backup only after every ACL is verified' {
             $path = Join-Path $TestDrive 'acl-backup.clixml'
             @{
-                'SYSTEM\Example' = @{
+                'SYSTEM\CurrentControlSet\Services\WinDefend' = @{
                     OwnerSid = 'S-1-5-18'
                     Dacl = 'D:'
                 }
@@ -759,7 +828,7 @@ InModuleScope DisableDefender {
         It 'retains the backup when any ACL fails verification' {
             $path = Join-Path $TestDrive 'acl-backup.clixml'
             @{
-                'SYSTEM\Example' = @{
+                'SYSTEM\CurrentControlSet\Services\WinDefend' = @{
                     OwnerSid = 'S-1-5-18'
                     Dacl = 'D:'
                 }
@@ -778,6 +847,46 @@ InModuleScope DisableDefender {
 
             $result.Succeeded | Should -Be $false
             $result.Errors | Should -Contain 'readback mismatch'
+            Test-Path -LiteralPath $path | Should -Be $true
+        }
+
+        It 'rejects every ACL replay when one target is outside the allowlist' {
+            $path = Join-Path $TestDrive 'acl-backup.clixml'
+            @{
+                'SYSTEM\CurrentControlSet\Services\WinDefend' = @{
+                    OwnerSid = 'S-1-5-18'
+                    Dacl = 'D:'
+                }
+                'SOFTWARE\Unrelated' = @{
+                    OwnerSid = 'S-1-5-18'
+                    Dacl = 'D:'
+                }
+            } | Export-Clixml -Path $path
+            Mock Restore-DefenderRegistryAclEntry { throw 'should not replay' }
+
+            $result = Restore-RegKeyACLs
+
+            $result.Succeeded | Should -Be $false
+            $result.Errors[0] | Should -Match 'not allowlisted'
+            Should -Invoke Restore-DefenderRegistryAclEntry -Times 0 -Exactly
+            Test-Path -LiteralPath $path | Should -Be $true
+        }
+
+        It 'rejects an ACL payload that grants broad write access' {
+            $path = Join-Path $TestDrive 'acl-backup.clixml'
+            @{
+                'SYSTEM\CurrentControlSet\Services\WinDefend' = @{
+                    OwnerSid = 'S-1-5-18'
+                    Dacl = 'D:(A;;KA;;;BU)'
+                }
+            } | Export-Clixml -Path $path
+            Mock Restore-DefenderRegistryAclEntry { throw 'should not replay' }
+
+            $result = Restore-RegKeyACLs
+
+            $result.Succeeded | Should -Be $false
+            $result.Errors[0] | Should -Match 'broad write access'
+            Should -Invoke Restore-DefenderRegistryAclEntry -Times 0 -Exactly
             Test-Path -LiteralPath $path | Should -Be $true
         }
     }
@@ -1740,6 +1849,44 @@ InModuleScope DisableDefender {
             -Errors $(if ($Verified) { @() } else { @($ErrorMessage) }))
     }
 
+    function script:New-TestRestoreManifestEntry {
+        param(
+            [int]$Sequence = 1,
+            [string]$RunId = ([guid]::NewGuid().ToString()),
+            [string]$Phase = 'Services',
+            [string]$Action = 'SetServiceStart',
+            [string]$Target = 'WinDefend',
+            $Data = ([ordered]@{ Service = 'WinDefend'; State = 'Automatic' })
+        )
+
+        return [ordered]@{
+            SchemaVersion = 1
+            RunId         = $RunId
+            Sequence      = $Sequence
+            Timestamp     = (Get-Date).ToString('o')
+            Mode          = 'Disable'
+            Phase         = $Phase
+            Action        = $Action
+            Target        = $Target
+            Data          = $Data
+        }
+    }
+
+    function script:Write-TestRestoreManifestEntries {
+        param(
+            [Parameter(Mandatory)][object[]]$Entries,
+            [Parameter(Mandatory)][string]$Path
+        )
+
+        $lines = @($Entries | ForEach-Object {
+            $_ | ConvertTo-Json -Depth 32 -Compress
+        })
+        [System.IO.File]::WriteAllText(
+            $Path,
+            ($lines -join [Environment]::NewLine) + [Environment]::NewLine,
+            (New-Object System.Text.UTF8Encoding($false)))
+    }
+
     Describe 'Restore replay manifest' {
         BeforeEach {
             $script:RestoreManifestPath = Join-Path $TestDrive 'restore-manifest.jsonl'
@@ -1771,12 +1918,12 @@ InModuleScope DisableDefender {
 
         It 'replays entries in reverse order and archives only after exact verification' {
             Start-RestoreManifest -Mode Disable
-            Write-RestoreManifestEntry -Phase 'Services' -Action 'SetServiceStart' -Target 'FirstService' -Data ([ordered]@{
-                Service = 'FirstService'
+            Write-RestoreManifestEntry -Phase 'Services' -Action 'SetServiceStart' -Target 'WinDefend' -Data ([ordered]@{
+                Service = 'WinDefend'
                 State   = 'Manual'
             })
-            Write-RestoreManifestEntry -Phase 'Services' -Action 'SetServiceStart' -Target 'SecondService' -Data ([ordered]@{
-                Service = 'SecondService'
+            Write-RestoreManifestEntry -Phase 'Services' -Action 'SetServiceStart' -Target 'WdNisSvc' -Data ([ordered]@{
+                Service = 'WdNisSvc'
                 State   = 'Automatic'
             })
             Stop-RestoreManifest
@@ -1788,7 +1935,7 @@ InModuleScope DisableDefender {
             }
 
             Invoke-RestoreManifest | Should -Be $true
-            $script:ReplayOrder | Should -Be @('SecondService=Automatic','FirstService=Manual')
+            $script:ReplayOrder | Should -Be @('WdNisSvc=Automatic','WinDefend=Manual')
             Test-Path -LiteralPath $script:RestoreManifestPath | Should -Be $true
             (Read-RestoreReplayState).Status | Should -Be 'AwaitingVerification'
 
@@ -1805,13 +1952,24 @@ InModuleScope DisableDefender {
 
         It 'records absent registry values as remove-value undo entries' {
             Start-RestoreManifest -Mode Disable
-            Register-RegistryValueUndo -Path 'HKCU:\Software\DisableDefenderMissingTestKey' -Name 'MissingValue' -Phase 'Policies'
+            Mock Get-RestoreRegistryValueState {
+                [PSCustomObject]@{
+                    Readable = $true
+                    Exists   = $false
+                    Kind     = $null
+                    Value    = $null
+                    Error    = $null
+                }
+            }
+            Register-RegistryValueUndo `
+                -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender' `
+                -Name 'DisableAntiSpyware' -Phase 'Policies'
             Stop-RestoreManifest
 
             $entries = @(Read-RestoreManifestEntries)
             $entries.Count | Should -Be 1
             $entries[0].Action | Should -Be 'RemoveRegistryValue'
-            $entries[0].Data.Name | Should -Be 'MissingValue'
+            $entries[0].Data.Name | Should -Be 'DisableAntiSpyware'
         }
 
         It 'logs manifest integrity markers before replay and when archiving' {
@@ -1932,12 +2090,12 @@ InModuleScope DisableDefender {
 
         It 'preserves the manifest and resumes from the first failed entry' {
             Start-RestoreManifest -Mode Disable
-            Write-RestoreManifestEntry -Phase 'Services' -Action 'SetServiceStart' -Target 'FirstService' -Data ([ordered]@{
-                Service = 'FirstService'
+            Write-RestoreManifestEntry -Phase 'Services' -Action 'SetServiceStart' -Target 'WinDefend' -Data ([ordered]@{
+                Service = 'WinDefend'
                 State   = 'Manual'
             })
-            Write-RestoreManifestEntry -Phase 'Services' -Action 'SetServiceStart' -Target 'SecondService' -Data ([ordered]@{
-                Service = 'SecondService'
+            Write-RestoreManifestEntry -Phase 'Services' -Action 'SetServiceStart' -Target 'WdNisSvc' -Data ([ordered]@{
+                Service = 'WdNisSvc'
                 State   = 'Automatic'
             })
             Stop-RestoreManifest
@@ -1946,7 +2104,7 @@ InModuleScope DisableDefender {
             $script:FailFirstService = $true
             Mock Invoke-RestoreManifestEntry {
                 $script:ReplayAttempts += $Entry.Data.Service
-                if ($Entry.Data.Service -eq 'FirstService' -and $script:FailFirstService) {
+                if ($Entry.Data.Service -eq 'WinDefend' -and $script:FailFirstService) {
                     return (New-TestRestoreActionResult -Target $Entry.Target -Verified $false `
                         -ErrorMessage 'injected replay failure')
                 }
@@ -1964,7 +2122,7 @@ InModuleScope DisableDefender {
             $script:FailFirstService = $false
             Invoke-RestoreManifest | Should -Be $true
 
-            $script:ReplayAttempts | Should -Be @('SecondService','FirstService','FirstService')
+            $script:ReplayAttempts | Should -Be @('WdNisSvc','WinDefend','WinDefend')
             (Read-RestoreReplayState).Status | Should -Be 'AwaitingVerification'
             Test-Path -LiteralPath $script:RestoreManifestPath | Should -Be $true
         }
@@ -2004,15 +2162,15 @@ InModuleScope DisableDefender {
 
         It 'resumes finalization after one manifest archive move is interrupted' {
             Start-RestoreManifest -Mode Disable
-            Write-RestoreManifestEntry -Phase 'Services' -Action 'SetServiceStart' -Target 'FirstService' -Data ([ordered]@{
-                Service = 'FirstService'
+            Write-RestoreManifestEntry -Phase 'Services' -Action 'SetServiceStart' -Target 'WinDefend' -Data ([ordered]@{
+                Service = 'WinDefend'
                 State   = 'Automatic'
             })
             Stop-RestoreManifest
             Start-Sleep -Milliseconds 1100
             Start-RestoreManifest -Mode Disable
-            Write-RestoreManifestEntry -Phase 'Services' -Action 'SetServiceStart' -Target 'SecondService' -Data ([ordered]@{
-                Service = 'SecondService'
+            Write-RestoreManifestEntry -Phase 'Services' -Action 'SetServiceStart' -Target 'WdNisSvc' -Data ([ordered]@{
+                Service = 'WdNisSvc'
                 State   = 'Manual'
             })
             Stop-RestoreManifest
@@ -2104,7 +2262,129 @@ InModuleScope DisableDefender {
             $entry | ConvertTo-Json -Depth 8 -Compress | Set-Content -LiteralPath $script:RestoreManifestPath
             Mock Invoke-RestoreManifestEntry { throw 'should not replay' }
 
-            { Invoke-RestoreManifest } | Should -Throw -ExpectedMessage '*missing Data.State*'
+            { Invoke-RestoreManifest } | Should -Throw -ExpectedMessage '*missing*State*'
+            Should -Invoke Invoke-RestoreManifestEntry -Times 0 -Exactly
+        }
+
+        It 'requires exactly one RunId before replaying any entry' {
+            $entries = @(
+                (New-TestRestoreManifestEntry -Sequence 1),
+                (New-TestRestoreManifestEntry -Sequence 2 -Target 'WdNisSvc' `
+                    -Data ([ordered]@{ Service = 'WdNisSvc'; State = 'Manual' }))
+            )
+            Write-TestRestoreManifestEntries -Entries $entries -Path $script:RestoreManifestPath
+            Mock Invoke-RestoreManifestEntry { throw 'should not replay' }
+
+            { Invoke-RestoreManifest } | Should -Throw -ExpectedMessage '*exactly one RunId*'
+            Should -Invoke Invoke-RestoreManifestEntry -Times 0 -Exactly
+        }
+
+        It 'requires unique contiguous sequence numbers before replaying any entry' {
+            $runId = [guid]::NewGuid().ToString()
+            $entries = @(
+                (New-TestRestoreManifestEntry -Sequence 1 -RunId $runId),
+                (New-TestRestoreManifestEntry -Sequence 3 -RunId $runId -Target 'WdNisSvc' `
+                    -Data ([ordered]@{ Service = 'WdNisSvc'; State = 'Manual' }))
+            )
+            Write-TestRestoreManifestEntries -Entries $entries -Path $script:RestoreManifestPath
+            Mock Invoke-RestoreManifestEntry { throw 'should not replay' }
+
+            { Invoke-RestoreManifest } | Should -Throw -ExpectedMessage '*unique and contiguous*'
+            Should -Invoke Invoke-RestoreManifestEntry -Times 0 -Exactly
+        }
+
+        It 'rejects the complete manifest when a later target is not allowlisted' {
+            $runId = [guid]::NewGuid().ToString()
+            $entries = @(
+                (New-TestRestoreManifestEntry -Sequence 1 -RunId $runId),
+                (New-TestRestoreManifestEntry -Sequence 2 -RunId $runId `
+                    -Target 'mpssvc' -Data ([ordered]@{
+                        Service = 'mpssvc'
+                        State   = 'Automatic'
+                    }))
+            )
+            Write-TestRestoreManifestEntries -Entries $entries -Path $script:RestoreManifestPath
+            Mock Invoke-RestoreManifestEntry { throw 'should not replay' }
+
+            { Invoke-RestoreManifest } | Should -Throw -ExpectedMessage '*not allowlisted*'
+            Should -Invoke Invoke-RestoreManifestEntry -Times 0 -Exactly
+        }
+
+        It 'allowlists registry, task, service, and MpPreference targets' {
+            $cases = @(
+                @{
+                    Phase = 'Policies'
+                    Action = 'RemoveRegistryValue'
+                    Target = 'HKLM:\SOFTWARE\Example\Unsafe'
+                    Data = [ordered]@{ Path = 'HKLM:\SOFTWARE\Example'; Name = 'Unsafe' }
+                },
+                @{
+                    Phase = 'Tasks'
+                    Action = 'SetScheduledTaskState'
+                    Target = '\Microsoft\Windows\DiskCleanup\SilentCleanup'
+                    Data = [ordered]@{
+                        TaskPath = '\Microsoft\Windows\DiskCleanup\SilentCleanup'
+                        Enabled = $true
+                    }
+                },
+                @{
+                    Phase = 'Services'
+                    Action = 'StartService'
+                    Target = 'mpssvc'
+                    Data = [ordered]@{ Service = 'mpssvc' }
+                },
+                @{
+                    Phase = 'MpPreference'
+                    Action = 'SetMpPreference'
+                    Target = 'UnknownPreference'
+                    Data = [ordered]@{ Name = 'UnknownPreference'; Value = $false }
+                }
+            )
+            foreach ($case in $cases) {
+                $entry = New-TestRestoreManifestEntry -Phase $case.Phase `
+                    -Action $case.Action -Target $case.Target -Data $case.Data
+                Write-TestRestoreManifestEntries -Entries @($entry) `
+                    -Path $script:RestoreManifestPath
+                { Read-RestoreManifestEntries } |
+                    Should -Throw -ExpectedMessage '*not allowlisted*'
+            }
+        }
+
+        It 'enforces manifest file and entry byte limits' {
+            $entry = New-TestRestoreManifestEntry
+            Write-TestRestoreManifestEntries -Entries @($entry) -Path $script:RestoreManifestPath
+            $originalFileLimit = $script:RestoreManifestMaximumBytes
+            $originalEntryLimit = $script:RestoreManifestMaximumEntryBytes
+            try {
+                $script:RestoreManifestMaximumBytes = 64
+                { Read-RestoreManifestEntries } |
+                    Should -Throw -ExpectedMessage '*maximum byte length*'
+
+                $script:RestoreManifestMaximumBytes = 4MB
+                $script:RestoreManifestMaximumEntryBytes = 64
+                { Read-RestoreManifestEntries } |
+                    Should -Throw -ExpectedMessage '*entry byte limit*'
+            } finally {
+                $script:RestoreManifestMaximumBytes = $originalFileLimit
+                $script:RestoreManifestMaximumEntryBytes = $originalEntryLimit
+            }
+        }
+
+        It 'rejects over-depth data before replay' {
+            $nested = 'leaf'
+            foreach ($index in 1..20) {
+                $nested = [ordered]@{ Nested = $nested }
+            }
+            $entry = New-TestRestoreManifestEntry -Phase 'MpPreference' `
+                -Action 'SetMpPreference' -Target 'DisableRealtimeMonitoring' `
+                -Data ([ordered]@{
+                    Name = 'DisableRealtimeMonitoring'
+                    Value = $nested
+                })
+            Write-TestRestoreManifestEntries -Entries @($entry) -Path $script:RestoreManifestPath
+            Mock Invoke-RestoreManifestEntry { throw 'should not replay' }
+
+            { Invoke-RestoreManifest } | Should -Throw -ExpectedMessage '*maximum object depth*'
             Should -Invoke Invoke-RestoreManifestEntry -Times 0 -Exactly
         }
     }

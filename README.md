@@ -46,7 +46,8 @@ Disable confirmation includes a current-vs-target drift preview before execution
 - **SafeBoot trap** (Remove mode): nukes `SafeBoot\{Minimal,Network}\WinDefend` so the service can't load even in Safe Mode
 - **Restore point** before any destructive op (opt-out with `-NoRestorePoint`)
 - **Runtime directory preflight**: `%ProgramData%\DisableDefender` refuses junctions/symlinks and repairs weak ACLs before writing logs, manifests, phase state, tripwires, ACL backups, or SYSTEM task output
-- **Transactional exact restore**: Disable/Remove record JSONL undo entries; Restore prevalidates the selected chain, replays it in reverse order, verifies the exact recorded baseline, and only then archives it. Interrupted replay and archive finalization resume from durable state.
+- **Privileged restore-input leases**: manifests, replay state, and ACL backups are size-bounded and read through one owner/DACL/reparse/file-identity-validated handle that denies concurrent writes and replacement
+- **Transactional exact restore**: Disable/Remove record versioned, target-allowlisted JSONL undo entries; Restore rejects mixed RunIds or non-contiguous sequences before mutation, replays the exact leased bytes in reverse order, verifies the recorded baseline, and only then archives it. Interrupted replay and archive finalization resume from durable state.
 - **Explicit no-manifest repair**: `-RepairWithoutManifest` runs the separate fixed-default repair preset and is refused while a selected undo manifest exists
 - **Atomic phase boundaries**: each mode records phase status to `phase-state.json`; failures log partial state plus resume/rollback recovery choices
 - **Shared fail-closed Firewall guard**: every mutation phase and the GUI use the same read-only check; missing, disabled, or stopped `mpssvc` / `BFE`, unavailable required profiles, or any profile switched off abort the operation
@@ -57,7 +58,7 @@ Disable confirmation includes a current-vs-target drift preview before execution
 - **Surgical repair reruns**: `-Only` and `-Skip` phase filters for the explicit no-manifest repair preset; transactional recorded-baseline restore cannot be filtered
 - **Health mode + Restore verification**: compares current state to Disable/Remove/fixed-default Restore targets and reports drift for services, policy keys, tasks, Appx, SafeBoot, and MpPreference; recorded-baseline Restore verifies its manifest expectations directly
 - **Feature-update drift detection**: Disable/Remove record a Defender surface baseline; Health flags changed Windows builds plus unknown Defender-like services, tasks, and packages and prints a reapply plan that preserves firewall and MDE Sense by default
-- **Local release builder**: creates a clean zip, SHA256 file, release metadata JSON, and optional Authenticode signatures when a code-signing certificate is supplied
+- **Local release builder**: creates an unsigned clean zip, SHA256 file, and release metadata JSON inside an identity-tracked staging directory
 - **Safe Mode bootstrap**: `Invoke-SafeModeRemove` schedules a one-shot task that boots into Safe Mode, runs Remove, clears the safeboot flag, and reboots back to normal; a watchdog task prevents Safe Mode traps if the script fails
 - **Support bundle export**: `Export-DefenderSupportBundle` collects logs, phase-state, tripwires, component status, health summary, Windows build info, and optional redacted Defender event-log excerpts into a diagnostic zip without secrets
 - **Offline remove bundle** (`PrepareOffline`): generates a self-contained `Invoke-OfflineDefenderRemove.ps1` that targets an offline Windows volume from WinRE or a secondary OS, bypassing live Tamper Protection by editing dormant registry hives directly; refuses to run against the live system root
@@ -267,7 +268,8 @@ Everything Disable does, plus:
 - **Best run from Safe Mode** for service registry key edits to stick
 
 ### Restore (undo)
-- Prevalidates and replays the newest non-empty `%ProgramData%\DisableDefender\restore-manifest*.jsonl` in reverse order, with run ID / entry count / SHA256 integrity logging
+- Prevalidates and replays the newest non-empty `%ProgramData%\DisableDefender\restore-manifest*.jsonl` in reverse order, with RunId, entry count, SHA256, and file-identity logging
+- Rejects mixed RunIds, sequence gaps/duplicates, oversized or over-depth data, extra schema fields, non-allowlisted registry/service/task/preference/package targets, reparse points, weak runtime-file ACLs, and concurrent input replacement before privileged mutation
 - Warns when older archived undo chains exist; use `-ManifestSelection All` to replay active and archived manifests newest-first
 - Restores each recorded registry value/tree, `MpPreference`, task, service, SafeBoot, context-menu, DISM package, and Security Health package/marker set to its exact pre-run state
 - Restores backed-up registry ACLs when ACL takeover was used
