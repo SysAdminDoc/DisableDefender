@@ -1042,6 +1042,38 @@ InModuleScope DisableDefender {
         }
     }
 
+    Describe 'Effect result contract' {
+        It 'summarizes verified changes and verified no-op effects' {
+            $result = New-DefenderActionResult -Name 'Policy'
+            Add-DefenderEffect -Result $result -Target 'ChangedValue' -Attempted $true -Changed $true `
+                -Verified $true -Evidence @{ Expected = 1; Actual = 1 }
+            Add-DefenderEffect -Result $result -Target 'AlreadyCorrect' -Attempted $false -Changed $false `
+                -Verified $true -Evidence @{ Expected = 0; Actual = 0 }
+
+            $completed = Complete-DefenderActionResult -Result $result
+
+            $completed.Succeeded | Should -Be $true
+            $completed.Attempted | Should -Be 1
+            $completed.Changed | Should -Be 1
+            $completed.Verified | Should -Be 2
+            $completed.Errors | Should -BeNullOrEmpty
+            { Assert-DefenderActionResult -Result $completed -Phase 'Policy' } | Should -Not -Throw
+        }
+
+        It 'fails when a required effect is unverified' {
+            $result = New-DefenderActionResult -Name 'Policy'
+            Add-DefenderEffect -Result $result -Target 'HKLM:\Example' -Attempted $true -Changed $false `
+                -Verified $false -Evidence @{ Expected = 1; Actual = 0 } -Errors 'value did not converge'
+
+            $completed = Complete-DefenderActionResult -Result $result
+
+            $completed.Succeeded | Should -Be $false
+            $completed.Errors | Should -Contain 'value did not converge'
+            { Assert-DefenderActionResult -Result $completed -Phase 'Policy' } |
+                Should -Throw -ExpectedMessage '*HKLM:\Example*'
+        }
+    }
+
     Describe 'Atomic phase runner' {
         BeforeEach {
             $script:PhaseStatePath = Join-Path $TestDrive 'phase-state.json'
@@ -1064,6 +1096,60 @@ InModuleScope DisableDefender {
             $state.Phases[1].Status | Should -Be 'Completed'
             $script:PhaseTestValue | Should -Be 2
             Should -Invoke Assert-FirewallSafety -Times 4 -Exactly
+        }
+
+        It 'returns and persists a verified operation result' {
+            $phases = @(
+                New-DefenderPhase -Name 'Verified policy' -RequiresResult -Action {
+                    $result = New-DefenderActionResult -Name 'Policy'
+                    Add-DefenderEffect -Result $result -Target 'PolicyValue' -Attempted $true -Changed $true `
+                        -Verified $true -Evidence @{ Expected = 1; Actual = 1 }
+                    Complete-DefenderActionResult -Result $result
+                }
+            )
+
+            $operation = Invoke-DefenderPhasePlan -Mode Disable -Phases $phases
+
+            $operation.Succeeded | Should -Be $true
+            $operation.Attempted | Should -Be 1
+            $operation.Changed | Should -Be 1
+            $operation.Verified | Should -Be 1
+            $state = Get-Content -Raw -LiteralPath $script:PhaseStatePath | ConvertFrom-Json
+            $state.Result.Succeeded | Should -Be $true
+            $state.Phases[0].Result.Effects[0].Target | Should -Be 'PolicyValue'
+        }
+
+        It 'rejects a required-result phase that returns no contract' {
+            $phases = @(
+                New-DefenderPhase -Name 'Silent mutation' -RequiresResult -Action { $null }
+            )
+
+            { Invoke-DefenderPhasePlan -Mode Disable -Phases $phases } |
+                Should -Throw -ExpectedMessage '*did not return a valid effect result*'
+
+            $state = Get-Content -Raw -LiteralPath $script:PhaseStatePath | ConvertFrom-Json
+            $state.Status | Should -Be 'Failed'
+            $state.FailedPhase | Should -Be 'Silent mutation'
+        }
+
+        It 'rejects and persists a partial action result' {
+            $phases = @(
+                New-DefenderPhase -Name 'Partial mutation' -RequiresResult -Action {
+                    $result = New-DefenderActionResult -Name 'Partial'
+                    Add-DefenderEffect -Result $result -Target 'First' -Attempted $true -Changed $true `
+                        -Verified $true -Evidence 'verified'
+                    Add-DefenderEffect -Result $result -Target 'Second' -Attempted $true -Changed $false `
+                        -Verified $false -Evidence 'stale' -Errors 'verification failed'
+                    Complete-DefenderActionResult -Result $result
+                }
+            )
+
+            { Invoke-DefenderPhasePlan -Mode Remove -Phases $phases } |
+                Should -Throw -ExpectedMessage '*Second*'
+
+            $state = Get-Content -Raw -LiteralPath $script:PhaseStatePath | ConvertFrom-Json
+            $state.Phases[0].Result.Succeeded | Should -Be $false
+            $state.Phases[0].Result.Errors | Should -Contain 'verification failed'
         }
 
         It 'records failed phase, partial state, and rethrows' {

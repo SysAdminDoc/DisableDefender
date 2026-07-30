@@ -10,6 +10,7 @@ $moduleRoot = $PSScriptRoot
 . "$moduleRoot\Private\RuntimeDirectory.ps1"
 Initialize-DefenderRuntimeDirectory -Path $script:AppDir | Out-Null
 . "$moduleRoot\Private\Write-Log.ps1"
+. "$moduleRoot\Private\OperationResult.ps1"
 . "$moduleRoot\Private\SurfaceDrift.ps1"
 . "$moduleRoot\Private\Tripwire.ps1"
 . "$moduleRoot\Private\ReplayManifest.ps1"

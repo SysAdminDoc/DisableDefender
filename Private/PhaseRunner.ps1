@@ -44,7 +44,8 @@ function New-DefenderPhase {
     param(
         [Parameter(Mandatory)][string]$Name,
         [string]$Key,
-        [Parameter(Mandatory)][scriptblock]$Action
+        [Parameter(Mandatory)][scriptblock]$Action,
+        [switch]$RequiresResult
     )
 
     if ([string]::IsNullOrWhiteSpace($Key)) {
@@ -55,6 +56,7 @@ function New-DefenderPhase {
         Name   = $Name
         Key    = $Key
         Action = $Action
+        RequiresResult = [bool]$RequiresResult
     }
 }
 
@@ -159,6 +161,7 @@ function Invoke-DefenderPhasePlan {
             Started   = (Get-Date).ToString('o')
             Completed = $null
             Error     = $null
+            Result    = $null
         }
         [void]$phaseStates.Add($phaseState)
         $state.Phases = @($phaseStates)
@@ -180,7 +183,19 @@ function Invoke-DefenderPhasePlan {
 
         try {
             Assert-DefenderFirewallBoundary -Phase $phase.Key -Boundary before
-            & $phase.Action
+            $actionOutput = @(& $phase.Action)
+            $actionResult = @($actionOutput | Where-Object {
+                Test-DefenderActionResult -Value $_
+            } | Select-Object -Last 1)
+            if ($actionResult.Count -gt 0) {
+                $phaseState.Result = $actionResult[0]
+            }
+            if ($phase.RequiresResult) {
+                if ($actionResult.Count -eq 0) {
+                    throw "Phase '$($phase.Name)' did not return a valid effect result."
+                }
+                Assert-DefenderActionResult -Result $actionResult[0] -Phase $phase.Name
+            }
             Assert-DefenderFirewallBoundary -Phase $phase.Key -Boundary after
             $phaseState.Status = 'Completed'
             $phaseState.Completed = (Get-Date).ToString('o')
@@ -215,5 +230,10 @@ function Invoke-DefenderPhasePlan {
     $state.Status = 'Completed'
     $state.Completed = (Get-Date).ToString('o')
     $state.Phases = @($phaseStates)
+    $operationResult = New-DefenderOperationResult -Mode $Mode -RunId $state.RunId -Started $state.Started `
+        -Completed $state.Completed -PhaseStatePath $state.PhaseStatePath -Phases @($phaseStates) `
+        -Simulation:$WhatIfPreference
+    $state.Result = $operationResult
     Save-DefenderPhaseState -State $state
+    return $operationResult
 }
