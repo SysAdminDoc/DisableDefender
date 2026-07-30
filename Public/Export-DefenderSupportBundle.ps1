@@ -34,6 +34,7 @@ function Export-DefenderSupportBundle {
 
     try {
         $summary = [ordered]@{
+            SchemaVersion = Get-DefenderArtifactSchemaVersion -Name SupportBundleSummary
             GeneratedAt = (Get-Date).ToString('o')
             Version     = $script:Version
         }
@@ -63,7 +64,14 @@ function Export-DefenderSupportBundle {
                 Target  = $health.Target
                 Summary = $health.Summary
             }
-            $health | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $bundleDir 'health.json') -Encoding UTF8
+            $healthDocument = [ordered]@{
+                SchemaVersion = Get-DefenderArtifactSchemaVersion -Name SupportBundleHealth
+                GeneratedAt   = (Get-Date).ToString('o')
+                Data          = $health
+            }
+            Write-DefenderJsonArtifactAtomic -Name SupportBundleHealth `
+                -Path (Join-Path $bundleDir 'health.json') `
+                -InputObject $healthDocument -Depth 10 | Out-Null
         } catch {
             $summary.Health = "Error: $($_.Exception.Message)"
             Write-Log "Support bundle: health collection failed: $($_.Exception.Message)" WARN
@@ -72,7 +80,14 @@ function Export-DefenderSupportBundle {
         try {
             $components = @(Get-DefenderComponentStatus)
             $summary.ComponentCount = $components.Count
-            $components | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $bundleDir 'components.json') -Encoding UTF8
+            $componentDocument = [ordered]@{
+                SchemaVersion = Get-DefenderArtifactSchemaVersion -Name SupportBundleComponents
+                GeneratedAt   = (Get-Date).ToString('o')
+                Data          = @($components)
+            }
+            Write-DefenderJsonArtifactAtomic -Name SupportBundleComponents `
+                -Path (Join-Path $bundleDir 'components.json') `
+                -InputObject $componentDocument -Depth 6 | Out-Null
         } catch {
             $summary.ComponentCount = 0
             Write-Log "Support bundle: component collection failed: $($_.Exception.Message)" WARN
@@ -122,14 +137,23 @@ function Export-DefenderSupportBundle {
                         Message     = ($_.Message -replace '(?i)(file|path|name):\s*[A-Za-z]:\\[^\r\n]+', '$1: [REDACTED]')
                     }
                 })
-                $redacted | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $bundleDir 'defender-events.json') -Encoding UTF8
+                $eventDocument = [ordered]@{
+                    SchemaVersion = Get-DefenderArtifactSchemaVersion -Name SupportBundleEvents
+                    GeneratedAt   = (Get-Date).ToString('o')
+                    Data          = @($redacted)
+                }
+                Write-DefenderJsonArtifactAtomic -Name SupportBundleEvents `
+                    -Path (Join-Path $bundleDir 'defender-events.json') `
+                    -InputObject $eventDocument -Depth 6 | Out-Null
                 $summary.EventLogEntries = $redacted.Count
             } catch {
                 $summary.EventLogEntries = "Error: $($_.Exception.Message)"
             }
         }
 
-        $summary | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $bundleDir 'summary.json') -Encoding UTF8
+        Write-DefenderJsonArtifactAtomic -Name SupportBundleSummary `
+            -Path (Join-Path $bundleDir 'summary.json') `
+            -InputObject $summary -Depth 8 | Out-Null
 
         $zipName = "DisableDefender-support-$stamp.zip"
         $zipPath = Join-Path $resolvedOutput $zipName

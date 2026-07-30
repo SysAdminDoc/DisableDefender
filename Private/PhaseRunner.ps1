@@ -19,10 +19,18 @@ function Save-DefenderPhaseState {
 
     $path = Get-DefenderPhaseStatePath
     Assert-DefenderRuntimeDirectory -Path (Split-Path -Parent $path)
+    Assert-DefenderArtifactSchemaVersion -Name PhaseState `
+        -InputObject $State | Out-Null
     $State.Updated = (Get-Date).ToString('o')
-    $tmpPath = "$path.tmp"
-    $State | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $tmpPath -Encoding UTF8
-    Move-Item -LiteralPath $tmpPath -Destination $path -Force
+    Write-DefenderJsonArtifactAtomic -Name PhaseState -Path $path `
+        -InputObject $State -Depth 12 | Out-Null
+}
+
+function Read-DefenderPhaseState {
+    $path = Get-DefenderPhaseStatePath
+    if (-not (Test-Path -LiteralPath $path)) { return $null }
+
+    return (Read-DefenderJsonArtifact -Name PhaseState -Path $path)
 }
 
 function Get-DefenderPartialState {
@@ -224,7 +232,7 @@ function Invoke-DefenderPhasePlan {
     }
 
     $state = [ordered]@{
-        SchemaVersion = 1
+        SchemaVersion = Get-DefenderArtifactSchemaVersion -Name PhaseState
         RunId         = [guid]::NewGuid().ToString()
         Mode          = $Mode
         Status        = 'Running'

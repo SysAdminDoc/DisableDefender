@@ -12,6 +12,7 @@ function Write-SafetyTripwire {
     )
 
     $entry = [ordered]@{
+        SchemaVersion = Get-DefenderArtifactSchemaVersion -Name SafetyTripwireEntry
         Timestamp = (Get-Date).ToString('o')
         Name      = $Name
         Mode      = $Mode

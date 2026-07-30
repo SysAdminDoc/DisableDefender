@@ -54,6 +54,11 @@ Describe 'Local release build' {
         Test-Path -LiteralPath (Join-Path $output "DisableDefender-v$($script:ReleaseVersion).release.json") |
             Should -Be $true
         $metadata.SignatureStatus | Should -Be 'Unsigned'
+        $metadata.SchemaVersion | Should -Be 1
+        $persistedMetadata = Get-Content -Raw -LiteralPath (
+            Join-Path $output "DisableDefender-v$($script:ReleaseVersion).release.json") |
+            ConvertFrom-Json
+        $persistedMetadata.SchemaVersion | Should -Be 1
         @(Get-ChildItem -LiteralPath $output -Force -Directory -Filter '.DisableDefender-stage-*').Count |
             Should -Be 0
 
@@ -176,6 +181,193 @@ Describe 'Local release build' {
 }
 
 InModuleScope DisableDefender {
+    Describe 'Persisted artifact schema catalog' {
+        It 'declares one independent current version for every durable format' {
+            $expected = @(
+                'ActionResult',
+                'DefenderSnapshot',
+                'ErrorEnvelope',
+                'OperationResult',
+                'PhaseState',
+                'RegistryAclJournal',
+                'ReleaseMetadata',
+                'RestoreManifestEntry',
+                'RestoreReplayState',
+                'SafeModeTransaction',
+                'SafeModeTransactionSummary',
+                'SafeModeStatus',
+                'SafetyTripwireEntry',
+                'StructuredLogEntry',
+                'SupportBundleComponents',
+                'SupportBundleEvents',
+                'SupportBundleHealth',
+                'SupportBundleSummary',
+                'SurfaceBaseline'
+            ) | Sort-Object
+            $catalog = @(Get-DefenderArtifactSchemaCatalog)
+
+            @($catalog.Name | Sort-Object) | Should -Be $expected
+            @($catalog.Name | Sort-Object -Unique).Count |
+                Should -Be $catalog.Count
+            foreach ($artifact in $catalog) {
+                $artifact.CurrentVersion | Should -BeGreaterThan 0
+                $artifact.SupportedVersions |
+                    Should -Contain $artifact.CurrentVersion
+            }
+        }
+
+        It 'accepts every registered current schema fixture' {
+            $fixturePath = Join-Path (Get-Module DisableDefender).ModuleBase `
+                'Tests\Fixtures\artifact-schemas.json'
+            $fixtures = Get-Content -Raw -LiteralPath $fixturePath |
+                ConvertFrom-Json
+            foreach ($fixture in @($fixtures.Current)) {
+                {
+                    Assert-DefenderArtifactSchemaVersion `
+                        -Name $fixture.Name -InputObject $fixture
+                } | Should -Not -Throw
+            }
+        }
+
+        It 'rejects unknown future versions with upgrade guidance' {
+            $fixturePath = Join-Path (Get-Module DisableDefender).ModuleBase `
+                'Tests\Fixtures\artifact-schemas.json'
+            $fixtures = Get-Content -Raw -LiteralPath $fixturePath |
+                ConvertFrom-Json
+            foreach ($fixture in @($fixtures.Future)) {
+                {
+                    Assert-DefenderArtifactSchemaVersion `
+                        -Name $fixture.Name -InputObject $fixture
+                } | Should -Throw `
+                    -ExpectedMessage '*unsupported future schema*Upgrade*'
+            }
+        }
+
+        It 'dispatches supported legacy fixtures without rewriting them' {
+            $fixturePath = Join-Path (Get-Module DisableDefender).ModuleBase `
+                'Tests\Fixtures\artifact-schemas.json'
+            $fixtures = Get-Content -Raw -LiteralPath $fixturePath |
+                ConvertFrom-Json
+            foreach ($fixture in @($fixtures.Legacy)) {
+                $legacyObject = [PSCustomObject]@{ LegacyPayload = 'unchanged' }
+                $dispatch = Resolve-DefenderArtifactSchemaVersion `
+                    -Name $fixture.Name -InputObject $legacyObject `
+                    -LegacyFormat $fixture.Format
+                $dispatch.Version | Should -Be 0
+                $dispatch.Legacy | Should -Be $true
+                $dispatch.Format | Should -Be $fixture.Format
+                $legacyObject.LegacyPayload | Should -Be 'unchanged'
+                $legacyObject.PSObject.Properties.Name |
+                    Should -Not -Contain 'SchemaVersion'
+            }
+        }
+
+        It 'writes the current structured log-entry schema' {
+            $previousAppDir = $script:AppDir
+            $previousVerified = $script:RuntimeDirectoryVerified
+            $previousSilent = $script:SilentMode
+            try {
+                $script:AppDir = $TestDrive
+                $script:RuntimeDirectoryVerified = $true
+                $script:SilentMode = $true
+                $script:LogPathOverride = $null
+                Remove-Item -LiteralPath (
+                    Join-Path $TestDrive 'DisableDefender.jsonl') `
+                    -Force -ErrorAction SilentlyContinue
+
+                Write-Log 'schema contract' INFO
+
+                $entry = Get-Content -LiteralPath (
+                    Join-Path $TestDrive 'DisableDefender.jsonl') |
+                    Select-Object -Last 1 |
+                    ConvertFrom-Json
+                $entry.SchemaVersion | Should -Be 1
+                $entry.msg | Should -Be 'schema contract'
+            } finally {
+                $script:AppDir = $previousAppDir
+                $script:RuntimeDirectoryVerified = $previousVerified
+                $script:SilentMode = $previousSilent
+                $script:LogPathOverride = $null
+            }
+        }
+
+        It 'refuses a future phase-state schema at the reader boundary' {
+            $previousAppDir = $script:AppDir
+            $previousPath = $script:PhaseStatePath
+            try {
+                $script:AppDir = $TestDrive
+                $script:PhaseStatePath = Join-Path $TestDrive 'phase-state.json'
+                [PSCustomObject]@{
+                    SchemaVersion = 999
+                    Status = 'Running'
+                } | ConvertTo-Json |
+                    Set-Content -LiteralPath $script:PhaseStatePath -Encoding UTF8
+
+                { Read-DefenderPhaseState } |
+                    Should -Throw -ExpectedMessage '*unsupported future schema*'
+            } finally {
+                $script:AppDir = $previousAppDir
+                $script:PhaseStatePath = $previousPath
+            }
+        }
+
+        It 'refuses a future surface-baseline schema at the reader boundary' {
+            $previousAppDir = $script:AppDir
+            try {
+                $script:AppDir = $TestDrive
+                [PSCustomObject]@{
+                    SchemaVersion = 999
+                    Generated     = '2026-07-29T12:00:00+00:00'
+                    Services      = @()
+                    Tasks         = @()
+                    Packages      = @()
+                } | ConvertTo-Json |
+                    Set-Content -LiteralPath (
+                        Join-Path $TestDrive 'surface-baseline.json') `
+                        -Encoding UTF8
+
+                { Read-DefenderSurfaceBaseline } |
+                    Should -Throw -ExpectedMessage '*unsupported future schema*'
+            } finally {
+                $script:AppDir = $previousAppDir
+            }
+        }
+
+        It 'publishes JSON atomically and retains the previous artifact on replace failure' {
+            $path = Join-Path $TestDrive 'atomic-phase-state.json'
+            $original = [PSCustomObject][ordered]@{
+                SchemaVersion = 1
+                Marker        = 'original'
+            }
+            $replacement = [PSCustomObject][ordered]@{
+                SchemaVersion = 1
+                Marker        = 'replacement'
+            }
+            Write-DefenderJsonArtifactAtomic -Name PhaseState `
+                -Path $path -InputObject $original | Out-Null
+            $lease = [System.IO.File]::Open(
+                $path,
+                [System.IO.FileMode]::Open,
+                [System.IO.FileAccess]::Read,
+                [System.IO.FileShare]::Read)
+            try {
+                {
+                    Write-DefenderJsonArtifactAtomic -Name PhaseState `
+                        -Path $path -InputObject $replacement
+                } | Should -Throw
+            } finally {
+                $lease.Dispose()
+            }
+
+            $restored = Read-DefenderJsonArtifact -Name PhaseState `
+                -Path $path
+            $restored.Marker | Should -Be 'original'
+            @(Get-ChildItem -LiteralPath $TestDrive `
+                -Filter '.atomic-phase-state.json.*.tmp').Count |
+                Should -Be 0
+        }
+    }
+
     Describe 'Runtime directory preflight' {
         BeforeAll {
             function New-TestRuntimeDirectoryAcl {
@@ -841,6 +1033,19 @@ InModuleScope DisableDefender {
             Mock Assert-DefenderRuntimeDirectory {}
             Mock Initialize-Priv {}
             Mock Write-Log {}
+        }
+
+        It 'atomically replaces and read-verifies an existing ACL journal' {
+            $journal = New-TestAclJournal
+            $journal.Document.Entries[0].Stage = 'BaselineCaptured'
+
+            Write-DefenderAclBackupDocument -Document $journal.Document |
+                Out-Null
+            $restored = Read-DefenderAclBackupArtifact -Path $journal.Path
+
+            $restored.Entries[0].Stage | Should -Be 'BaselineCaptured'
+            @(Get-ChildItem -LiteralPath $TestDrive `
+                -Filter '.acl-backup-*.bak' -File).Count | Should -Be 0
         }
 
         It 'records an absent backup as not applicable' {
@@ -1650,6 +1855,7 @@ InModuleScope DisableDefender {
             { Confirm-RemoveKnownBadOverrides } | Should -Throw -ExpectedMessage '*DomainJoined*'
 
             $tripwire = Get-Content -LiteralPath (Join-Path $TestDrive 'tripwire.jsonl') | Select-Object -Last 1 | ConvertFrom-Json
+            $tripwire.SchemaVersion | Should -Be 1
             $tripwire.Name | Should -Be 'DomainJoined'
             $tripwire.Mode | Should -Be 'Remove'
             $tripwire.Blocked | Should -Be $true
@@ -3503,15 +3709,20 @@ InModuleScope DisableDefender {
                     -ModuleManifestPath (Join-Path $TestDrive 'DisableDefender.psd1') `
                     -IncludeMDE -Force -RebootDelay 12
                 Save-DefenderSafeModeTransaction -State $state | Out-Null
+                $state.Stage = 'SafeBootConfigured'
+                Save-DefenderSafeModeTransaction -State $state | Out-Null
 
                 $restored = Read-DefenderSafeModeTransaction
 
                 $restored.SchemaVersion | Should -Be 1
                 $restored.TransactionId | Should -Be $state.TransactionId
-                $restored.Stage | Should -Be 'Preparing'
+                $restored.Stage | Should -Be 'SafeBootConfigured'
                 $restored.Options.IncludeMDE | Should -Be $true
                 $restored.Options.Force | Should -Be $true
                 $restored.Options.RebootDelay | Should -Be 12
+                @(Get-ChildItem -LiteralPath $TestDrive `
+                    -Filter '.safe-mode-transaction-*.bak' -File).Count |
+                    Should -Be 0
             } finally {
                 $script:AppDir = $previousAppDir
             }
@@ -3943,6 +4154,32 @@ InModuleScope DisableDefender {
             $added = $result.Diffs | Where-Object { $_.Change -eq 'Added' }
             $added.Name | Should -Contain 'NewPolicy'
         }
+
+        It 'rejects a future snapshot schema before comparison' {
+            $future = [ordered]@{
+                SchemaVersion = 999
+                Timestamp     = '2026-07-29T12:00:00+00:00'
+                Version       = '9.9.9'
+                HealthItems   = @()
+            }
+            $current = [ordered]@{
+                SchemaVersion = 1
+                Timestamp     = '2026-07-29T12:01:00+00:00'
+                Version       = '0.0.40'
+                HealthItems   = @()
+            }
+            $futurePath = Join-Path $TestDrive 'future-snapshot.json'
+            $currentPath = Join-Path $TestDrive 'current-snapshot.json'
+            $future | ConvertTo-Json |
+                Set-Content -LiteralPath $futurePath -Encoding UTF8
+            $current | ConvertTo-Json |
+                Set-Content -LiteralPath $currentPath -Encoding UTF8
+
+            {
+                Compare-DefenderSnapshots -BaselinePath $futurePath `
+                    -CurrentPath $currentPath
+            } | Should -Throw -ExpectedMessage '*unsupported future schema*'
+        }
     }
 }
 
@@ -4075,6 +4312,27 @@ InModuleScope DisableDefender {
                 $entries | Should -Contain 'summary.json'
                 $entries | Should -Contain 'health.json'
                 $entries | Should -Contain 'components.json'
+                foreach ($name in @(
+                    'summary.json','health.json','components.json')) {
+                    $entry = $zip.GetEntry($name)
+                    $reader = New-Object System.IO.StreamReader($entry.Open())
+                    try {
+                        $document = $reader.ReadToEnd() | ConvertFrom-Json
+                    } finally {
+                        $reader.Dispose()
+                    }
+                    $document.SchemaVersion | Should -Be 1
+                }
+                $healthEntry = $zip.GetEntry('health.json')
+                $healthReader = New-Object System.IO.StreamReader(
+                    $healthEntry.Open())
+                try {
+                    $healthDocument = $healthReader.ReadToEnd() |
+                        ConvertFrom-Json
+                } finally {
+                    $healthReader.Dispose()
+                }
+                $healthDocument.Data.Target | Should -Be 'Disable'
             } finally {
                 $zip.Dispose()
             }

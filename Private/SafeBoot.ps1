@@ -53,9 +53,8 @@ function Assert-DefenderSafeModeTransactionState {
             throw "Safe Mode transaction is missing required property '$property'."
         }
     }
-    if ([int]$State.SchemaVersion -ne 1) {
-        throw "Unsupported Safe Mode transaction schema version: $($State.SchemaVersion)"
-    }
+    Assert-DefenderArtifactSchemaVersion -Name SafeModeTransaction `
+        -InputObject $State | Out-Null
     try {
         $transactionId = [guid]$State.TransactionId
     } catch {
@@ -119,17 +118,35 @@ function Save-DefenderSafeModeTransaction {
 
     $temporaryPath = Join-Path (Split-Path -Parent $path) (
         '.safe-mode-transaction-{0:N}.tmp' -f [guid]::NewGuid())
+    $backupPath = Join-Path (Split-Path -Parent $path) (
+        '.safe-mode-transaction-{0:N}.bak' -f [guid]::NewGuid())
+    $verifiedWrite = $false
     try {
+        Assert-DefenderRuntimePathComponents `
+            -RuntimeRoot ([System.IO.Path]::GetFullPath($script:AppDir)) `
+            -Path $temporaryPath
+        Assert-DefenderRuntimePathComponents `
+            -RuntimeRoot ([System.IO.Path]::GetFullPath($script:AppDir)) `
+            -Path $backupPath
         [System.IO.File]::WriteAllBytes($temporaryPath, $bytes)
         if (Test-Path -LiteralPath $path) {
             Assert-DefenderRuntimePathComponents `
                 -RuntimeRoot ([System.IO.Path]::GetFullPath($script:AppDir)) -Path $path
-            [System.IO.File]::Replace($temporaryPath, $path, $null, $true)
+            [System.IO.File]::Replace($temporaryPath, $path, $backupPath, $true)
         } else {
             [System.IO.File]::Move($temporaryPath, $path)
         }
+        $verified = Read-DefenderSafeModeTransaction
+        if ([string]$verified.TransactionId -ne [string]$State.TransactionId -or
+            [string]$verified.Stage -ne [string]$State.Stage) {
+            throw 'Safe Mode transaction readback did not match the written state.'
+        }
+        $verifiedWrite = $true
     } finally {
         Remove-Item -LiteralPath $temporaryPath -Force -ErrorAction SilentlyContinue
+        if ($verifiedWrite) {
+            Remove-Item -LiteralPath $backupPath -Force -ErrorAction SilentlyContinue
+        }
     }
     return $path
 }
@@ -163,7 +180,7 @@ function New-DefenderSafeModeTransaction {
 
     $timestamp = (Get-Date).ToString('o')
     return [PSCustomObject][ordered]@{
-        SchemaVersion       = 1
+        SchemaVersion       = Get-DefenderArtifactSchemaVersion -Name SafeModeTransaction
         TransactionId       = [guid]::NewGuid().ToString('D')
         Stage               = 'Preparing'
         Created             = $timestamp
@@ -421,12 +438,17 @@ function Test-DefenderSafeModeOperationResult {
     param([Parameter(Mandatory)]$OperationResult)
 
     if ($OperationResult.PSObject.Properties.Name -notcontains 'SchemaVersion' -or
-        [int]$OperationResult.SchemaVersion -ne 1 -or
         $OperationResult.PSObject.Properties.Name -notcontains 'Ok' -or
         -not [bool]$OperationResult.Ok -or
         $OperationResult.PSObject.Properties.Name -notcontains 'Succeeded' -or
         -not [bool]$OperationResult.Succeeded -or
         [string]$OperationResult.Mode -ne 'Remove') {
+        return $false
+    }
+    try {
+        Assert-DefenderArtifactSchemaVersion -Name OperationResult `
+            -InputObject $OperationResult | Out-Null
+    } catch {
         return $false
     }
     $effects = @($OperationResult.Phases | ForEach-Object { @($_.Result.Effects) })

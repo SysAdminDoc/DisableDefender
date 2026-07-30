@@ -35,6 +35,7 @@ function New-DefenderErrorEnvelope {
     $mapping = Get-DefenderErrorMapping -Message $Message
 
     return [ordered]@{
+        SchemaVersion  = Get-DefenderArtifactSchemaVersion -Name ErrorEnvelope
         Ok             = $false
         Mode           = if ($Mode) { $Mode } else { $null }
         ExitCode       = $mapping.ExitCode

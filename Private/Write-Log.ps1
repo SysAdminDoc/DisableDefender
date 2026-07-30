@@ -18,9 +18,10 @@ function Write-Log {
     $jsonlTarget = Join-Path $jsonlDir "$script:AppName.jsonl"
     try {
         $jsonEntry = [ordered]@{
-            ts    = $now.ToString('o')
-            level = $Level
-            msg   = $Message
+            SchemaVersion = Get-DefenderArtifactSchemaVersion -Name StructuredLogEntry
+            ts            = $now.ToString('o')
+            level         = $Level
+            msg           = $Message
         } | ConvertTo-Json -Compress
         Add-Content -LiteralPath $jsonlTarget -Value $jsonEntry -ErrorAction Stop
     } catch {}

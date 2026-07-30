@@ -15,7 +15,7 @@ function Get-DefenderSafeModeStatus {
     $state = Read-DefenderSafeModeTransaction
     if ($null -eq $state) {
         $status = [PSCustomObject][ordered]@{
-            SchemaVersion          = 1
+            SchemaVersion          = Get-DefenderArtifactSchemaVersion -Name SafeModeStatus
             TransactionSchema      = $null
             TransactionId          = $null
             Stage                  = 'Idle'
@@ -58,7 +58,7 @@ function Get-DefenderSafeModeStatus {
             default { 'None' }
         }
         $status = [PSCustomObject][ordered]@{
-            SchemaVersion           = 1
+            SchemaVersion           = Get-DefenderArtifactSchemaVersion -Name SafeModeStatus
             TransactionSchema       = [int]$state.SchemaVersion
             TransactionId           = [string]$state.TransactionId
             Stage                   = [string]$state.Stage

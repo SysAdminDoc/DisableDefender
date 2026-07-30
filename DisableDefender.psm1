@@ -7,6 +7,7 @@ $moduleRoot = $PSScriptRoot
 
 # Dot-source all private functions (order matters: Variables, runtime preflight, then Write-Log)
 . "$moduleRoot\Private\Variables.ps1"
+. "$moduleRoot\Private\ArtifactSchema.ps1"
 . "$moduleRoot\Private\RuntimeDirectory.ps1"
 Initialize-DefenderRuntimeDirectory -Path $script:AppDir | Out-Null
 . "$moduleRoot\Private\Write-Log.ps1"

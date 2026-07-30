@@ -9,7 +9,7 @@ function New-DefenderActionResult {
     )
 
     $result = [PSCustomObject][ordered]@{
-        SchemaVersion = 1
+        SchemaVersion = Get-DefenderArtifactSchemaVersion -Name ActionResult
         Name          = $Name
         Simulation    = [bool]$Simulation
         Attempted     = 0
@@ -132,6 +132,12 @@ function Test-DefenderActionResult {
             return $false
         }
     }
+    try {
+        Assert-DefenderArtifactSchemaVersion -Name ActionResult `
+            -InputObject $Value | Out-Null
+    } catch {
+        return $false
+    }
     return $true
 }
 
@@ -170,7 +176,7 @@ function New-DefenderOperationResult {
         }
     })
     $operation = [PSCustomObject][ordered]@{
-        SchemaVersion  = 1
+        SchemaVersion  = Get-DefenderArtifactSchemaVersion -Name OperationResult
         Ok             = $true
         Succeeded      = $true
         Mode           = $Mode

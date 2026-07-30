@@ -114,7 +114,7 @@ function Get-DefenderLikePackages {
 
 function Get-DefenderSurfaceSnapshot {
     return [pscustomobject][ordered]@{
-        SchemaVersion = 1
+        SchemaVersion = Get-DefenderArtifactSchemaVersion -Name SurfaceBaseline
         Generated     = (Get-Date).ToString('o')
         WindowsBuild  = Get-DefenderWindowsBuildInfo
         Services      = @(Get-DefenderLikeServices)
@@ -131,18 +131,15 @@ function Save-DefenderSurfaceBaseline {
     $snapshot | Add-Member -NotePropertyName Mode -NotePropertyValue $Mode -Force
     $path = Get-DefenderSurfaceBaselinePath
     Assert-DefenderRuntimeDirectory -Path (Split-Path -Parent $path)
-    $snapshot | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $path -Encoding UTF8
+    Write-DefenderJsonArtifactAtomic -Name SurfaceBaseline -Path $path `
+        -InputObject $snapshot -Depth 8 | Out-Null
     Write-Log "Defender surface baseline saved to $path" DEBUG
 }
 
 function Read-DefenderSurfaceBaseline {
     $path = Get-DefenderSurfaceBaselinePath
     if (-not (Test-Path -LiteralPath $path)) { return $null }
-    try {
-        return (Get-Content -Raw -LiteralPath $path -ErrorAction Stop | ConvertFrom-Json)
-    } catch {
-        return $null
-    }
+    return (Read-DefenderJsonArtifact -Name SurfaceBaseline -Path $path)
 }
 
 function Get-DefenderReapplyPlan {

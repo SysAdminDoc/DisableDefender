@@ -116,7 +116,8 @@ function Get-RestoreManifestActionSchema {
         [Parameter(Mandatory)][int]$SchemaVersion
     )
 
-    if ($SchemaVersion -ne 1) {
+    if ($SchemaVersion -ne
+        (Get-DefenderArtifactSchemaVersion -Name RestoreManifestEntry)) {
         throw "Unsupported restore manifest action schema version $SchemaVersion."
     }
 
@@ -467,8 +468,11 @@ function Assert-RestoreManifestEntry {
     Assert-RestoreManifestProperties -InputObject $Entry -Required $entryProperties `
         -Allowed $entryProperties -Context "Restore manifest line $LineNumber"
 
-    if ([int]$Entry.SchemaVersion -ne 1) {
-        throw "Restore manifest line $LineNumber has unsupported schema version $($Entry.SchemaVersion)."
+    try {
+        Assert-DefenderArtifactSchemaVersion -Name RestoreManifestEntry `
+            -InputObject $Entry | Out-Null
+    } catch {
+        throw "Restore manifest line $LineNumber has unsupported schema: $($_.Exception.Message)"
     }
 
     try { [void][guid]$Entry.RunId } catch {
@@ -687,7 +691,7 @@ function Write-RestoreManifestEntry {
 
     $nextSequence = $script:RestoreManifestSequence + 1
     $entry = [ordered]@{
-        SchemaVersion = 1
+        SchemaVersion = Get-DefenderArtifactSchemaVersion -Name RestoreManifestEntry
         RunId         = $script:RestoreManifestRunId
         Sequence      = $nextSequence
         Timestamp     = (Get-Date).ToString('o')
@@ -1258,9 +1262,8 @@ function Assert-RestoreReplayState {
     )
     Assert-RestoreManifestProperties -InputObject $State -Required $properties `
         -Allowed $properties -Context 'Restore replay state'
-    if ([int]$State.SchemaVersion -ne 1) {
-        throw "Unsupported restore replay state schema version $($State.SchemaVersion)."
-    }
+    Assert-DefenderArtifactSchemaVersion -Name RestoreReplayState `
+        -InputObject $State | Out-Null
     try { [void][guid]$State.ReplayId } catch {
         throw "Restore replay state has an invalid ReplayId '$($State.ReplayId)'."
     }
@@ -1356,12 +1359,9 @@ function Save-RestoreReplayState {
     Assert-DefenderRuntimeDirectory -Path (Split-Path -Parent $path)
     $State.Updated = (Get-Date).ToString('o')
     Assert-RestoreReplayState -State $State
-    $temporaryPath = "$path.$([guid]::NewGuid().ToString('N')).tmp"
-    Assert-DefenderRuntimePathComponents -RuntimeRoot $script:AppDir -Path $temporaryPath
-    $json = $State | ConvertTo-Json -Depth 16
-    $encoding = New-Object System.Text.UTF8Encoding($false)
-    [System.IO.File]::WriteAllText($temporaryPath, $json, $encoding)
-    Move-Item -LiteralPath $temporaryPath -Destination $path -Force -ErrorAction Stop
+    Assert-DefenderRuntimePathComponents -RuntimeRoot $script:AppDir -Path $path
+    Write-DefenderJsonArtifactAtomic -Name RestoreReplayState -Path $path `
+        -InputObject $State -Depth 16 -MaximumBytes 1MB | Out-Null
 }
 
 function Read-RestoreReplayState {
@@ -1529,7 +1529,7 @@ function New-RestoreReplayState {
     )
 
     return [ordered]@{
-        SchemaVersion = 1
+        SchemaVersion = Get-DefenderArtifactSchemaVersion -Name RestoreReplayState
         ReplayId      = [guid]::NewGuid().ToString()
         Selection     = $Plan.Selection
         PlanSignature = $Plan.Signature

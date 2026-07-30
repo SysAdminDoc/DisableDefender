@@ -20,7 +20,7 @@ function ConvertTo-DefenderSafeModeTransactionSummary {
     )
 
     return [PSCustomObject][ordered]@{
-        SchemaVersion   = 1
+        SchemaVersion   = Get-DefenderArtifactSchemaVersion -Name SafeModeTransactionSummary
         TransactionId   = [string]$State.TransactionId
         Stage           = [string]$State.Stage
         StatePath       = Get-DefenderSafeModeTransactionPath

@@ -130,9 +130,8 @@ function Assert-DefenderAclBackupDocument {
         -Required @('SchemaVersion', 'RunId', 'Created', 'Updated', 'Entries') `
         -Allowed @('SchemaVersion', 'RunId', 'Created', 'Updated', 'Entries') `
         -Context 'Registry ACL journal'
-    if ([int]$Document.SchemaVersion -ne 1) {
-        throw "Unsupported registry ACL journal schema version: $($Document.SchemaVersion)"
-    }
+    Assert-DefenderArtifactSchemaVersion -Name RegistryAclJournal `
+        -InputObject $Document | Out-Null
     try {
         $runId = [guid]$Document.RunId
     } catch {
@@ -222,7 +221,7 @@ function New-DefenderAclBackupDocument {
 
     $timestamp = (Get-Date).ToString('o')
     return [PSCustomObject][ordered]@{
-        SchemaVersion = 1
+        SchemaVersion = Get-DefenderArtifactSchemaVersion -Name RegistryAclJournal
         RunId         = ([guid]$RunId).ToString('D')
         Created       = $timestamp
         Updated       = $timestamp
@@ -327,9 +326,13 @@ function Write-DefenderAclBackupDocument {
 
     $temporaryPath = Join-Path $script:AppDir (
         '.acl-backup-{0:N}.tmp' -f [guid]::NewGuid())
+    $backupPath = Join-Path $script:AppDir (
+        '.acl-backup-{0:N}.bak' -f [guid]::NewGuid())
+    $verifiedWrite = $false
     $stream = $null
     try {
         Assert-DefenderRuntimePathComponents -RuntimeRoot $script:AppDir -Path $temporaryPath
+        Assert-DefenderRuntimePathComponents -RuntimeRoot $script:AppDir -Path $backupPath
         $stream = [System.IO.File]::Open(
             $temporaryPath,
             [System.IO.FileMode]::CreateNew,
@@ -342,7 +345,7 @@ function Write-DefenderAclBackupDocument {
 
         if (Test-Path -LiteralPath $path) {
             Assert-DefenderRuntimePathComponents -RuntimeRoot $script:AppDir -Path $path
-            [System.IO.File]::Replace($temporaryPath, $path, $null, $true)
+            [System.IO.File]::Replace($temporaryPath, $path, $backupPath, $true)
         } else {
             [System.IO.File]::Move($temporaryPath, $path)
         }
@@ -352,10 +355,14 @@ function Write-DefenderAclBackupDocument {
             @($verified.Entries).Count -ne @($Document.Entries).Count) {
             throw 'Registry ACL journal readback did not match the written document.'
         }
+        $verifiedWrite = $true
         return $path
     } finally {
         if ($null -ne $stream) { $stream.Dispose() }
         Remove-Item -LiteralPath $temporaryPath -Force -ErrorAction SilentlyContinue
+        if ($verifiedWrite) {
+            Remove-Item -LiteralPath $backupPath -Force -ErrorAction SilentlyContinue
+        }
     }
 }
 

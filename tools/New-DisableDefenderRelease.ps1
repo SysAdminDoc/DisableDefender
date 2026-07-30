@@ -390,6 +390,7 @@ try {
 
     $finalZip = Join-Path $fullOutput $zipName
     $metadata = [PSCustomObject][ordered]@{
+        SchemaVersion   = 1
         Version         = $Version
         BuiltAt         = (Get-Date).ToString('o')
         ZipPath         = $finalZip

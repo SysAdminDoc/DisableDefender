@@ -1,0 +1,42 @@
+{
+  "FixtureVersion": 1,
+  "Current": [
+    { "Name": "ActionResult", "SchemaVersion": 1 },
+    { "Name": "OperationResult", "SchemaVersion": 1 },
+    { "Name": "RestoreManifestEntry", "SchemaVersion": 1 },
+    { "Name": "RestoreReplayState", "SchemaVersion": 1 },
+    { "Name": "PhaseState", "SchemaVersion": 1 },
+    { "Name": "RegistryAclJournal", "SchemaVersion": 1 },
+    { "Name": "SafeModeTransaction", "SchemaVersion": 1 },
+    { "Name": "SafeModeTransactionSummary", "SchemaVersion": 1 },
+    { "Name": "SafeModeStatus", "SchemaVersion": 1 },
+    { "Name": "ErrorEnvelope", "SchemaVersion": 1 },
+    { "Name": "SurfaceBaseline", "SchemaVersion": 1 },
+    { "Name": "DefenderSnapshot", "SchemaVersion": 1 },
+    { "Name": "StructuredLogEntry", "SchemaVersion": 1 },
+    { "Name": "SafetyTripwireEntry", "SchemaVersion": 1 },
+    { "Name": "SupportBundleSummary", "SchemaVersion": 1 },
+    { "Name": "SupportBundleHealth", "SchemaVersion": 1 },
+    { "Name": "SupportBundleComponents", "SchemaVersion": 1 },
+    { "Name": "SupportBundleEvents", "SchemaVersion": 1 },
+    { "Name": "ReleaseMetadata", "SchemaVersion": 1 }
+  ],
+  "Legacy": [
+    { "Name": "RegistryAclJournal", "Format": "LegacyClixmlV0" },
+    { "Name": "StructuredLogEntry", "Format": "UnversionedJsonl" },
+    { "Name": "SafetyTripwireEntry", "Format": "UnversionedJsonl" },
+    { "Name": "SupportBundleSummary", "Format": "UnversionedJson" },
+    { "Name": "SupportBundleHealth", "Format": "UnversionedJson" },
+    { "Name": "SupportBundleComponents", "Format": "UnversionedJson" },
+    { "Name": "SupportBundleEvents", "Format": "UnversionedJson" },
+    { "Name": "ReleaseMetadata", "Format": "UnversionedJson" },
+    { "Name": "ErrorEnvelope", "Format": "UnversionedJson" }
+  ],
+  "Future": [
+    { "Name": "PhaseState", "SchemaVersion": 999 },
+    { "Name": "RestoreManifestEntry", "SchemaVersion": 999 },
+    { "Name": "RegistryAclJournal", "SchemaVersion": 999 },
+    { "Name": "SafeModeTransaction", "SchemaVersion": 999 },
+    { "Name": "DefenderSnapshot", "SchemaVersion": 999 }
+  ]
+}

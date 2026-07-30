@@ -331,6 +331,15 @@ v0.0.2 fixed a false-positive where `SharedAccess` (ICS, off by default) tripped
 - `%ProgramData%\DisableDefender\safe-mode-transaction.json`
 - `%ProgramData%\DisableDefender\tripwire.jsonl`
 
+## Persisted artifact compatibility
+
+`Private\ArtifactSchema.ps1` is the single compatibility registry. As of 2026-07-29, restore-manifest entries, replay and phase state, ACL journals, Safe Mode state, surface baselines, snapshots, operation results, JSONL logs/tripwires, support-bundle documents, error envelopes, and release metadata each have an independent schema at version 1.
+
+- Mutation-critical readers reject missing, retired, or unknown future versions before use and include upgrade/migration guidance.
+- Current JSON files are flushed and published by same-directory atomic replacement; a failed replacement leaves the prior artifact intact.
+- Legacy `acl-backup.clixml` journals remain constrained and read-only until verified replay archives them. Existing unversioned JSONL logs, tripwires, support documents, error envelopes, and release metadata are recognized as legacy inputs without rewriting the originals.
+- `Tests\Fixtures\artifact-schemas.json` is the golden current/legacy/future compatibility matrix.
+
 ## License
 
 MIT. See [LICENSE](LICENSE).

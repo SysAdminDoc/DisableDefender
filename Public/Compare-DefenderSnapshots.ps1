@@ -21,7 +21,7 @@ function Save-DefenderSnapshot {
     }
 
     $snapshot = [ordered]@{
-        SchemaVersion = 1
+        SchemaVersion = Get-DefenderArtifactSchemaVersion -Name DefenderSnapshot
         Timestamp     = (Get-Date).ToString('o')
         Version       = $script:Version
     }
@@ -64,7 +64,8 @@ function Save-DefenderSnapshot {
         $snapshot.Status = $null
     }
 
-    $snapshot | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $OutputPath -Encoding UTF8
+    Write-DefenderJsonArtifactAtomic -Name DefenderSnapshot `
+        -Path $OutputPath -InputObject $snapshot -Depth 8 | Out-Null
     Write-Log "Snapshot saved: $OutputPath" OK
 
     return [PSCustomObject]@{
@@ -72,6 +73,16 @@ function Save-DefenderSnapshot {
         Timestamp    = $snapshot.Timestamp
         ItemCount    = $snapshot.HealthItems.Count
     }
+}
+
+function Read-DefenderSnapshotArtifact {
+    param([Parameter(Mandatory)][string]$Path)
+
+    $snapshot = Read-DefenderJsonArtifact -Name DefenderSnapshot -Path $Path
+    if ($null -eq $snapshot.HealthItems) {
+        throw "Defender snapshot is missing HealthItems: $Path"
+    }
+    return $snapshot
 }
 
 function Compare-DefenderSnapshots {
@@ -100,25 +111,19 @@ function Compare-DefenderSnapshots {
     if (-not (Test-Path -LiteralPath $BaselinePath)) {
         throw "Baseline snapshot not found: $BaselinePath"
     }
-    $baseline = Get-Content -Raw -LiteralPath $BaselinePath | ConvertFrom-Json
-    if ($null -eq $baseline.HealthItems) {
-        throw "Baseline snapshot is missing HealthItems: $BaselinePath"
-    }
+    $baseline = Read-DefenderSnapshotArtifact -Path $BaselinePath
 
     $current = $null
     if ($CurrentPath) {
         if (-not (Test-Path -LiteralPath $CurrentPath)) {
             throw "Current snapshot not found: $CurrentPath"
         }
-        $current = Get-Content -Raw -LiteralPath $CurrentPath | ConvertFrom-Json
-        if ($null -eq $current.HealthItems) {
-            throw "Current snapshot is missing HealthItems: $CurrentPath"
-        }
+        $current = Read-DefenderSnapshotArtifact -Path $CurrentPath
     } else {
         $tempPath = Join-Path $env:TEMP "dd-snapshot-compare-$([guid]::NewGuid().ToString('N')).json"
         try {
             Save-DefenderSnapshot -OutputPath $tempPath | Out-Null
-            $current = Get-Content -Raw -LiteralPath $tempPath | ConvertFrom-Json
+            $current = Read-DefenderSnapshotArtifact -Path $tempPath
         } finally {
             Remove-Item -LiteralPath $tempPath -Force -ErrorAction SilentlyContinue
         }
