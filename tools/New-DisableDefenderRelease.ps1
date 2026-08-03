@@ -273,7 +273,81 @@ function Publish-ReleaseArtifact {
     [IO.File]::Move($Source, $Destination)
 }
 
+function Get-ReleaseSourceProvenance {
+    param(
+        [Parameter(Mandatory)][string]$RepositoryRoot,
+        [Parameter(Mandatory)][string[]]$ReleasePaths
+    )
+
+    $result = [ordered]@{
+        Commit = $null
+        Status = 'Unavailable'
+    }
+    $gitCommand = Get-Command git.exe -ErrorAction SilentlyContinue
+    if ($null -eq $gitCommand) {
+        $gitCommand = Get-Command git -ErrorAction SilentlyContinue
+    }
+    if ($null -eq $gitCommand) { return [PSCustomObject]$result }
+
+    $commitOutput = @(
+        & $gitCommand.Source -C $RepositoryRoot rev-parse --verify HEAD 2>$null)
+    if ($LASTEXITCODE -ne 0 -or $commitOutput.Count -ne 1 -or
+        [string]$commitOutput[0] -notmatch '^[0-9a-fA-F]{40}$') {
+        return [PSCustomObject]$result
+    }
+    $result.Commit = ([string]$commitOutput[0]).ToLowerInvariant()
+
+    $statusArguments = @(
+        '-C', $RepositoryRoot, 'status', '--porcelain=v1',
+        '--untracked-files=all', '--'
+    ) + @($ReleasePaths)
+    $statusOutput = @(& $gitCommand.Source @statusArguments 2>$null)
+    if ($LASTEXITCODE -eq 0) {
+        $result.Status = if ($statusOutput.Count -eq 0) {
+            'Clean'
+        } else {
+            'Modified'
+        }
+    }
+    return [PSCustomObject]$result
+}
+
 $repoRoot = ConvertTo-ReleaseFullPath -Path (Split-Path -Parent $PSScriptRoot)
+$releaseConfigPath = Join-Path $PSScriptRoot 'ReleaseGate.psd1'
+if (-not (Test-Path -LiteralPath $releaseConfigPath -PathType Leaf)) {
+    throw "Release gate configuration not found: $releaseConfigPath"
+}
+$releaseConfig = Import-PowerShellDataFile -LiteralPath $releaseConfigPath
+if ([int]$releaseConfig.SchemaVersion -ne 1) {
+    throw "Unsupported release gate configuration schema: $($releaseConfig.SchemaVersion)"
+}
+if ([int]$releaseConfig.ReleaseMetadataSchemaVersion -lt 1) {
+    throw 'Release metadata schema version must be positive.'
+}
+$releasePaths = @($releaseConfig.ReleasePaths)
+if ($releasePaths.Count -lt 1) {
+    throw 'Release gate configuration has no release paths.'
+}
+foreach ($releasePath in $releasePaths) {
+    if ([string]::IsNullOrWhiteSpace([string]$releasePath) -or
+        [IO.Path]::IsPathRooted([string]$releasePath) -or
+        @(([string]$releasePath -split '[\\/]')) -contains '..') {
+        throw "Release path is not a safe repository-relative path: $releasePath"
+    }
+}
+try {
+    $archiveTimestamp = [DateTimeOffset]::Parse(
+        [string]$releaseConfig.ArchiveTimestampUtc,
+        [Globalization.CultureInfo]::InvariantCulture,
+        [Globalization.DateTimeStyles]::AssumeUniversal -bor
+            [Globalization.DateTimeStyles]::AdjustToUniversal)
+} catch {
+    throw "Release archive timestamp is invalid: $($releaseConfig.ArchiveTimestampUtc)"
+}
+if ($archiveTimestamp.Year -lt 1980) {
+    throw 'Release archive timestamp must be representable by the ZIP format.'
+}
+
 $manifestPath = Join-Path $repoRoot 'DisableDefender.psd1'
 if (-not (Test-Path -LiteralPath $manifestPath)) {
     throw "Module manifest not found: $manifestPath"
@@ -330,6 +404,8 @@ if (-not $outputExists) {
 Assert-ReleasePathHasNoReparsePoint -Path $fullOutput
 $outputIdentity = Get-ReleaseDirectoryIdentity -Path $fullOutput
 
+$sourceProvenance = Get-ReleaseSourceProvenance `
+    -RepositoryRoot $repoRoot -ReleasePaths $releasePaths
 $stageRoot = Join-Path $fullOutput ('.DisableDefender-stage-' + [guid]::NewGuid().ToString('N'))
 if (Test-Path -LiteralPath $stageRoot) {
     throw "Unique release stage already exists: $stageRoot"
@@ -342,28 +418,18 @@ try {
     $packageRoot = Join-Path $stageRoot "DisableDefender-v$Version"
     [IO.Directory]::CreateDirectory($packageRoot) | Out-Null
 
-    $releasePaths = @(
-        'Private',
-        'Public',
-        'Tests',
-        'tools',
-        'DisableDefender.GUI.bat',
-        'DisableDefender.GUI.ps1',
-        'DisableDefender.ps1',
-        'DisableDefender.psd1',
-        'DisableDefender.psm1',
-        'PSScriptAnalyzerSettings.psd1',
-        'README.md',
-        'CHANGELOG.md',
-        'LICENSE'
-    )
-
     foreach ($item in $releasePaths) {
         $source = Join-Path $repoRoot $item
         if (-not (Test-Path -LiteralPath $source)) {
             throw "Release input missing: $source"
         }
         Copy-Item -LiteralPath $source -Destination $packageRoot -Recurse -Force
+    }
+    foreach ($archiveItem in @(
+        Get-Item -LiteralPath $packageRoot -Force
+        Get-ChildItem -LiteralPath $packageRoot -Recurse -Force
+    )) {
+        $archiveItem.LastWriteTimeUtc = $archiveTimestamp.UtcDateTime
     }
 
     $zipName = "DisableDefender-v$Version.zip"
@@ -390,13 +456,17 @@ try {
 
     $finalZip = Join-Path $fullOutput $zipName
     $metadata = [PSCustomObject][ordered]@{
-        SchemaVersion   = 1
-        Version         = $Version
-        BuiltAt         = (Get-Date).ToString('o')
-        ZipPath         = $finalZip
-        Sha256          = $hash
-        SignatureStatus = 'Unsigned'
-        SignedFiles     = @()
+        SchemaVersion      = [int]$releaseConfig.ReleaseMetadataSchemaVersion
+        Version            = $Version
+        BuiltAt            = (Get-Date).ToString('o')
+        ZipPath            = $finalZip
+        HashManifestPath   = Join-Path $fullOutput $hashName
+        Sha256             = $hash
+        SourceCommit       = $sourceProvenance.Commit
+        SourceTreeStatus   = $sourceProvenance.Status
+        ArchiveTimestampUtc = $archiveTimestamp.ToString('o')
+        SignatureStatus    = 'Unsigned'
+        SignedFiles        = @()
     }
     $metadata | ConvertTo-Json -Depth 8 |
         Set-Content -LiteralPath $stagedMetadata -Encoding UTF8

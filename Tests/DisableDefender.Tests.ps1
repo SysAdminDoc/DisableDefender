@@ -41,6 +41,8 @@ Describe 'Local release build' {
         $script:ReleaseRepoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
         $script:ReleaseVersion = [string](Test-ModuleManifest -Path $script:ModuleManifest).Version
         $script:ReleaseBuilder = Join-Path $PSScriptRoot '..\tools\New-DisableDefenderRelease.ps1'
+        $script:ReleaseGateConfig = Import-PowerShellDataFile -LiteralPath (
+            Join-Path $PSScriptRoot '..\tools\ReleaseGate.psd1')
     }
 
     It 'builds an unsigned release zip with hash and metadata' {
@@ -50,11 +52,17 @@ Describe 'Local release build' {
             -OutputDirectory $output -SkipSigning
 
         Test-Path -LiteralPath $metadata.ZipPath | Should -Be $true
-        Test-Path -LiteralPath "$($metadata.ZipPath).sha256" | Should -Be $true
+        Test-Path -LiteralPath $metadata.HashManifestPath | Should -Be $true
         Test-Path -LiteralPath (Join-Path $output "DisableDefender-v$($script:ReleaseVersion).release.json") |
             Should -Be $true
         $metadata.SignatureStatus | Should -Be 'Unsigned'
         $metadata.SchemaVersion | Should -Be 1
+        $metadata.SourceCommit | Should -Match '^[0-9a-f]{40}$'
+        $metadata.SourceTreeStatus | Should -BeIn @('Clean', 'Modified')
+        [DateTimeOffset]$metadata.ArchiveTimestampUtc |
+            Should -Be ([DateTimeOffset]$script:ReleaseGateConfig.ArchiveTimestampUtc)
+        (Get-Content -Raw -LiteralPath $metadata.HashManifestPath).Trim() |
+            Should -Be "$($metadata.Sha256)  $([IO.Path]::GetFileName($metadata.ZipPath))"
         $persistedMetadata = Get-Content -Raw -LiteralPath (
             Join-Path $output "DisableDefender-v$($script:ReleaseVersion).release.json") |
             ConvertFrom-Json
@@ -67,11 +75,43 @@ Describe 'Local release build' {
         try {
             $entries = @($zip.Entries | ForEach-Object { $_.FullName.Replace('\','/') })
             $entries | Should -Contain 'tools/New-DisableDefenderRelease.ps1'
+            $entries | Should -Contain 'tools/ReleaseGate.psd1'
             $entries | Should -Not -Contain 'ROADMAP.md'
             $entries | Should -Not -Contain 'RESEARCH.md'
+            @($zip.Entries.LastWriteTime | Sort-Object -Unique).Count |
+                Should -Be 1
+            $zip.Entries[0].LastWriteTime |
+                Should -Be ([DateTimeOffset]$script:ReleaseGateConfig.ArchiveTimestampUtc)
         } finally {
             $zip.Dispose()
         }
+    }
+
+    It 'produces byte-identical archives from repeated builds' {
+        $first = & $script:ReleaseBuilder -Version $script:ReleaseVersion `
+            -OutputDirectory (Join-Path $TestDrive 'repro-first') `
+            -SkipSigning
+        $second = & $script:ReleaseBuilder -Version $script:ReleaseVersion `
+            -OutputDirectory (Join-Path $TestDrive 'repro-second') `
+            -SkipSigning
+
+        $first.Sha256 | Should -Be $second.Sha256
+        (Get-FileHash -Algorithm SHA256 -LiteralPath $first.ZipPath).Hash |
+            Should -Be (
+                Get-FileHash -Algorithm SHA256 -LiteralPath $second.ZipPath
+            ).Hash
+    }
+
+    It 'pins release dependencies and coverage in a versioned gate schema' {
+        $script:ReleaseGateConfig.SchemaVersion | Should -Be 1
+        ([version]$script:ReleaseGateConfig.PesterVersion).Major |
+            Should -Be 5
+        $script:ReleaseGateConfig.PSScriptAnalyzerVersion |
+            Should -Not -BeNullOrEmpty
+        $script:ReleaseGateConfig.MinimumPassedTests |
+            Should -BeGreaterOrEqual 218
+        $script:ReleaseGateConfig.MinimumCommandCoveragePercent |
+            Should -BeGreaterOrEqual 66.5
     }
 
     It 'refuses the repository root, protected source descendants, and prefix siblings' {

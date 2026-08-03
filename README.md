@@ -237,13 +237,15 @@ With `-Json`, fatal errors emit a stable object:
 
 ## Local release readiness check
 
-Verify the repo before a release:
+Build first, then run the strict local gate:
 ```powershell
+.\tools\New-DisableDefenderRelease.ps1
 .\tools\Test-ReleaseReadiness.ps1
-.\tools\Test-ReleaseReadiness.ps1 -SkipCoverage   # faster, no coverage report
 ```
 
-Checks manifest validation, module import, version consistency across all locations, Pester tests (with optional code coverage), ScriptAnalyzer (when installed), GUI parse, and release artifact presence.
+`tools\ReleaseGate.psd1` pins Pester 5.8.0, PSScriptAnalyzer 1.25.0, the minimum passed-test count, and the command-coverage ratchet. The gate fails when either dependency is missing, any source/module/CLI/GUI/README/changelog/archive version differs, artifact-schema fixtures drift, the exact ZIP/hash/metadata set is missing or stale, archive bytes differ from source, or coverage falls below the ratchet. It then builds from a fresh detached checkout and requires the clean build to reproduce the published ZIP SHA256 exactly.
+
+`-SkipCoverage`, `-SkipAnalyzer`, and `-SkipCleanBuild` exist only for explicitly partial development checks; output labels those runs as not full release qualification.
 
 ## Local release build and Smart App Control
 
@@ -252,7 +254,7 @@ Build the distributable locally:
 .\tools\New-DisableDefenderRelease.ps1
 ```
 
-The builder creates `dist\DisableDefender-vX.Y.Z.zip`, a `.sha256` file, and `DisableDefender-vX.Y.Z.release.json`. Releases are intentionally unsigned. Recursive cleanup is confined to a new identity-tracked stage under `dist`; repository roots, source directories, prefix-sharing siblings, existing temp directories, reparse points, and substituted paths are refused.
+The builder creates `dist\DisableDefender-vX.Y.Z.zip`, a `.sha256` hash manifest, and `DisableDefender-vX.Y.Z.release.json`. ZIP entry timestamps are normalized so identical committed source produces identical bytes across the working tree and detached checkout. Metadata records the source commit and whether release inputs differ from it. Releases are intentionally unsigned. Recursive cleanup is confined to a new identity-tracked stage under `dist`; repository roots, source directories, prefix-sharing siblings, existing temp directories, reparse points, and substituted paths are refused.
 
 Smart App Control can block unknown, unsigned, or low-reputation apps. See Microsoft’s [Smart App Control FAQ](https://support.microsoft.com/windows/smart-app-control-faq-285ea03d-fa88-4d56-882e-6698afdb7003). If SAC blocks the unsigned zip or launcher, extract manually, review the scripts, unblock the downloaded files if appropriate, and run from an elevated PowerShell session.
 
