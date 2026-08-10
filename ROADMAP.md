@@ -1,30 +1,23 @@
 # DisableDefender Roadmap
 
-Actionable work beyond v0.0.18. Completed work is removed. True blockers live in `Roadmap_Blocked.md`.
+Actionable work only. Historical and completed roadmap material is archived in CHANGELOG.md; blocked work is kept in Roadmap_Blocked.md.
 
-## P2 - GUI
+## Actionable Items
 
-- Toast and system tray notification on run completion with exit-code color.
+- [ ] Toast and system tray notification on run completion with exit-code color.
 
-## P2 - CLI And Coverage
-
-- Track new Windows 26H1/26H2 Defender surfaces as Microsoft ships them.
+- [ ] Track new Windows 26H1/26H2 Defender surfaces as Microsoft ships them.
   Research cross-reference (2026-07-29): publish an edition/build/architecture support matrix with an absolute last-validated date; distinguish Windows 10 consumer EOS, LTSC 2019, Windows 11 24H2/25H2, and new-device-only 26H1; keep README, changelog, and local VM coverage aligned.
 
-## P3 - Diagnostics
+- [ ] ETW subscription for `Microsoft-Windows-Windows Defender` during run to surface silent Defender reactions.
 
-- ETW subscription for `Microsoft-Windows-Windows Defender` during run to surface silent Defender reactions.
+- [ ] Fleet mode (`-ComputerName`) via WinRM with explicit opt-in for batch status collection.
 
-## P3 - Optional Tools
+- [ ] ADMX template that disables Defender via GPO for shops that prefer GPO-first.
 
-- Fleet mode (`-ComputerName`) via WinRM with explicit opt-in for batch status collection.
-- ADMX template that disables Defender via GPO for shops that prefer GPO-first.
-- Integration hook with DefenderShield so the DisableDefender undo manifest wins.
-- "Disable everything except cloud sample submission" preset for users who want cloud reputation lookups but no local scanning.
+- [ ] Integration hook with DefenderShield so the DisableDefender undo manifest wins.
 
-## Research-Driven Additions
-
-### P1
+- [ ] "Disable everything except cloud sample submission" preset for users who want cloud reputation lookups but no local scanning.
 
 - [ ] P1 — Build and gate releases from a clean checkout
   Why: The documented release depends on an untracked builder and the 2026-07-29 gate accepts stale ZIPs, missing test tools, and unratcheted coverage.
@@ -61,8 +54,6 @@ Actionable work beyond v0.0.18. Completed work is removed. True blockers live in
   Acceptance: Disposable images cover Windows 10 LTSC 2019 and supported Windows 11 releases/architectures available to maintainers with PowerShell 5.1 and 7; each destructive phase has pre/effect/restore assertions, Firewall invariants, injected interruption points, and retained machine-readable evidence; no hosted CI or signing is introduced.
   Complexity: XL
 
-### P2
-
 - [ ] P2 — Add a GUI recovery and diagnostics hub
   Why: The GUI hides manifest selection, target-aware Health, phase resume state, snapshots/diff, reapply plans, support/report export, and failed-effect evidence needed to recover safely.
   Evidence: `DisableDefender.GUI.ps1`, CLI public commands, O&O recovery UX, NTLite Host Refresh, competitor revert issues.
@@ -83,8 +74,6 @@ Actionable work beyond v0.0.18. Completed work is removed. True blockers live in
   Touches: GUI resource dictionaries, CLI message catalog, stable message IDs, help/docs, localization tests.
   Acceptance: GUI and human CLI text resolve through an `en-US` resource catalog with deterministic fallback; JSON/log schemas retain stable machine keys and message IDs; a pseudo-locale and RTL smoke test catch clipping/order assumptions; one additional reference locale proves extraction without translating privileged action names.
   Complexity: L
-
-## Audit Findings (2026-06-30)
 
 - [ ] P2 - GUI Write-Log override missing JSONL output
   Why: When running via GUI, no JSONL entries are written because the GUI overrides Write-Log without the JSONL block.
