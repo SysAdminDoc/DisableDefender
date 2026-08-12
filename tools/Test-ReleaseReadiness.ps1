@@ -70,7 +70,8 @@ function Get-ReleaseCanonicalFileSha256 {
     param([Parameter(Mandatory)][string]$Path)
 
     $textExtensions = @('.bat', '.json', '.md', '.ps1', '.psd1', '.psm1')
-    if ($textExtensions -notcontains ([IO.Path]::GetExtension($Path).ToLowerInvariant())) {
+    if ($textExtensions -notcontains ([IO.Path]::GetExtension($Path).ToLowerInvariant()) -and
+        [IO.Path]::GetFileName($Path) -cne 'LICENSE') {
         return Get-ReleaseFileSha256 -Path $Path
     }
 

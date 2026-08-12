@@ -278,7 +278,8 @@ function ConvertTo-ReleaseNormalizedText {
 
     $textExtensions = @('.bat', '.json', '.md', '.ps1', '.psd1', '.psm1')
     foreach ($file in @(Get-ChildItem -LiteralPath $Root -Recurse -File -Force)) {
-        if ($textExtensions -notcontains $file.Extension.ToLowerInvariant()) {
+        if ($textExtensions -notcontains $file.Extension.ToLowerInvariant() -and
+            $file.Name -cne 'LICENSE') {
             continue
         }
 
