@@ -12,6 +12,9 @@
 
     FunctionsToExport = @(
         'Get-DefenderStatus'
+        'Get-DefenderPresentationString'
+        'Get-DefenderPresentationCulture'
+        'Get-DefenderPresentationDirection'
         'Get-DefenderFirewallStatus'
         'Get-DefenderHealth'
         'Get-DefenderComponentStatus'
@@ -25,7 +28,8 @@
         'Export-DefenderSupportBundle'
         'Export-DefenderHtmlReport'
         'Save-DefenderSnapshot'
-        'Compare-DefenderSnapshots'
+        'Compare-DefenderSnapshots',
+        'Set-DefenderPresentationCulture'
     )
 
     CmdletsToExport   = @()

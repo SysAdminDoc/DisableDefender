@@ -7,6 +7,7 @@ $moduleRoot = $PSScriptRoot
 
 # Dot-source all private functions (order matters: Variables, runtime preflight, then Write-Log)
 . "$moduleRoot\Private\Variables.ps1"
+. "$moduleRoot\Private\Localization.ps1"
 . "$moduleRoot\Private\ArtifactSchema.ps1"
 . "$moduleRoot\Private\RuntimeDirectory.ps1"
 . "$moduleRoot\Private\Write-Log.ps1"
@@ -50,6 +51,9 @@ $moduleRoot = $PSScriptRoot
 
 Export-ModuleMember -Function @(
     'Get-DefenderStatus',
+    'Get-DefenderPresentationString',
+    'Get-DefenderPresentationCulture',
+    'Get-DefenderPresentationDirection',
     'Get-DefenderFirewallStatus',
     'Get-DefenderHealth',
     'Get-DefenderComponentStatus',
@@ -63,5 +67,6 @@ Export-ModuleMember -Function @(
     'Export-DefenderSupportBundle',
     'Export-DefenderHtmlReport',
     'Save-DefenderSnapshot',
-    'Compare-DefenderSnapshots'
+    'Compare-DefenderSnapshots',
+    'Set-DefenderPresentationCulture'
 )

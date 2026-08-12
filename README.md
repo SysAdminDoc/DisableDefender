@@ -65,6 +65,7 @@ GUI accessibility/layout verification is part of the test suite: `Invoke-Pester 
 - **Safe Mode transaction**: `Invoke-SafeModeRemove` persists and verifies the worker and independent BCD watchdog before changing boot state, records child/task/effect evidence across boots, and finalizes or rolls back deterministically
 - **Support bundle export**: `Export-DefenderSupportBundle` creates a unique local diagnostic zip with an explicit or phase-derived health target, a versioned privacy allowlist, redacted diagnostics, and no automatic upload
 - **GUI recovery hub**: target-aware cancellable Health evidence, persisted phase resume/rollback controls, target-aware snapshots/diff, and local report/support export
+- **Localized presentation**: the CLI and key GUI controls resolve through an `en-US` catalog with deterministic fallback; `-Culture` and `DISABLEDEFENDER_CULTURE` support French extraction, pseudo-localization (`qps-ploc`), and RTL layout smoke testing while JSON/result keys remain stable
 - **Offline remove bundle** (`PrepareOffline`): generates a self-contained `Invoke-OfflineDefenderRemove.ps1` that targets an offline Windows volume from WinRE or a secondary OS, bypassing live Tamper Protection by editing dormant registry hives directly; refuses to run against the live system root
 - **Module layout**: `DisableDefender.psd1` / `DisableDefender.psm1` with public commands and private helpers for function-level tests
 - **GUI auto-elevate, cooperative phase-boundary cancellation, safe runspace/timer cleanup, silent CLI mode, transcript logging, Safe Mode aware**
@@ -96,6 +97,12 @@ A menu appears with Disable / Remove / Restore / Status / Health / Prepare Offli
 ```powershell
 # Reversible disable
 .\DisableDefender.ps1 -Mode Disable
+
+# Select a human-facing presentation catalog; automation keys remain stable
+.\DisableDefender.ps1 -Mode Health -Culture fr-FR
+# Pseudo-locale smoke check; the GUI uses DISABLEDEFENDER_CULTURE
+.\DisableDefender.ps1 -Mode Health -Culture qps-ploc
+$env:DISABLEDEFENDER_CULTURE = 'ar-SA'
 
 # Full removal (Safe Mode recommended)
 .\DisableDefender.ps1 -Mode Remove
@@ -129,6 +136,8 @@ A menu appears with Disable / Remove / Restore / Status / Health / Prepare Offli
 .\DisableDefender.ps1 -Mode Disable -Only Policies,MpPreference
 .\DisableDefender.ps1 -Mode Remove -Skip DISM,Appx -Force
 ```
+
+`-Culture` accepts a catalog culture name and falls back to `en-US` when a resource is unavailable. The GUI reads `DISABLEDEFENDER_CULTURE` before rendering; `qps-ploc` expands text to expose clipping, while `ar-SA` exercises right-to-left ordering using the English fallback until reviewed Arabic copy is available.
 
 ### Module
 ```powershell
@@ -222,6 +231,7 @@ After booting the target into Safe Mode, run `-Mode Health` and `-Mode Remove -O
 | `-ManifestSelection` | Restore manifest selection for `Restore`: `Newest` (default), `All`, or `Active`. Use `All` after repeated Disable/Remove runs when older undo chains must also be replayed. |
 | `-RepairWithoutManifest` | Explicitly run the fixed-default Restore repair preset when no selected undo manifest exists. This is not an exact baseline restore. |
 | `-HealthTarget` | Expected target for `-Mode Health`: `Disable`, `Remove`, or `Restore`. |
+| `-Culture` | Human-facing presentation catalog (default `en-US`; unknown/missing resources fall back deterministically). |
 | `-LogPath` | Override log path (default `%ProgramData%\DisableDefender\DisableDefender.log`). |
 
 ## Exit codes

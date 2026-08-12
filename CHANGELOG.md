@@ -17,6 +17,7 @@
 - Added cooperative GUI cancellation at phase boundaries, a visible cancellation state, verified worker-result propagation, and deterministic runspace/dispatcher-timer draining and disposal.
 - Added a GUI Recovery hub with target-aware cancellable evidence, persisted phase resume/rollback controls, Safe Mode status, target-aware snapshot/diff, and local HTML/support exports; snapshots now accept `-HealthTarget`.
 - Hardened GUI accessibility with automation-name coverage for every named interactive control, visible keyboard focus in custom chrome/inputs, a startup minimum-layout contract, and a Windows high-contrast palette path; version-matched minimum-size dashboard and Recovery hub renders were inspected locally.
+- Added localizable presentation resources for CLI text and key GUI controls, with deterministic `en-US` fallback, French extraction, pseudo-locale clipping checks, RTL metadata, and stable structured-log `message_id` fields.
 
 ### Fixed
 - Release ZIP entries and metadata now use a fixed timestamp for byte-reproducible builds; the strict gate rejects missing tools, dirty release inputs, stale/wrong archives, bad hashes or metadata, content drift, unexpected signing, and clean-checkout hash mismatches.
@@ -38,6 +39,7 @@
 - Runtime-directory ACL inspection and repair now use an explicit `Get-Acl`/`Set-Acl` cross-edition adapter, with a checked Windows PowerShell fallback; module import and read-only Status/Health inspection no longer create or harden `%ProgramData%\DisableDefender`.
 - Release text is normalized during packaging and the strict gate accepts CRLF checkouts, so clean detached builds reproduce the same ZIP bytes regardless of `core.autocrlf`.
 - SecHealthUI removal and Health now share a versioned package/marker catalog, including LTSC identities, and Health distinguishes complete removal from partial marker state.
+- The GUI log override now writes the same versioned JSONL fields as the module sink, including `message_id`, while preserving the existing human-readable log and in-app queue.
 
 ## v0.0.40 - 2026-06-30
 

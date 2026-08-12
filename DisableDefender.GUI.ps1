@@ -62,6 +62,12 @@ if (-not (Test-Path -LiteralPath $modulePath)) {
 }
 Import-Module -Name $modulePath -Force -ErrorAction Stop
 $script:Version = (Get-Module -Name DisableDefender).Version.ToString()
+$requestedPresentationCulture = if ([string]::IsNullOrWhiteSpace($env:DISABLEDEFENDER_CULTURE)) {
+    'en-US'
+} else {
+    $env:DISABLEDEFENDER_CULTURE
+}
+$script:Presentation = Set-DefenderPresentationCulture -Culture $requestedPresentationCulture
 $script:AppName = 'DisableDefender'
 $script:AppDir = Join-Path $env:ProgramData $script:AppName
 $script:LogPath = Join-Path $script:AppDir "$script:AppName.log"
@@ -96,13 +102,31 @@ $script:ToastTimers = New-Object System.Collections.ArrayList
 function Write-Log {
     param(
         [Parameter(Mandatory)][string]$Message,
-        [ValidateSet('INFO','WARN','ERROR','OK','DEBUG')][string]$Level = 'INFO'
+        [ValidateSet('INFO','WARN','ERROR','OK','DEBUG')][string]$Level = 'INFO',
+        [string]$MessageId = 'legacy'
     )
-    $stamp = (Get-Date).ToString('HH:mm:ss')
-    $entry = [PSCustomObject]@{ Time = $stamp; Level = $Level; Message = $Message }
+    $now = Get-Date
+    $stamp = $now.ToString('HH:mm:ss')
+    $entry = [PSCustomObject]@{
+        Time      = $stamp
+        Level     = $Level
+        MessageId = $MessageId
+        Message   = $Message
+    }
     $script:UIState.LogQueue.Enqueue($entry)
-    $fileLine = "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')] [$Level] $Message"
+    $fileLine = "[$($now.ToString('yyyy-MM-dd HH:mm:ss'))] [$Level] $Message"
     try { Add-Content -LiteralPath $script:LogPath -Value $fileLine -ErrorAction Stop } catch {}
+    $jsonlTarget = Join-Path (Split-Path -Parent $script:LogPath) "$script:AppName.jsonl"
+    try {
+        $jsonEntry = [ordered]@{
+            SchemaVersion = 1
+            ts            = $now.ToString('o')
+            level         = $Level
+            message_id    = $MessageId
+            msg           = $Message
+        } | ConvertTo-Json -Compress
+        Add-Content -LiteralPath $jsonlTarget -Value $jsonEntry -ErrorAction Stop
+    } catch {}
 }
 
 # ---------------------------------------------------------------------------
@@ -579,7 +603,7 @@ function Write-Log {
                                         <ColumnDefinition Width="Auto"/>
                                     </Grid.ColumnDefinitions>
                                     <TextBlock Grid.Column="0" Text="&#xE83D;" FontFamily="Segoe MDL2 Assets" Foreground="{StaticResource Blue}" FontSize="17" VerticalAlignment="Center"/>
-                                    <TextBlock Grid.Column="1" Text="Disable Defender" VerticalAlignment="Center"/>
+                                    <TextBlock x:Name="labelDisable" Grid.Column="1" Text="Disable Defender" VerticalAlignment="Center"/>
                                     <TextBlock Grid.Column="2" Text="&#xE76C;" FontFamily="Segoe MDL2 Assets" Foreground="{StaticResource Overlay0}" FontSize="11" VerticalAlignment="Center"/>
                                 </Grid>
                             </Button>
@@ -591,7 +615,7 @@ function Write-Log {
                                         <ColumnDefinition Width="Auto"/>
                                     </Grid.ColumnDefinitions>
                                     <TextBlock Grid.Column="0" Text="&#xE74D;" FontFamily="Segoe MDL2 Assets" Foreground="{StaticResource Red}" FontSize="17" VerticalAlignment="Center"/>
-                                    <TextBlock Grid.Column="1" Text="Full Remove" VerticalAlignment="Center"/>
+                                    <TextBlock x:Name="labelRemove" Grid.Column="1" Text="Full Remove" VerticalAlignment="Center"/>
                                     <TextBlock Grid.Column="2" Text="&#xE76C;" FontFamily="Segoe MDL2 Assets" Foreground="{StaticResource Red}" FontSize="11" VerticalAlignment="Center"/>
                                 </Grid>
                             </Button>
@@ -603,7 +627,7 @@ function Write-Log {
                                         <ColumnDefinition Width="Auto"/>
                                     </Grid.ColumnDefinitions>
                                     <TextBlock Grid.Column="0" Text="&#xE777;" FontFamily="Segoe MDL2 Assets" Foreground="{StaticResource Green}" FontSize="17" VerticalAlignment="Center"/>
-                                    <TextBlock Grid.Column="1" Text="Restore Defender" VerticalAlignment="Center"/>
+                                    <TextBlock x:Name="labelRestore" Grid.Column="1" Text="Restore Defender" VerticalAlignment="Center"/>
                                     <TextBlock Grid.Column="2" Text="&#xE76C;" FontFamily="Segoe MDL2 Assets" Foreground="{StaticResource Green}" FontSize="11" VerticalAlignment="Center"/>
                                 </Grid>
                             </Button>
@@ -615,7 +639,7 @@ function Write-Log {
                                         <ColumnDefinition Width="Auto"/>
                                     </Grid.ColumnDefinitions>
                                     <TextBlock Grid.Column="0" Text="&#xE90F;" FontFamily="Segoe MDL2 Assets" Foreground="{StaticResource Lavender}" FontSize="17" VerticalAlignment="Center"/>
-                                    <TextBlock Grid.Column="1" Text="Repair defaults" VerticalAlignment="Center"/>
+                                    <TextBlock x:Name="labelRepair" Grid.Column="1" Text="Repair defaults" VerticalAlignment="Center"/>
                                     <TextBlock Grid.Column="2" Text="NO UNDO" Foreground="{StaticResource Overlay0}" FontSize="9" VerticalAlignment="Center"/>
                                 </Grid>
                             </Button>
@@ -627,7 +651,7 @@ function Write-Log {
                                         <ColumnDefinition Width="Auto"/>
                                     </Grid.ColumnDefinitions>
                                     <TextBlock Grid.Column="0" Text="&#xE72C;" FontFamily="Segoe MDL2 Assets" Foreground="{StaticResource Lavender}" FontSize="17" VerticalAlignment="Center"/>
-                                    <TextBlock Grid.Column="1" Text="Refresh status" VerticalAlignment="Center"/>
+                                    <TextBlock x:Name="labelRefresh" Grid.Column="1" Text="Refresh status" VerticalAlignment="Center"/>
                                     <TextBlock Grid.Column="2" Text="F5" Foreground="{StaticResource Overlay0}" FontSize="10" VerticalAlignment="Center"/>
                                 </Grid>
                                 </Button>
@@ -986,9 +1010,9 @@ function Write-Log {
                             </Grid.ColumnDefinitions>
                             <StackPanel Grid.Column="0">
                                 <TextBlock Text="RECOVERY &amp; DIAGNOSTICS" Foreground="{StaticResource Blue}" FontSize="10.5" FontWeight="SemiBold"/>
-                                <TextBlock Text="Verify the selected target before resuming, rolling back, or exporting evidence."
+                                <TextBlock x:Name="recoveryTitleText" Text="Verify the selected target before resuming, rolling back, or exporting evidence."
                                            Foreground="{StaticResource Text}" FontSize="18" FontWeight="SemiBold" Margin="0,5,0,0"/>
-                                <TextBlock Text="All queries and exports stay local. A cancellation request stops at a safe query boundary."
+                                <TextBlock x:Name="recoverySubtitleText" Text="All queries and exports stay local. A cancellation request stops at a safe query boundary."
                                            Foreground="{StaticResource Subtext0}" FontSize="11" Margin="0,3,0,0"/>
                             </StackPanel>
                             <Button x:Name="btnRecoveryClose" Grid.Column="1" Style="{StaticResource ChromeButton}" Content="&#xE8BB;"
@@ -1004,7 +1028,7 @@ function Write-Log {
                                 <ColumnDefinition Width="Auto"/>
                                 <ColumnDefinition Width="*"/>
                             </Grid.ColumnDefinitions>
-                            <TextBlock Grid.Column="0" Text="Health target" Foreground="{StaticResource Subtext0}" FontSize="11.5"
+                            <TextBlock x:Name="recoveryTargetLabel" Grid.Column="0" Text="Health target" Foreground="{StaticResource Subtext0}" FontSize="11.5"
                                        VerticalAlignment="Center" Margin="0,0,10,0"/>
                             <ComboBox x:Name="cmbRecoveryTarget" Grid.Column="1" SelectedValuePath="Tag" SelectedValue="Disable"
                                       AutomationProperties.Name="Recovery health target" ToolTip="Compare live state against this target">
@@ -1032,10 +1056,10 @@ function Write-Log {
                                 <Border Background="{StaticResource Base}" BorderBrush="{StaticResource Surface0}" BorderThickness="1"
                                         CornerRadius="8" Padding="14" AutomationProperties.Name="Live recovery evidence">
                                     <StackPanel>
-                                        <TextBlock Text="LIVE TARGET EVIDENCE" Foreground="{StaticResource Text}" FontSize="12.5" FontWeight="SemiBold"/>
+                                        <TextBlock x:Name="recoveryLiveHeading" Text="LIVE TARGET EVIDENCE" Foreground="{StaticResource Text}" FontSize="12.5" FontWeight="SemiBold"/>
                                         <TextBlock x:Name="recoveryTargetText" Text="Target: Disable" Foreground="{StaticResource Subtext0}" FontSize="10.5" Margin="0,3,0,0"/>
                                         <TextBlock x:Name="recoveryHealthText" Text="Health evidence has not been queried." Foreground="{StaticResource Yellow}" FontSize="14" FontWeight="SemiBold" Margin="0,12,0,0" TextWrapping="Wrap"/>
-                                        <TextBlock Text="Exact drift (first 12)" Foreground="{StaticResource Subtext0}" FontSize="10.5" Margin="0,12,0,4"/>
+                                        <TextBlock x:Name="recoveryDriftLabel" Text="Exact drift (first 12)" Foreground="{StaticResource Subtext0}" FontSize="10.5" Margin="0,12,0,4"/>
                                         <ScrollViewer MaxHeight="174" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                                             <TextBlock x:Name="recoveryDriftText" Text="Refresh evidence to inspect expected versus actual values."
                                                        Foreground="{StaticResource Text}" FontSize="10.5" FontFamily="Consolas" TextWrapping="Wrap"/>
@@ -1047,7 +1071,7 @@ function Write-Log {
                                 <Border Background="{StaticResource Base}" BorderBrush="{StaticResource Surface0}" BorderThickness="1"
                                         CornerRadius="8" Padding="14" Margin="0,12,0,0" AutomationProperties.Name="Phase recovery state">
                                     <StackPanel>
-                                        <TextBlock Text="PHASE RECOVERY" Foreground="{StaticResource Text}" FontSize="12.5" FontWeight="SemiBold"/>
+                                        <TextBlock x:Name="recoveryPhaseHeading" Text="PHASE RECOVERY" Foreground="{StaticResource Text}" FontSize="12.5" FontWeight="SemiBold"/>
                                         <TextBlock x:Name="recoveryPhaseText" Text="No persisted phase state found." Foreground="{StaticResource Subtext1}" FontSize="11" Margin="0,6,0,0" TextWrapping="Wrap"/>
                                         <TextBlock x:Name="recoverySafeModeText" Text="Safe Mode transaction: not queried." Foreground="{StaticResource Subtext0}" FontSize="10.5" Margin="0,7,0,0" TextWrapping="Wrap"/>
                                         <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
@@ -1064,8 +1088,8 @@ function Write-Log {
                                 <Border Background="{StaticResource Base}" BorderBrush="{StaticResource Surface0}" BorderThickness="1"
                                         CornerRadius="8" Padding="14" AutomationProperties.Name="Recovery snapshots and diff">
                                     <StackPanel>
-                                        <TextBlock Text="SNAPSHOTS &amp; DIFF" Foreground="{StaticResource Text}" FontSize="12.5" FontWeight="SemiBold"/>
-                                        <TextBlock Text="Choose a baseline, save a target-aware snapshot, or compare against live state."
+                                        <TextBlock x:Name="recoverySnapshotsHeading" Text="SNAPSHOTS &amp; DIFF" Foreground="{StaticResource Text}" FontSize="12.5" FontWeight="SemiBold"/>
+                                        <TextBlock x:Name="recoverySnapshotsDescription" Text="Choose a baseline, save a target-aware snapshot, or compare against live state."
                                                    Foreground="{StaticResource Subtext0}" FontSize="10.5" Margin="0,3,0,9" TextWrapping="Wrap"/>
                                         <Grid>
                                             <Grid.ColumnDefinitions>
@@ -1096,8 +1120,8 @@ function Write-Log {
                                 <Border Background="{StaticResource Base}" BorderBrush="{StaticResource Surface0}" BorderThickness="1"
                                         CornerRadius="8" Padding="14" Margin="0,12,0,0" AutomationProperties.Name="Local recovery exports">
                                     <StackPanel>
-                                        <TextBlock Text="LOCAL EXPORTS" Foreground="{StaticResource Text}" FontSize="12.5" FontWeight="SemiBold"/>
-                                        <TextBlock Text="Exports use the selected target and never upload data."
+                                        <TextBlock x:Name="recoveryExportsHeading" Text="LOCAL EXPORTS" Foreground="{StaticResource Text}" FontSize="12.5" FontWeight="SemiBold"/>
+                                        <TextBlock x:Name="recoveryExportsDescription" Text="Exports use the selected target and never upload data."
                                                    Foreground="{StaticResource Subtext0}" FontSize="10.5" Margin="0,3,0,9"/>
                                         <StackPanel Orientation="Horizontal">
                                             <Button x:Name="btnRecoveryExportReport" Style="{StaticResource BaseButton}" Content="HTML report"
@@ -1111,7 +1135,7 @@ function Write-Log {
                         </Grid>
 
                         <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0">
-                            <TextBlock Text="Sense is not included unless the selected command explicitly opts in."
+                            <TextBlock x:Name="recoverySenseNote" Text="Sense is not included unless the selected command explicitly opts in."
                                        Foreground="{StaticResource Subtext0}" FontSize="10.5" VerticalAlignment="Center" Margin="0,0,18,0"/>
                             <Button x:Name="btnRecoveryDone" Style="{StaticResource BaseButton}" Content="Done" Padding="18,8"
                                     AutomationProperties.Name="Close recovery hub"/>
@@ -1174,6 +1198,62 @@ $ui = @{}
 $xaml.SelectNodes('//*[@*[local-name()="Name"]]') | ForEach-Object {
     $name = $_.Attributes['x:Name'].Value
     if ($name) { $ui[$name] = $window.FindName($name) }
+}
+
+function Get-GuiText {
+    param(
+        [Parameter(Mandatory)][string]$Id,
+        [object[]]$ArgumentList
+    )
+    if ($null -eq $ArgumentList -or $ArgumentList.Count -eq 0) {
+        return Get-DefenderPresentationString -Id $Id
+    }
+    return Get-DefenderPresentationString -Id $Id -ArgumentList $ArgumentList
+}
+
+function Set-GuiPresentationResources {
+    $window.Title = Get-GuiText -Id 'app.name'
+    $window.FlowDirection = if ((Get-DefenderPresentationDirection) -eq 'RightToLeft') {
+        [System.Windows.FlowDirection]::RightToLeft
+    } else {
+        [System.Windows.FlowDirection]::LeftToRight
+    }
+    try {
+        $window.Language = [System.Windows.Markup.XmlLanguage]::GetLanguage(
+            ([string]$script:Presentation.Culture))
+    } catch {}
+
+    $ui.labelDisable.Text = Get-GuiText -Id 'gui.action.disable'
+    $ui.labelRemove.Text = Get-GuiText -Id 'gui.action.remove'
+    $ui.labelRestore.Text = Get-GuiText -Id 'gui.action.restore'
+    $ui.labelRepair.Text = Get-GuiText -Id 'gui.action.repair'
+    $ui.labelRefresh.Text = Get-GuiText -Id 'gui.action.refresh'
+    $ui.btnOpenSecurity.Content = Get-GuiText -Id 'gui.security.open'
+    $ui.btnRecoveryHub.Content = Get-GuiText -Id 'gui.recovery.hub'
+    $ui.btnRecoveryClose.ToolTip = Get-GuiText -Id 'gui.recovery.close'
+    $ui.btnRecoveryRefresh.Content = Get-GuiText -Id 'gui.recovery.refresh'
+    $ui.btnRecoveryCancel.Content = Get-GuiText -Id 'gui.recovery.cancel'
+    $ui.btnRecoveryDone.Content = Get-GuiText -Id 'gui.recovery.done'
+    $ui.btnRecoverySnapshot.Content = Get-GuiText -Id 'gui.recovery.snapshot'
+    $ui.btnRecoveryCompare.Content = Get-GuiText -Id 'gui.recovery.compare'
+    $ui.btnRecoveryExportReport.Content = Get-GuiText -Id 'gui.recovery.report'
+    $ui.btnRecoveryExportSupport.Content = Get-GuiText -Id 'gui.recovery.support'
+    $ui.btnCopyLog.Content = Get-GuiText -Id 'gui.log.copy'
+    $ui.btnExportLog.Content = Get-GuiText -Id 'gui.log.export'
+    $ui.btnClearLog.Content = Get-GuiText -Id 'gui.log.clear'
+    $ui.btnCancelOperation.Content = Get-GuiText -Id 'gui.operation.cancel'
+    $ui.recoveryTitleText.Text = Get-GuiText -Id 'gui.recovery.title'
+    $ui.recoverySubtitleText.Text = Get-GuiText -Id 'gui.recovery.subtitle'
+    $ui.recoveryTargetLabel.Text = Get-GuiText -Id 'gui.recovery.target'
+    $ui.recoveryLiveHeading.Text = Get-GuiText -Id 'gui.recovery.live'
+    $ui.recoveryDriftLabel.Text = Get-GuiText -Id 'gui.recovery.drift'
+    $ui.recoveryPhaseHeading.Text = Get-GuiText -Id 'gui.recovery.phase'
+    $ui.recoverySnapshotsHeading.Text = Get-GuiText -Id 'gui.recovery.snapshots'
+    $ui.recoverySnapshotsDescription.Text = Get-GuiText -Id 'gui.recovery.snapshots.description'
+    $ui.recoveryExportsHeading.Text = Get-GuiText -Id 'gui.recovery.exports'
+    $ui.recoveryExportsDescription.Text = Get-GuiText -Id 'gui.recovery.exports.description'
+    $ui.recoverySenseNote.Text = Get-GuiText -Id 'gui.recovery.sense'
+    $ui.recoveryStatusText.Text = Get-GuiText -Id 'gui.recovery.ready'
 }
 
 function Set-GuiHighContrastTheme {
@@ -2786,6 +2866,7 @@ $ui.btnClearLog.Add_Click({
 # ---------------------------------------------------------------------------
 # Initial render
 # ---------------------------------------------------------------------------
+Set-GuiPresentationResources
 $ui.versionText.Text = "v$script:Version"
 $script:GuiAccessibilityReport = Test-GuiAccessibilityContract
 $script:GuiHighContrast = Set-GuiHighContrastTheme

@@ -1,7 +1,8 @@
 function Write-Log {
     param(
         [Parameter(Mandatory)][string]$Message,
-        [ValidateSet('INFO','WARN','ERROR','OK','DEBUG')][string]$Level = 'INFO'
+        [ValidateSet('INFO','WARN','ERROR','OK','DEBUG')][string]$Level = 'INFO',
+        [string]$MessageId = 'legacy'
     )
     $now = Get-Date
     $stamp = $now.ToString('yyyy-MM-dd HH:mm:ss')
@@ -21,6 +22,7 @@ function Write-Log {
             SchemaVersion = Get-DefenderArtifactSchemaVersion -Name StructuredLogEntry
             ts            = $now.ToString('o')
             level         = $Level
+            message_id    = $MessageId
             msg           = $Message
         } | ConvertTo-Json -Compress
         Add-Content -LiteralPath $jsonlTarget -Value $jsonEntry -ErrorAction Stop
@@ -45,7 +47,7 @@ function Write-Banner {
     Write-Host ''
     Write-Host $bar -ForegroundColor DarkCyan
     Write-Host " $script:AppName v$script:Version" -ForegroundColor Cyan
-    Write-Host "  Microsoft Defender disabler / remover (firewall preserved)" -ForegroundColor Gray
+    Write-Host (Get-DefenderPresentationString -Id 'app.tagline') -ForegroundColor Gray
     Write-Host $bar -ForegroundColor DarkCyan
     Write-Host ''
 }

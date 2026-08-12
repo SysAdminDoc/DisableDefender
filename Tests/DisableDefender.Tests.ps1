@@ -26,6 +26,9 @@ Describe 'Module manifest' {
             'Get-DefenderComponentStatus'
             'Get-DefenderFirewallStatus'
             'Get-DefenderHealth'
+            'Get-DefenderPresentationCulture'
+            'Get-DefenderPresentationDirection'
+            'Get-DefenderPresentationString'
             'Get-DefenderSafeModeStatus'
             'Get-DefenderStatus'
             'Invoke-DisableDefender'
@@ -34,6 +37,7 @@ Describe 'Module manifest' {
             'Invoke-SafeModeRemove'
             'New-OfflineRemoveBundle'
             'Save-DefenderSnapshot'
+            'Set-DefenderPresentationCulture'
             'Show-DefenderStatus'
         ) | Sort-Object
         $actual = (Get-Command -Module DisableDefender -CommandType Function).Name | Sort-Object
@@ -58,6 +62,35 @@ Describe 'Module manifest' {
             Remove-Module -Name DisableDefender -Force -ErrorAction SilentlyContinue
             Import-Module -Name $script:ModuleManifest -Force -ErrorAction Stop
         }
+    }
+}
+
+Describe 'Presentation resources' {
+    It 'resolves localized, pseudo-localized, RTL, and fallback catalogs' {
+        Set-DefenderPresentationCulture -Culture 'en-US' | Out-Null
+        (Get-DefenderPresentationString -Id 'menu.quit') | Should -Be '  [Q] Quit'
+
+        Set-DefenderPresentationCulture -Culture 'fr-FR' | Out-Null
+        (Get-DefenderPresentationString -Id 'menu.quit') | Should -Be '  [Q] Quitter'
+        (Get-DefenderPresentationString -Id 'gui.action.disable') | Should -Be 'Disable Defender'
+
+        Set-DefenderPresentationCulture -Culture 'qps-ploc' | Out-Null
+        (Get-DefenderPresentationString -Id 'menu.quit') | Should -Be '[[  [Q] Quit]]'
+
+        Set-DefenderPresentationCulture -Culture 'ar-SA' | Out-Null
+        (Get-DefenderPresentationDirection) | Should -Be 'RightToLeft'
+        (Get-DefenderPresentationString -Id 'menu.quit') | Should -Be '  [Q] Quit'
+
+        Set-DefenderPresentationCulture -Culture 'xx-unknown' | Out-Null
+        (Get-DefenderPresentationString -Id 'menu.quit') | Should -Be '  [Q] Quit'
+        (Get-DefenderPresentationCulture) | Should -Be 'xx-unknown'
+        Set-DefenderPresentationCulture -Culture 'en-US' | Out-Null
+    }
+
+    It 'formats resource arguments with invariant culture' {
+        Set-DefenderPresentationCulture -Culture 'en-US' | Out-Null
+        $text = Get-DefenderPresentationString -Id 'cli.health.summary' -ArgumentList @(1, 2, 3, 4)
+        $text | Should -Be 'OK=1 Drift=2 Unknown=3 Total=4'
     }
 }
 
@@ -364,6 +397,7 @@ InModuleScope DisableDefender {
                     Select-Object -Last 1 |
                     ConvertFrom-Json
                 $entry.SchemaVersion | Should -Be 1
+                $entry.message_id | Should -Be 'legacy'
                 $entry.msg | Should -Be 'schema contract'
             } finally {
                 $script:AppDir = $previousAppDir
@@ -4931,6 +4965,23 @@ Describe 'DisableDefender GUI safety wiring' {
         @($script:GuiXaml.SelectNodes('//*[local-name()="ScrollViewer"]')).Count | Should -BeGreaterThan 0
     }
 
+    It 'applies the selected presentation catalog and window direction' {
+        $script:GuiSource | Should -Match 'Set-DefenderPresentationCulture.*requestedPresentationCulture'
+        $script:GuiSource | Should -Match 'function Get-GuiText'
+        $script:GuiSource | Should -Match 'function Set-GuiPresentationResources'
+        $script:GuiSource | Should -Match 'Set-GuiPresentationResources'
+        $script:GuiSource | Should -Match 'RightToLeft'
+        $script:GuiSource | Should -Match 'DISABLEDEFENDER_CULTURE'
+    }
+
+    It 'keeps the GUI log override aligned with the structured JSONL sink' {
+        $script:GuiSource | Should -Match '\[string\]\$MessageId\s*=\s*''legacy'''
+        $script:GuiSource | Should -Match 'SchemaVersion\s*=\s*1'
+        $script:GuiSource | Should -Match 'message_id\s*=\s*\$MessageId'
+        $script:GuiSource | Should -Match 'jsonlTarget'
+        $script:GuiSource | Should -Match 'ConvertTo-Json\s+-Compress'
+    }
+
     It 'blocks unsafe window close while a phase is busy and does not abruptly stop the worker' {
         $script:GuiSource | Should -Match '(?s)\$window\.Add_Closing\(\{.*?\$script:UIState\.Busy.*?\$closingArgs\.Cancel\s*=\s*\$true'
         $script:GuiSource | Should -Not -Match '\$script:AsyncPS\.Stop\('
@@ -4992,5 +5043,12 @@ Describe 'DisableDefender CLI result wiring' {
         $script:CliSource | Should -Match 'Silent\s*=\s*\[bool\]\(\$Silent -or \$Json\)'
         $script:CliSource | Should -Match '\$operationResult\.Succeeded'
         $script:CliSource | Should -Match '(?s)\(\$Mode -eq ''Disable'' -or \$Mode -eq ''Remove''\) -and -not \$Json.*?Show-DefenderStatus'
+    }
+
+    It 'routes human CLI presentation through the resource catalog' {
+        $script:CliSource | Should -Match '\[string\]\$Culture\s*=\s*''en-US'''
+        $script:CliSource | Should -Match 'Set-DefenderPresentationCulture\s+-Culture \$Culture'
+        $script:CliSource | Should -Match 'Get-DefenderPresentationString\s+-Id ''menu\.disable'''
+        $script:CliSource | Should -Match 'Get-DefenderPresentationString\s+-Id ''cli\.operation\.verified'''
     }
 }

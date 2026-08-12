@@ -27,6 +27,7 @@ param(
     [switch]$RepairWithoutManifest,
     [ValidateSet('Disable','Remove','Restore')]
     [string]$HealthTarget = 'Disable',
+    [string]$Culture = 'en-US',
     [string]$LogPath = "$env:ProgramData\DisableDefender\DisableDefender.log"
 )
 
@@ -45,6 +46,7 @@ if (-not (Test-Path -LiteralPath $modulePath)) {
 }
 Import-Module -Name $modulePath -Force -ErrorAction Stop
 $script:Version = (Get-Module -Name DisableDefender).Version.ToString()
+$script:Presentation = Set-DefenderPresentationCulture -Culture $Culture
 
 function Write-CliBanner {
     if ($Silent) { return }
@@ -52,22 +54,22 @@ function Write-CliBanner {
     Write-Host ''
     Write-Host $bar -ForegroundColor DarkCyan
     Write-Host " $script:AppName v$script:Version" -ForegroundColor Cyan
-    Write-Host "  Microsoft Defender disabler / remover (firewall preserved)" -ForegroundColor Gray
+    Write-Host (Get-DefenderPresentationString -Id 'app.tagline') -ForegroundColor Gray
     Write-Host $bar -ForegroundColor DarkCyan
     Write-Host ''
 }
 
 function Show-Menu {
     Write-CliBanner
-    Write-Host '  [1] Disable  (reversible; policy + tasks + passive mode + services)' -ForegroundColor White
-    Write-Host '  [2] Remove   (aggressive; Safe Mode recommended; SecHealthUI + SafeBoot trap)' -ForegroundColor Red
-    Write-Host '  [3] Restore  (replay and verify the recorded baseline)' -ForegroundColor Green
-    Write-Host '  [4] Status   (show current Defender + firewall state)' -ForegroundColor Cyan
-    Write-Host '  [5] Health   (compare current state to expected target)' -ForegroundColor Cyan
-    Write-Host '  [6] Prepare Offline (generate WinRE/offline remove script bundle)' -ForegroundColor Magenta
-    Write-Host '  [Q] Quit' -ForegroundColor Gray
+    Write-Host (Get-DefenderPresentationString -Id 'menu.disable') -ForegroundColor White
+    Write-Host (Get-DefenderPresentationString -Id 'menu.remove') -ForegroundColor Red
+    Write-Host (Get-DefenderPresentationString -Id 'menu.restore') -ForegroundColor Green
+    Write-Host (Get-DefenderPresentationString -Id 'menu.status') -ForegroundColor Cyan
+    Write-Host (Get-DefenderPresentationString -Id 'menu.health') -ForegroundColor Cyan
+    Write-Host (Get-DefenderPresentationString -Id 'menu.offline') -ForegroundColor Magenta
+    Write-Host (Get-DefenderPresentationString -Id 'menu.quit') -ForegroundColor Gray
     Write-Host ''
-    $choice = Read-Host 'Select'
+    $choice = Read-Host (Get-DefenderPresentationString -Id 'menu.select')
     switch ($choice.ToUpper()) {
         '1' { return 'Disable' }
         '2' { return 'Remove' }
@@ -77,7 +79,7 @@ function Show-Menu {
         '6' { return 'PrepareOffline' }
         'Q' { return $null }
         default {
-            Write-Host "  Invalid selection: '$choice'" -ForegroundColor Yellow
+            Write-Host (Get-DefenderPresentationString -Id 'menu.invalid' -ArgumentList @($choice)) -ForegroundColor Yellow
             return $null
         }
     }
@@ -113,14 +115,18 @@ function Invoke-SelectedMode {
             if ($Json) {
                 $health
             } else {
-                Write-Host "Health target: $($health.Target)" -ForegroundColor Cyan
-                Write-Host "OK=$($health.Summary.OK) Drift=$($health.Summary.Drift) Unknown=$($health.Summary.Unknown) Total=$($health.Summary.Total)" -ForegroundColor Gray
+                Write-Host (Get-DefenderPresentationString -Id 'cli.health.target' -ArgumentList @($health.Target)) -ForegroundColor Cyan
+                Write-Host (Get-DefenderPresentationString -Id 'cli.health.summary' -ArgumentList @(
+                        $health.Summary.OK,
+                        $health.Summary.Drift,
+                        $health.Summary.Unknown,
+                        $health.Summary.Total)) -ForegroundColor Gray
                 $health.Items | Format-Table Category, Name, Expected, Actual, Status -AutoSize
                 if ($health.ReapplyPlan -and $health.ReapplyPlan.Count -gt 0) {
                     Write-Host ''
-                    Write-Host 'Reapply plan:' -ForegroundColor Yellow
+                    Write-Host (Get-DefenderPresentationString -Id 'cli.health.reapply') -ForegroundColor Yellow
                     foreach ($step in $health.ReapplyPlan) {
-                        Write-Host " - $step" -ForegroundColor Gray
+                        Write-Host (Get-DefenderPresentationString -Id 'cli.health.reapply.item' -ArgumentList @($step)) -ForegroundColor Gray
                     }
                 }
             }
@@ -129,11 +135,11 @@ function Invoke-SelectedMode {
             $outputDir = Join-Path $PSScriptRoot 'dist'
             $bundle = New-OfflineRemoveBundle -OutputDirectory $outputDir -Force:$Force
             Write-Host ''
-            Write-Host 'Offline remove bundle generated:' -ForegroundColor Cyan
-            Write-Host "  Script: $($bundle.ScriptPath)" -ForegroundColor White
-            Write-Host "  Version: $($bundle.Version)" -ForegroundColor Gray
+            Write-Host (Get-DefenderPresentationString -Id 'cli.offline.generated') -ForegroundColor Cyan
+            Write-Host (Get-DefenderPresentationString -Id 'cli.offline.script' -ArgumentList @($bundle.ScriptPath)) -ForegroundColor White
+            Write-Host (Get-DefenderPresentationString -Id 'cli.offline.version' -ArgumentList @($bundle.Version)) -ForegroundColor Gray
             Write-Host ''
-            Write-Host 'Usage from WinRE or secondary Windows install:' -ForegroundColor Yellow
+            Write-Host (Get-DefenderPresentationString -Id 'cli.offline.usage') -ForegroundColor Yellow
             Write-Host '  .\Invoke-OfflineDefenderRemove.ps1 -TargetVolume D:\' -ForegroundColor White
             Write-Host ''
         }
@@ -151,7 +157,7 @@ try {
 if (-not $Mode) {
     if ($Silent) { throw 'Silent mode requires -Mode' }
     $Mode = Show-Menu
-    if (-not $Mode) { Write-Host 'Aborted.'; exit 0 }
+    if (-not $Mode) { Write-Host (Get-DefenderPresentationString -Id 'cli.aborted'); exit 0 }
 }
 
 try {
@@ -164,8 +170,10 @@ try {
         if ($Json) {
             $operationResult | ConvertTo-Json -Depth 12
         } elseif (-not $Silent) {
-            Write-Host ("Verified operation: attempted={0} changed={1} verified={2}" -f `
-                $operationResult.Attempted, $operationResult.Changed, $operationResult.Verified) -ForegroundColor Cyan
+            Write-Host (Get-DefenderPresentationString -Id 'cli.operation.verified' -ArgumentList @(
+                    $operationResult.Attempted,
+                    $operationResult.Changed,
+                    $operationResult.Verified)) -ForegroundColor Cyan
         }
     } else {
         Invoke-SelectedMode -SelectedMode $Mode
@@ -176,10 +184,11 @@ try {
     if (-not $NoReboot -and -not $WhatIfPreference -and
         ($Mode -eq 'Disable' -or $Mode -eq 'Remove')) {
         if ($Silent) {
-            Add-Content -LiteralPath $LogPath -Value "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')] [WARN] Rebooting in 15 seconds..." -ErrorAction SilentlyContinue
+            $rebootWarning = Get-DefenderPresentationString -Id 'cli.reboot.warning'
+            Add-Content -LiteralPath $LogPath -Value "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')] [WARN] $rebootWarning" -ErrorAction SilentlyContinue
             shutdown.exe /r /t 15 /c "$script:AppName reboot" | Out-Null
         } else {
-            $r = Read-Host 'Reboot now? (Y/n)'
+            $r = Read-Host (Get-DefenderPresentationString -Id 'cli.reboot.prompt')
             if ($r.ToUpper() -ne 'N') { shutdown.exe /r /t 5 | Out-Null }
         }
     }
@@ -200,7 +209,7 @@ try {
         New-DefenderErrorEnvelope -Message $msg -Mode $Mode -FailedPhase $failedPhase -PhaseStatePath $phaseStatePath | ConvertTo-Json -Depth 4
     } elseif (-not $Silent) {
         Add-Type -AssemblyName PresentationFramework
-        [System.Windows.MessageBox]::Show($msg, "$script:AppName error", 'OK', 'Error') | Out-Null
+        [System.Windows.MessageBox]::Show($msg, (Get-DefenderPresentationString -Id 'cli.error.title'), 'OK', 'Error') | Out-Null
     }
     try { Stop-Transcript | Out-Null } catch {}
     exit $exitCode
