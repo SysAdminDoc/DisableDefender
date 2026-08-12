@@ -84,6 +84,11 @@ $script:DefenderArtifactSchemas = [ordered]@{
         SupportedVersions = @(1)
         LegacyFormats     = @()
     }
+    DefenderEtwCapture = [PSCustomObject]@{
+        CurrentVersion    = 1
+        SupportedVersions = @(1)
+        LegacyFormats     = @()
+    }
     StructuredLogEntry = [PSCustomObject]@{
         CurrentVersion    = 1
         SupportedVersions = @(1)

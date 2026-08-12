@@ -17,6 +17,7 @@
     { "Name": "SurfaceBaseline", "SchemaVersion": 1 },
     { "Name": "DefenderSnapshot", "SchemaVersion": 1 },
     { "Name": "DefenderPreset", "SchemaVersion": 1 },
+    { "Name": "DefenderEtwCapture", "SchemaVersion": 1 },
     { "Name": "StructuredLogEntry", "SchemaVersion": 1 },
     { "Name": "SafetyTripwireEntry", "SchemaVersion": 1 },
     { "Name": "SupportBundleSummary", "SchemaVersion": 1 },

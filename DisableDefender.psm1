@@ -11,6 +11,7 @@ $moduleRoot = $PSScriptRoot
 . "$moduleRoot\Private\ArtifactSchema.ps1"
 . "$moduleRoot\Private\RuntimeDirectory.ps1"
 . "$moduleRoot\Private\Write-Log.ps1"
+. "$moduleRoot\Private\DefenderEtw.ps1"
 . "$moduleRoot\Private\OperationResult.ps1"
 . "$moduleRoot\Private\SurfaceDrift.ps1"
 . "$moduleRoot\Private\Tripwire.ps1"
@@ -36,6 +37,7 @@ $moduleRoot = $PSScriptRoot
 
 # Dot-source all public functions (alphabetical)
 . "$moduleRoot\Public\Get-DefenderStatus.ps1"
+. "$moduleRoot\Public\Get-DefenderFleetStatus.ps1"
 . "$moduleRoot\Public\Get-DefenderFirewallStatus.ps1"
 . "$moduleRoot\Public\Get-DefenderHealth.ps1"
 . "$moduleRoot\Public\Get-DefenderComponentStatus.ps1"
@@ -54,6 +56,7 @@ $moduleRoot = $PSScriptRoot
 
 Export-ModuleMember -Function @(
     'Get-DefenderStatus',
+    'Get-DefenderFleetStatus',
     'Get-DefenderPresentationString',
     'Get-DefenderPresentationCulture',
     'Get-DefenderPresentationDirection',

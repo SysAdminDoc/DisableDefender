@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<policyDefinitionResources xmlns="http://schemas.microsoft.com/GroupPolicy/2006/07/PolicyDefinitions" revision="1.0" schemaVersion="1.0">
+  <displayName>DisableDefender policy resources</displayName>
+  <description>Resources for the narrow DisableDefender GPO template.</description>
+  <resources>
+    <stringTable>
+      <string id="DisableDefenderCategory">DisableDefender</string>
+      <string id="DisableAntiSpyware">Disable Microsoft Defender Antivirus policy gate</string>
+      <string id="DisableAntiSpyware_Explain">Enabling this policy writes the legacy DisableAntiSpyware policy value. Modern Windows versions and Tamper Protection may ignore it. This template does not change Windows Firewall or Defender for Endpoint.</string>
+      <string id="DisableRealtimeMonitoring">Turn off real-time protection</string>
+      <string id="DisableRealtimeMonitoring_Explain">Enabling this policy disables Microsoft Defender real-time monitoring through the supported policy value. Use only on managed test or recovery devices.</string>
+      <string id="DisableBehaviorMonitoring">Turn off behavior monitoring</string>
+      <string id="DisableBehaviorMonitoring_Explain">Enabling this policy disables Microsoft Defender behavior monitoring. It does not change Windows Firewall or Microsoft Defender for Endpoint.</string>
+      <string id="DisableIOAVProtection">Turn off downloaded-file and attachment scanning</string>
+      <string id="DisableIOAVProtection_Explain">Enabling this policy disables Microsoft Defender inspection of downloaded files and attachments.</string>
+      <string id="DisableScriptScanning">Turn off script scanning</string>
+      <string id="DisableScriptScanning_Explain">Enabling this policy disables Microsoft Defender script scanning.</string>
+      <string id="DisableBlockAtFirstSeen">Turn off block at first sight</string>
+      <string id="DisableBlockAtFirstSeen_Explain">Enabling this policy disables the Defender block-at-first-sight behavior. Cloud protection and sample-submission settings are not changed by this policy.</string>
+      <string id="DisableIntrusionPreventionSystem">Turn off network inspection</string>
+      <string id="DisableIntrusionPreventionSystem_Explain">Enabling this policy disables the Defender intrusion-prevention policy value.</string>
+      <string id="DisableNetworkProtection">Turn off network protection</string>
+      <string id="DisableNetworkProtection_Explain">Enabling this policy turns off Microsoft Defender network protection.</string>
+      <string id="DisablePUAProtection">Turn off potentially unwanted application protection</string>
+      <string id="DisablePUAProtection_Explain">Enabling this policy disables potentially unwanted application protection.</string>
+    </stringTable>
+    <presentationTable />
+  </resources>
+</policyDefinitionResources>

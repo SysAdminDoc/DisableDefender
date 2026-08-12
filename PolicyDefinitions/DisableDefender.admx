@@ -1,0 +1,105 @@
+<?xml version="1.0" encoding="utf-8"?>
+<policyDefinitions xmlns="http://schemas.microsoft.com/GroupPolicy/2006/07/PolicyDefinitions" revision="1.0" schemaVersion="1.0">
+  <policyNamespaces>
+    <target prefix="dd" namespace="SysAdminDoc.Policies.DisableDefender" />
+    <using prefix="windows" namespace="Microsoft.Policies.Windows" />
+  </policyNamespaces>
+  <resources minRequiredRevision="1.0" />
+  <categories>
+    <category name="DisableDefender" displayName="$(string.DisableDefenderCategory)">
+      <parentCategory ref="windows:WindowsComponents" />
+    </category>
+  </categories>
+  <policies>
+    <policy name="DisableDefender_DisableAntiSpyware" class="Machine"
+            displayName="$(string.DisableAntiSpyware)"
+            explainText="$(string.DisableAntiSpyware_Explain)"
+            key="Software\Policies\Microsoft\Windows Defender"
+            valueName="DisableAntiSpyware">
+      <parentCategory ref="DisableDefender" />
+      <supportedOn ref="windows:SUPPORTED_WindowsVista" />
+      <enabledValue><decimal value="1" /></enabledValue>
+      <disabledValue><decimal value="0" /></disabledValue>
+    </policy>
+    <policy name="DisableDefender_DisableRealtimeMonitoring" class="Machine"
+            displayName="$(string.DisableRealtimeMonitoring)"
+            explainText="$(string.DisableRealtimeMonitoring_Explain)"
+            key="Software\Policies\Microsoft\Windows Defender\Real-Time Protection"
+            valueName="DisableRealtimeMonitoring">
+      <parentCategory ref="DisableDefender" />
+      <supportedOn ref="windows:SUPPORTED_WindowsVista" />
+      <enabledValue><decimal value="1" /></enabledValue>
+      <disabledValue><decimal value="0" /></disabledValue>
+    </policy>
+    <policy name="DisableDefender_DisableBehaviorMonitoring" class="Machine"
+            displayName="$(string.DisableBehaviorMonitoring)"
+            explainText="$(string.DisableBehaviorMonitoring_Explain)"
+            key="Software\Policies\Microsoft\Windows Defender\Real-Time Protection"
+            valueName="DisableBehaviorMonitoring">
+      <parentCategory ref="DisableDefender" />
+      <supportedOn ref="windows:SUPPORTED_WindowsVista" />
+      <enabledValue><decimal value="1" /></enabledValue>
+      <disabledValue><decimal value="0" /></disabledValue>
+    </policy>
+    <policy name="DisableDefender_DisableIOAVProtection" class="Machine"
+            displayName="$(string.DisableIOAVProtection)"
+            explainText="$(string.DisableIOAVProtection_Explain)"
+            key="Software\Policies\Microsoft\Windows Defender\Real-Time Protection"
+            valueName="DisableIOAVProtection">
+      <parentCategory ref="DisableDefender" />
+      <supportedOn ref="windows:SUPPORTED_WindowsVista" />
+      <enabledValue><decimal value="1" /></enabledValue>
+      <disabledValue><decimal value="0" /></disabledValue>
+    </policy>
+    <policy name="DisableDefender_DisableScriptScanning" class="Machine"
+            displayName="$(string.DisableScriptScanning)"
+            explainText="$(string.DisableScriptScanning_Explain)"
+            key="Software\Policies\Microsoft\Windows Defender\Real-Time Protection"
+            valueName="DisableScriptScanning">
+      <parentCategory ref="DisableDefender" />
+      <supportedOn ref="windows:SUPPORTED_WindowsVista" />
+      <enabledValue><decimal value="1" /></enabledValue>
+      <disabledValue><decimal value="0" /></disabledValue>
+    </policy>
+    <policy name="DisableDefender_DisableBlockAtFirstSeen" class="Machine"
+            displayName="$(string.DisableBlockAtFirstSeen)"
+            explainText="$(string.DisableBlockAtFirstSeen_Explain)"
+            key="Software\Policies\Microsoft\Windows Defender"
+            valueName="DisableBlockAtFirstSeen">
+      <parentCategory ref="DisableDefender" />
+      <supportedOn ref="windows:SUPPORTED_WindowsVista" />
+      <enabledValue><decimal value="1" /></enabledValue>
+      <disabledValue><decimal value="0" /></disabledValue>
+    </policy>
+    <policy name="DisableDefender_DisableIntrusionPreventionSystem" class="Machine"
+            displayName="$(string.DisableIntrusionPreventionSystem)"
+            explainText="$(string.DisableIntrusionPreventionSystem_Explain)"
+            key="Software\Policies\Microsoft\Windows Defender\Real-Time Protection"
+            valueName="DisableIntrusionPreventionSystem">
+      <parentCategory ref="DisableDefender" />
+      <supportedOn ref="windows:SUPPORTED_WindowsVista" />
+      <enabledValue><decimal value="1" /></enabledValue>
+      <disabledValue><decimal value="0" /></disabledValue>
+    </policy>
+    <policy name="DisableDefender_DisableNetworkProtection" class="Machine"
+            displayName="$(string.DisableNetworkProtection)"
+            explainText="$(string.DisableNetworkProtection_Explain)"
+            key="Software\Policies\Microsoft\Windows Defender\Windows Defender Exploit Guard\Network Protection"
+            valueName="EnableNetworkProtection">
+      <parentCategory ref="DisableDefender" />
+      <supportedOn ref="windows:SUPPORTED_Windows_10_0" />
+      <enabledValue><decimal value="0" /></enabledValue>
+      <disabledValue><decimal value="1" /></disabledValue>
+    </policy>
+    <policy name="DisableDefender_DisablePUAProtection" class="Machine"
+            displayName="$(string.DisablePUAProtection)"
+            explainText="$(string.DisablePUAProtection_Explain)"
+            key="Software\Policies\Microsoft\Windows Defender"
+            valueName="PUAProtection">
+      <parentCategory ref="DisableDefender" />
+      <supportedOn ref="windows:SUPPORTED_Windows_10_0" />
+      <enabledValue><decimal value="0" /></enabledValue>
+      <disabledValue><decimal value="1" /></disabledValue>
+    </policy>
+  </policies>
+</policyDefinitions>

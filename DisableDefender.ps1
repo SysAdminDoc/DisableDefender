@@ -19,6 +19,8 @@ param(
     [switch]$Force,
     [switch]$IncludeMDE,
     [switch]$AllowRemoting,
+    [switch]$EnableEtw,
+    [string[]]$ComputerName,
     [switch]$Json,
     [string[]]$Only,
     [string[]]$Skip,
@@ -88,6 +90,10 @@ function Show-Menu {
 function Invoke-SelectedMode {
     param([Parameter(Mandatory)][ValidateSet('Disable','Remove','Restore','Status','Health','PrepareOffline')][string]$SelectedMode)
 
+    if (@($ComputerName).Count -gt 0 -and $SelectedMode -ne 'Status') {
+        throw '-ComputerName is only supported with -Mode Status for read-only fleet collection.'
+    }
+
     $common = @{
         Silent      = [bool]($Silent -or $Json)
         LogPath     = $LogPath
@@ -98,17 +104,22 @@ function Invoke-SelectedMode {
 
     switch ($SelectedMode) {
         'Disable' {
-            Invoke-DisableDefender @common -Force:$Force -NoRestorePoint:$NoRestorePoint -IncludeMDE:$IncludeMDE -AllowRemoting:$AllowRemoting -Only $Only -Skip $Skip
+            Invoke-DisableDefender @common -Force:$Force -NoRestorePoint:$NoRestorePoint -IncludeMDE:$IncludeMDE -AllowRemoting:$AllowRemoting -EnableEtw:$EnableEtw -Only $Only -Skip $Skip
         }
         'Remove' {
-            Invoke-RemoveDefender @common -Force:$Force -NoRestorePoint:$NoRestorePoint -IncludeMDE:$IncludeMDE -AllowRemoting:$AllowRemoting -Only $Only -Skip $Skip
+            Invoke-RemoveDefender @common -Force:$Force -NoRestorePoint:$NoRestorePoint -IncludeMDE:$IncludeMDE -AllowRemoting:$AllowRemoting -EnableEtw:$EnableEtw -Only $Only -Skip $Skip
         }
         'Restore' {
-            Invoke-RestoreDefender @common -AllowRemoting:$AllowRemoting -Only $Only -Skip $Skip `
+            Invoke-RestoreDefender @common -AllowRemoting:$AllowRemoting -EnableEtw:$EnableEtw -Only $Only -Skip $Skip `
                 -ManifestSelection $ManifestSelection -RepairWithoutManifest:$RepairWithoutManifest
         }
         'Status' {
-            Show-DefenderStatus -Json:$Json
+            if (@($ComputerName).Count -gt 0) {
+                Get-DefenderFleetStatus -ComputerName $ComputerName `
+                    -AllowRemoting:$AllowRemoting -Json:$Json
+            } else {
+                Show-DefenderStatus -Json:$Json
+            }
         }
         'Health' {
             $health = Get-DefenderHealth -Target $HealthTarget -IncludeMDE:$IncludeMDE -Json:$Json

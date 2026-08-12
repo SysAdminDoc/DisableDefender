@@ -27,6 +27,9 @@ function Invoke-RemoveDefender {
         Skip the named action phase keys. Safety gates cannot be skipped.
     .PARAMETER AllowRemoting
         Allow execution inside PSRemoting / PSSession contexts.
+    .PARAMETER EnableEtw
+        Capture Microsoft-Windows-Windows Defender ETW events during the run
+        using the inbox logman/tracerpt tools.
     .EXAMPLE
         Invoke-RemoveDefender -Force
     .EXAMPLE
@@ -38,6 +41,7 @@ function Invoke-RemoveDefender {
         [switch]$NoRestorePoint,
         [switch]$IncludeMDE,
         [switch]$AllowRemoting,
+        [switch]$EnableEtw,
         [switch]$Silent,
         [string]$LogPath,
         [ValidateSet('Policies','MpPreference','Tasks','Services','SafeBoot','Appx','DISM','ContextMenu')]
@@ -63,11 +67,12 @@ function Invoke-RemoveDefender {
     $shouldProcess = $PSCmdlet.ShouldProcess('Microsoft Defender', 'Remove')
     if (-not $shouldProcess -and -not $WhatIfPreference) { return }
 
-    Set-RunOptions -Force:$Force -NoRestorePoint:$NoRestorePoint -IncludeMDE:$IncludeMDE -AllowRemoting:$AllowRemoting -Silent:$Silent -LogPath $LogPath -LogCallback $LogCallback -CancellationCallback $CancellationCallback
+    Set-RunOptions -Force:$Force -NoRestorePoint:$NoRestorePoint -IncludeMDE:$IncludeMDE -AllowRemoting:$AllowRemoting -EnableEtw:$EnableEtw -Silent:$Silent -LogPath $LogPath -LogCallback $LogCallback -CancellationCallback $CancellationCallback
     Confirm-LocalSession -Mode Remove
 
-    Start-RestoreManifest -Mode Remove
     try {
+        Start-DefenderEtwCapture -Mode Remove | Out-Null
+        Start-RestoreManifest -Mode Remove
         $preflightPhases = @(
             New-DefenderPhase -Name 'Prerequisites' -Key 'Prerequisites' -Action { Confirm-Prereqs }
             New-DefenderPhase -Name 'Firewall preflight' -Key 'FirewallPreflight' -Action { Assert-FirewallSafety -Stage pre }
@@ -95,6 +100,6 @@ function Invoke-RemoveDefender {
         Write-Log "Remove complete. Reboot required." OK
         return $operationResult
     } finally {
-        Stop-RestoreManifest
+        try { Stop-RestoreManifest } finally { Stop-DefenderEtwCapture | Out-Null }
     }
 }

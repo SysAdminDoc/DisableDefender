@@ -12,6 +12,7 @@
 
     FunctionsToExport = @(
         'Get-DefenderStatus'
+        'Get-DefenderFleetStatus'
         'Get-DefenderPresentationString'
         'Get-DefenderPresentationCulture'
         'Get-DefenderPresentationDirection'

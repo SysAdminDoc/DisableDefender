@@ -25,6 +25,9 @@ function Invoke-DisableDefender {
         cannot be skipped.
     .PARAMETER AllowRemoting
         Allow execution inside PSRemoting / PSSession contexts.
+    .PARAMETER EnableEtw
+        Capture Microsoft-Windows-Windows Defender ETW events during the run
+        using the inbox logman/tracerpt tools.
     .EXAMPLE
         Invoke-DisableDefender
     .EXAMPLE
@@ -36,6 +39,7 @@ function Invoke-DisableDefender {
         [switch]$NoRestorePoint,
         [switch]$IncludeMDE,
         [switch]$AllowRemoting,
+        [switch]$EnableEtw,
         [switch]$Silent,
         [string]$LogPath,
         [ValidateSet('Policies','MpPreference','Tasks','Services')]
@@ -57,11 +61,12 @@ function Invoke-DisableDefender {
     $shouldProcess = $PSCmdlet.ShouldProcess('Microsoft Defender', 'Disable')
     if (-not $shouldProcess -and -not $WhatIfPreference) { return }
 
-    Set-RunOptions -Force:$Force -NoRestorePoint:$NoRestorePoint -IncludeMDE:$IncludeMDE -AllowRemoting:$AllowRemoting -Silent:$Silent -LogPath $LogPath -LogCallback $LogCallback -CancellationCallback $CancellationCallback
+    Set-RunOptions -Force:$Force -NoRestorePoint:$NoRestorePoint -IncludeMDE:$IncludeMDE -AllowRemoting:$AllowRemoting -EnableEtw:$EnableEtw -Silent:$Silent -LogPath $LogPath -LogCallback $LogCallback -CancellationCallback $CancellationCallback
     Confirm-LocalSession -Mode Disable
 
-    Start-RestoreManifest -Mode Disable
     try {
+        Start-DefenderEtwCapture -Mode Disable | Out-Null
+        Start-RestoreManifest -Mode Disable
         $preflightPhases = @(
             New-DefenderPhase -Name 'Prerequisites' -Key 'Prerequisites' -Action { Confirm-Prereqs }
             New-DefenderPhase -Name 'Firewall preflight' -Key 'FirewallPreflight' -Action { Assert-FirewallSafety -Stage pre }
@@ -82,6 +87,6 @@ function Invoke-DisableDefender {
         Write-Log "Disable complete. Reboot recommended." OK
         return $operationResult
     } finally {
-        Stop-RestoreManifest
+        try { Stop-RestoreManifest } finally { Stop-DefenderEtwCapture | Out-Null }
     }
 }

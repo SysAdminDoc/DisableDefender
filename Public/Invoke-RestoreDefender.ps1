@@ -115,6 +115,9 @@ function Invoke-RestoreDefender {
         This is not an exact baseline restore.
     .PARAMETER AllowRemoting
         Allow execution inside PSRemoting / PSSession contexts.
+    .PARAMETER EnableEtw
+        Capture Microsoft-Windows-Windows Defender ETW events during the run
+        using the inbox logman/tracerpt tools.
     .EXAMPLE
         Invoke-RestoreDefender
     .EXAMPLE
@@ -124,6 +127,7 @@ function Invoke-RestoreDefender {
     param(
         [switch]$Silent,
         [switch]$AllowRemoting,
+        [switch]$EnableEtw,
         [string]$LogPath,
         [ValidateSet('Policies','MpPreference','Tasks','Services','AclRestore','Appx','ContextMenu','Verification')]
         [string[]]$Only,
@@ -139,12 +143,13 @@ function Invoke-RestoreDefender {
     $shouldProcess = $PSCmdlet.ShouldProcess('Microsoft Defender', 'Restore')
     if (-not $shouldProcess -and -not $WhatIfPreference) { return }
 
-    Set-RunOptions -Silent:$Silent -AllowRemoting:$AllowRemoting -LogPath $LogPath -LogCallback $LogCallback -CancellationCallback $CancellationCallback
+    Set-RunOptions -Silent:$Silent -AllowRemoting:$AllowRemoting -EnableEtw:$EnableEtw -LogPath $LogPath -LogCallback $LogCallback -CancellationCallback $CancellationCallback
     Confirm-LocalSession -Mode Restore
 
     $previousReplayMode = [bool]$script:RestoreManifestReplayMode
     $script:RestoreManifestReplayMode = $true
     try {
+        Start-DefenderEtwCapture -Mode Restore | Out-Null
         $manifestPlan = Get-RestoreManifestReplayPlan -Selection $ManifestSelection
         $hasManifest = $manifestPlan.Manifests.Count -gt 0
         if ($hasManifest -and $RepairWithoutManifest) {
@@ -205,6 +210,8 @@ function Invoke-RestoreDefender {
         }
         return $operationResult
     } finally {
-        $script:RestoreManifestReplayMode = $previousReplayMode
+        try { Stop-DefenderEtwCapture | Out-Null } finally {
+            $script:RestoreManifestReplayMode = $previousReplayMode
+        }
     }
 }

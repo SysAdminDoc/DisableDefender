@@ -44,6 +44,9 @@ GUI accessibility/layout verification is part of the test suite: `Invoke-Pester 
 - **Full policy coverage** (privacy.sexy-enriched): `DisableAntiSpyware`, real-time, behavior, IOAV, IPS, IPC, spynet, MAPS, NIS, IPS-throttle, MpEngine PUA + file-hash, signatures, scan, SmartScreen, MRT, passive-mode for MDE, UX suppression, legacy `Microsoft Antimalware`
 - **Runtime prefs**: cataloged `Set-MpPreference` sweep with restore defaults, health expectations, and global path/extension exclusions
 - **Portable cloud-sample preset**: `Export-DefenderPreset` and `Import-DefenderPreset` exchange a strict, versioned JSON definition for the supported Defender AV/MAPS choices; unsupported broad privacy settings are rejected
+- **Optional Defender ETW capture**: `-EnableEtw` records the inbox `Microsoft-Windows-Windows Defender` provider during a mutation run and converts the trace to a local CSV summary when tracing tools are available
+- **Explicit read-only fleet status**: `Get-DefenderFleetStatus` and CLI `-Mode Status -ComputerName ... -AllowRemoting` collect a small Defender/Firewall evidence envelope through WinRM without enabling remote mutation
+- **GPO-first template**: `PolicyDefinitions\DisableDefender.admx` plus the `en-US` resource file expose a narrow Defender-only registry policy set; the template never writes Firewall or MDE settings
 - **Scheduled tasks**: all four Defender tasks + ExploitGuard refresh disabled
 - **Service takedown**: 16 Defender services by default, including `MDCoreSvc`, `MDDlpSvc`, `MsSecFlt`, `MsSecCore`, `SgrmAgent`/`Broker`, `webthreatdefsvc`; MDE `Sense` requires explicit `-IncludeMDE`
 - **Appx removal**: SecHealthUI deprovision with `NonRemovableAppPolicy` override
@@ -121,6 +124,9 @@ $env:DISABLEDEFENDER_CULTURE = 'ar-SA'
 # Just show state
 .\DisableDefender.ps1 -Mode Status
 
+# Read-only status from multiple WinRM targets; explicit opt-in is required
+.\DisableDefender.ps1 -Mode Status -ComputerName PC01,PC02 -AllowRemoting -Json
+
 # Health check against the Disable target
 .\DisableDefender.ps1 -Mode Health
 
@@ -133,6 +139,9 @@ $env:DISABLEDEFENDER_CULTURE = 'ar-SA'
 # JSON status for automation
 .\DisableDefender.ps1 -Mode Status -Json
 .\DisableDefender.ps1 -Mode Health -HealthTarget Remove -Json
+
+# Capture Defender ETW reactions while a mutation runs (best effort)
+.\DisableDefender.ps1 -Mode Disable -EnableEtw -NoReboot
 
 # Surgical reruns
 .\DisableDefender.ps1 -Mode Disable -Only Policies,MpPreference
@@ -147,6 +156,12 @@ Import-Module .\DisableDefender.psd1
 Get-DefenderStatus
 Get-DefenderFirewallStatus
 Get-DefenderHealth -Target Disable
+Get-DefenderFleetStatus -ComputerName PC01,PC02 -AllowRemoting
+Get-DefenderFleetStatus -ComputerName PC01 -AllowRemoting -Credential (Get-Credential) -UseSSL
+
+# GPO-first deployment: copy PolicyDefinitions\DisableDefender.admx and
+# PolicyDefinitions\en-US\DisableDefender.adml to the domain Central Store,
+# then configure the DisableDefender policies under Administrative Templates.
 Invoke-DisableDefender -Force -NoRestorePoint
 Invoke-RestoreDefender
 Invoke-RestoreDefender -ManifestSelection All
@@ -193,6 +208,8 @@ Compare-DefenderSnapshots -BaselinePath before.json -CurrentPath after.json -Jso
 
 Support bundles are local-only. `-HealthTarget` accepts `Disable`, `Remove`, or `Restore`; when omitted, the latest valid `phase-state.json` mode is used and the fallback is recorded. `-Preview` shows the target source, allowlist, redaction policy, and output path pattern without creating a directory or zip. Transcript and tripwire files are excluded unless `-IncludeSensitiveDiagnostics` is explicitly supplied; all collected text is redacted and the bundle includes `privacy.json` with the schema and collection decisions.
 
+The ADMX template is intentionally registry-only and does not bypass Tamper Protection. A policy can be accepted by Group Policy while Defender still refuses the change; verify the resulting state with `Get-DefenderHealth` and keep Windows Firewall and Defender for Endpoint policy separate.
+
 ### Offline Remove (WinRE / secondary OS)
 
 When Tamper Protection cannot be toggled off (e.g. managed devices, locked UI), generate a self-contained script that edits registry hives from an offline volume:
@@ -238,6 +255,8 @@ After booting the target into Safe Mode, run `-Mode Health` and `-Mode Remove -O
 | `-RepairWithoutManifest` | Explicitly run the fixed-default Restore repair preset when no selected undo manifest exists. This is not an exact baseline restore. |
 | `-HealthTarget` | Expected target for `-Mode Health`: `Disable`, `Remove`, or `Restore`. |
 | `-Culture` | Human-facing presentation catalog (default `en-US`; unknown/missing resources fall back deterministically). |
+| `-EnableEtw` | Best-effort ETW capture for the Microsoft-Windows-Windows Defender provider during Disable/Remove/Restore; writes local ETL, CSV, and metadata artifacts. |
+| `-ComputerName` | With `-Mode Status`, collect read-only status from one or more WinRM targets; requires `-AllowRemoting`. |
 | `-LogPath` | Override log path (default `%ProgramData%\DisableDefender\DisableDefender.log`). |
 
 ## Exit codes

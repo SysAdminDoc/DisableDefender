@@ -25,6 +25,7 @@ Describe 'Module manifest' {
             'Export-DefenderHtmlReport'
             'Export-DefenderSupportBundle'
             'Get-DefenderComponentStatus'
+            'Get-DefenderFleetStatus'
             'Get-DefenderFirewallStatus'
             'Get-DefenderHealth'
             'Get-DefenderPresentationCulture'
@@ -298,6 +299,7 @@ InModuleScope DisableDefender {
         It 'declares one independent current version for every durable format' {
             $expected = @(
                 'ActionResult',
+                'DefenderEtwCapture',
                 'DefenderPreset',
                 'DefenderSnapshot',
                 'ErrorEnvelope',
@@ -571,6 +573,147 @@ InModuleScope DisableDefender {
 
             { Import-DefenderPreset -Path $path } |
                 Should -Throw -ExpectedMessage '*unsupported Preferences value*'
+        }
+    }
+
+    Describe 'ADMX policy template' {
+        It 'contains a localized, Defender-only registry policy set' {
+            $moduleRoot = (Get-Module DisableDefender).ModuleBase
+            $admx = [xml](Get-Content -Raw -LiteralPath (
+                Join-Path $moduleRoot 'PolicyDefinitions\DisableDefender.admx'))
+            $adml = [xml](Get-Content -Raw -LiteralPath (
+                Join-Path $moduleRoot 'PolicyDefinitions\en-US\DisableDefender.adml'))
+            $namespace = New-Object System.Xml.XmlNamespaceManager($admx.NameTable)
+            $namespace.AddNamespace('p', 'http://schemas.microsoft.com/GroupPolicy/2006/07/PolicyDefinitions')
+            $policies = @($admx.SelectNodes('//p:policy', $namespace))
+            $policies.Count | Should -Be 9
+            @($policies | ForEach-Object valueName) | Should -Contain 'DisableAntiSpyware'
+            @($policies | ForEach-Object valueName) | Should -Contain 'DisableRealtimeMonitoring'
+            @($policies | ForEach-Object key) | Should -Not -Match 'Firewall'
+            @($policies | ForEach-Object valueName) | Should -Not -Contain 'Sense'
+
+            $resourceIds = @($adml.policyDefinitionResources.resources.stringTable.string |
+                ForEach-Object id)
+            foreach ($policy in $policies) {
+                $displayId = ([regex]::Match(
+                    [string]$policy.displayName, '^\$\(string\.(.+)\)$')).Groups[1].Value
+                $explainId = ([regex]::Match(
+                    [string]$policy.explainText, '^\$\(string\.(.+)\)$')).Groups[1].Value
+                $resourceIds | Should -Contain $displayId
+                $resourceIds | Should -Contain $explainId
+            }
+        }
+    }
+
+    Describe 'Fleet status collection' {
+        It 'requires an explicit WinRM opt-in' {
+            $testTarget = 'PC01'
+            { Get-DefenderFleetStatus -ComputerName $testTarget } |
+                Should -Throw -ExpectedMessage '*AllowRemoting*'
+        }
+
+        It 'returns per-target read-only status and failures' {
+            Mock Invoke-Command {
+                if ($ComputerName -eq 'offline-host') {
+                    throw 'WinRM unavailable'
+                }
+                [PSCustomObject]@{
+                    CollectedAt = '2026-08-12T00:00:00Z'
+                    Status      = [PSCustomObject]@{
+                        AntivirusEnabled = $false
+                        firewall_Public   = $true
+                    }
+                }
+            }
+
+            $testTargets = @('PC01','offline-host')
+            $result = Get-DefenderFleetStatus -ComputerName $testTargets `
+                -AllowRemoting
+
+            $result.Summary.Total | Should -Be 2
+            $result.Summary.Succeeded | Should -Be 1
+            $result.Summary.Failed | Should -Be 1
+            ($result.Results | Where-Object ComputerName -eq 'PC01').Succeeded |
+                Should -Be $true
+            ($result.Results | Where-Object ComputerName -eq 'offline-host').Error |
+                Should -Match 'WinRM unavailable'
+            Should -Invoke Invoke-Command -Times 2 -Exactly
+        }
+
+        It 'serializes the fleet envelope without exposing credentials' {
+            Mock Invoke-Command {
+                [PSCustomObject]@{
+                    CollectedAt = '2026-08-12T00:00:00Z'
+                    Status      = [PSCustomObject]@{ AntivirusEnabled = $true }
+                }
+            }
+
+            $testTarget = 'PC01'
+            $json = Get-DefenderFleetStatus -ComputerName $testTarget `
+                -AllowRemoting -Json
+            $document = $json | ConvertFrom-Json
+
+            $document.Mode | Should -Be 'FleetStatus'
+            $document.Results[0].ComputerName | Should -Be 'PC01'
+            $json | Should -Not -Match 'Credential'
+        }
+    }
+
+    Describe 'Defender ETW capture' {
+        BeforeEach {
+            $script:EtwCaptureEnabled = $true
+            $script:DefenderEtwCapture = $null
+            $script:AppDir = $TestDrive
+            $script:RuntimeDirectoryVerified = $true
+            Mock Write-Log {}
+            Mock Invoke-DefenderEtwCommand {
+                if ($Executable -eq 'logman.exe' -and $ArgumentList[0] -eq 'start') {
+                    $outputIndex = [array]::IndexOf($ArgumentList, '-o')
+                    New-Item -ItemType File -Path $ArgumentList[$outputIndex + 1] -Force |
+                        Out-Null
+                }
+                [PSCustomObject]@{ ExitCode = 0; Output = @() }
+            }
+            Mock Write-DefenderJsonArtifactAtomic {}
+        }
+
+        AfterEach {
+            $script:EtwCaptureEnabled = $false
+            $script:DefenderEtwCapture = $null
+        }
+
+        It 'captures the Defender provider and writes a versioned summary' {
+            $running = Start-DefenderEtwCapture -Mode Disable
+            $stopped = Stop-DefenderEtwCapture
+
+            $running.Status | Should -Be 'Running'
+            $running.Provider | Should -Be 'Microsoft-Windows-Windows Defender'
+            $stopped.Status | Should -Be 'Stopped'
+            $stopped.ConvertExitCode | Should -Be 0
+            $stopped.MetadataPath | Should -Match 'defender-etw\..*\.json$'
+            Should -Invoke Invoke-DefenderEtwCommand -Times 3 -Exactly
+            Should -Invoke Write-DefenderJsonArtifactAtomic -Times 1 -Exactly
+        }
+
+        It 'fails open when the inbox tracing tools are unavailable' {
+            Mock Invoke-DefenderEtwCommand { throw 'tracing tool unavailable' }
+
+            $running = Start-DefenderEtwCapture -Mode Remove
+
+            $running | Should -BeNullOrEmpty
+            Stop-DefenderEtwCapture | Should -BeNullOrEmpty
+            Should -Invoke Write-Log -Times 1 -Exactly
+        }
+
+        It 'does not start a trace for WhatIf simulation' {
+            $previousWhatIf = $WhatIfPreference
+            try {
+                $WhatIfPreference = $true
+                Start-DefenderEtwCapture -Mode Restore | Should -BeNullOrEmpty
+                Should -Invoke Invoke-DefenderEtwCommand -Times 0 -Exactly
+            } finally {
+                $WhatIfPreference = $previousWhatIf
+            }
         }
     }
 
@@ -3438,6 +3581,8 @@ InModuleScope DisableDefender {
         BeforeEach {
             Mock Set-RunOptions {}
             Mock Confirm-LocalSession {}
+            Mock Start-DefenderEtwCapture {}
+            Mock Stop-DefenderEtwCapture {}
             Mock Start-RestoreManifest {}
             Mock Stop-RestoreManifest {}
             Mock Save-DefenderSurfaceBaseline {}
@@ -5162,5 +5307,12 @@ Describe 'DisableDefender CLI result wiring' {
         $script:CliSource | Should -Match 'Set-DefenderPresentationCulture\s+-Culture \$Culture'
         $script:CliSource | Should -Match 'Get-DefenderPresentationString\s+-Id ''menu\.disable'''
         $script:CliSource | Should -Match 'Get-DefenderPresentationString\s+-Id ''cli\.operation\.verified'''
+    }
+
+    It 'keeps fleet status read-only and explicitly gated' {
+        $script:CliSource | Should -Match '\[string\[\]\]\$ComputerName'
+        $script:CliSource | Should -Match 'Get-DefenderFleetStatus\s+-ComputerName \$ComputerName'
+        $script:CliSource | Should -Match 'AllowRemoting:\$AllowRemoting'
+        $script:CliSource | Should -Match 'ComputerName is only supported with -Mode Status'
     }
 }
