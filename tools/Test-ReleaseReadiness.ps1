@@ -66,6 +66,34 @@ function Get-ReleaseFileSha256 {
     }
 }
 
+function Get-ReleaseCanonicalFileSha256 {
+    param([Parameter(Mandatory)][string]$Path)
+
+    $textExtensions = @('.bat', '.json', '.md', '.ps1', '.psd1', '.psm1')
+    if ($textExtensions -notcontains ([IO.Path]::GetExtension($Path).ToLowerInvariant())) {
+        return Get-ReleaseFileSha256 -Path $Path
+    }
+
+    $bytes = [IO.File]::ReadAllBytes($Path)
+    $normalized = New-Object 'System.Collections.Generic.List[byte]'
+    for ($index = 0; $index -lt $bytes.Length; $index++) {
+        if ($bytes[$index] -eq 0x0D -and
+            $index + 1 -lt $bytes.Length -and
+            $bytes[$index + 1] -eq 0x0A) {
+            continue
+        }
+        [void]$normalized.Add($bytes[$index])
+    }
+
+    $sha256 = [Security.Cryptography.SHA256]::Create()
+    try {
+        return [BitConverter]::ToString(
+            $sha256.ComputeHash($normalized.ToArray())).Replace('-', '').ToLowerInvariant()
+    } finally {
+        $sha256.Dispose()
+    }
+}
+
 function Get-ReleaseTextVersion {
     param(
         [Parameter(Mandatory)][string]$Path,
@@ -303,7 +331,7 @@ function Assert-ReleaseArtifact {
             } finally {
                 $entryStream.Dispose()
             }
-            $sourceHash = Get-ReleaseFileSha256 -Path $sourcePath
+            $sourceHash = Get-ReleaseCanonicalFileSha256 -Path $sourcePath
             if ($entryHash -cne $sourceHash) {
                 throw "ZIP entry content is stale or altered: $($entry.FullName)"
             }

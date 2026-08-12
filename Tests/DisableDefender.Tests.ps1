@@ -146,6 +146,7 @@ Describe 'Local release build' {
         $builderSource | Should -Match '0x0A'
         $gateSource = Get-Content -LiteralPath (
             Join-Path $PSScriptRoot '..\tools\Test-ReleaseReadiness.ps1') -Raw
+        $gateSource | Should -Match 'Get-ReleaseCanonicalFileSha256'
         $gateSource | Should -Match '\\r\?\$'
     }
 
