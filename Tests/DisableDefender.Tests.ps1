@@ -5049,12 +5049,14 @@ Describe 'DisableDefender GUI safety wiring' {
 Describe 'DisableDefender CLI result wiring' {
     BeforeAll {
         $script:CliSource = Get-Content -LiteralPath (Join-Path $PSScriptRoot '..\DisableDefender.ps1') -Raw
+        $script:OperationResultSource = Get-Content -LiteralPath (Join-Path $PSScriptRoot '..\Private\OperationResult.ps1') -Raw
     }
 
     It 'serializes one shared success envelope for action-mode JSON output' {
         $script:CliSource | Should -Match '\$operationResult\s*\|\s*ConvertTo-Json\s+-Depth 12'
         $script:CliSource | Should -Match 'Silent\s*=\s*\[bool\]\(\$Silent -or \$Json\)'
         $script:CliSource | Should -Match '\$operationResult\.Succeeded'
+        $script:OperationResultSource | Should -Match 'Ok\s*=\s*\$true'
         $script:CliSource | Should -Match '(?s)\(\$Mode -eq ''Disable'' -or \$Mode -eq ''Remove''\) -and -not \$Json.*?Show-DefenderStatus'
     }
 
