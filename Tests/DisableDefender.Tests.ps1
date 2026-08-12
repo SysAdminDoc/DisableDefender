@@ -2032,6 +2032,13 @@ InModuleScope DisableDefender {
             ($script:SystemTaskLogs -join "`n") | Should -Match 'WARN\|SYSTEM task failed:'
             ($script:SystemTaskLogs -join "`n") | Should -Match 'LastTaskResult=1'
         }
+
+        It 'does not construct a cmd.exe wrapper' {
+            $source = Get-Content -Raw -LiteralPath (Join-Path $PSScriptRoot '..\Private\Invoke-AsSystem.ps1')
+            $source | Should -Match 'New-ScheduledTaskAction\s+-Execute \$Execute\s+-Argument \$Argument'
+            $source | Should -Not -Match 'cmd\.exe'
+            $source | Should -Not -Match '/c `"'
+        }
     }
 
     Describe 'Remove known-bad safety gate' {

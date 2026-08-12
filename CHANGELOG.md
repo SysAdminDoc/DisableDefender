@@ -41,6 +41,7 @@
 - Release text is normalized during packaging and the strict gate accepts CRLF checkouts, so clean detached builds reproduce the same ZIP bytes regardless of `core.autocrlf`.
 - SecHealthUI removal and Health now share a versioned package/marker catalog, including LTSC identities, and Health distinguishes complete removal from partial marker state.
 - The GUI log override now writes the same versioned JSONL fields as the module sink, including `message_id`, while preserving the existing human-readable log and in-app queue.
+- `Invoke-AsSystem` now registers the requested executable directly as the SYSTEM scheduled-task action; it no longer wraps arguments in `cmd.exe` just to redirect optional output.
 
 ## v0.0.40 - 2026-06-30
 
