@@ -128,6 +128,19 @@ function Assert-DefenderFirewallBoundary {
     Assert-FirewallSafety -Stage "${Boundary}:$Phase"
 }
 
+function Assert-DefenderCancellationBoundary {
+    param([Parameter(Mandatory)][string]$Boundary)
+
+    if ($null -eq $script:CancellationCallback) { return }
+    $requested = $false
+    try { $requested = [bool](& $script:CancellationCallback) } catch {}
+    if (-not $requested) { return }
+
+    $message = "Operation cancellation requested; stopping at the $Boundary boundary after the current phase completed."
+    Write-Log $message WARN
+    throw [System.OperationCanceledException]::new($message)
+}
+
 function Assert-DefenderActionPhaseSelection {
     param(
         [Parameter(Mandatory)][object[]]$Phases,
@@ -182,6 +195,7 @@ function Invoke-DefenderGuardedPhasePlan {
     $preflightCompleted = $false
     $operationResult = $null
     try {
+        Assert-DefenderCancellationBoundary -Boundary 'preflight'
         foreach ($phase in @($PreflightPhases)) {
             Invoke-DefenderUnfilteredPhase -Phase $phase
         }
@@ -248,6 +262,15 @@ function Invoke-DefenderPhasePlan {
     Save-DefenderPhaseState -State $state
 
     foreach ($phase in $Phases) {
+        try {
+            Assert-DefenderCancellationBoundary -Boundary "phase '$($phase.Name)'"
+        } catch [System.OperationCanceledException] {
+            $state.Status = 'Cancelled'
+            $state.CancelledAt = (Get-Date).ToString('o')
+            $state.Error = $_.Exception.Message
+            Save-DefenderPhaseState -State $state
+            throw
+        }
         $phaseState = [ordered]@{
             Name      = $phase.Name
             Key       = $phase.Key

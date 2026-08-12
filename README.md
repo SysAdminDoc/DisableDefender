@@ -63,7 +63,7 @@ Disable confirmation includes a current-vs-target drift preview before execution
 - **Support bundle export**: `Export-DefenderSupportBundle` creates a unique local diagnostic zip with an explicit or phase-derived health target, a versioned privacy allowlist, redacted diagnostics, and no automatic upload
 - **Offline remove bundle** (`PrepareOffline`): generates a self-contained `Invoke-OfflineDefenderRemove.ps1` that targets an offline Windows volume from WinRE or a secondary OS, bypassing live Tamper Protection by editing dormant registry hives directly; refuses to run against the live system root
 - **Module layout**: `DisableDefender.psd1` / `DisableDefender.psm1` with public commands and private helpers for function-level tests
-- **GUI auto-elevate, silent CLI mode, transcript logging, Safe Mode aware**
+- **GUI auto-elevate, cooperative phase-boundary cancellation, safe runspace/timer cleanup, silent CLI mode, transcript logging, Safe Mode aware**
 
 ## Requirements
 

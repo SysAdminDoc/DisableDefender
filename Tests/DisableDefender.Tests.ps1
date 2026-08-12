@@ -3540,6 +3540,7 @@ InModuleScope DisableDefender {
         BeforeEach {
             $script:PhaseStatePath = Join-Path $TestDrive 'phase-state.json'
             $script:AppDir = $TestDrive
+            $script:CancellationCallback = $null
             Mock Assert-FirewallSafety {}
         }
 
@@ -3613,6 +3614,25 @@ InModuleScope DisableDefender {
             $state = Get-Content -Raw -LiteralPath $script:PhaseStatePath | ConvertFrom-Json
             $state.Status | Should -Be 'Failed'
             $state.FailedPhase | Should -Be 'Silent mutation'
+        }
+
+        It 'honors cancellation only at a phase boundary and persists cancelled state' {
+            $script:CancellationCallback = { $true }
+            $script:CancellationActionRan = $false
+            $phases = @(
+                New-DefenderPhase -Name 'Must not start' -Action {
+                    $script:CancellationActionRan = $true
+                }
+            )
+
+            { Invoke-DefenderPhasePlan -Mode Disable -Phases $phases } |
+                Should -Throw -ExpectedMessage '*cancellation requested*'
+
+            $script:CancellationActionRan | Should -Be $false
+            $state = Get-Content -Raw -LiteralPath $script:PhaseStatePath | ConvertFrom-Json
+            $state.Status | Should -Be 'Cancelled'
+            $state.Error | Should -Match 'cancellation requested'
+            $script:CancellationCallback = $null
         }
 
         It 'rejects and persists a partial action result' {
@@ -4843,7 +4863,7 @@ Describe 'DisableDefender GUI safety wiring' {
             'btnMin', 'btnMax', 'btnClose',
             'btnDisable', 'btnRemove', 'btnRestore', 'btnRepair', 'btnRefresh',
             'btnCopyLog', 'btnExportLog', 'btnClearLog',
-            'btnConfirmCancel', 'btnConfirmOk'
+            'btnConfirmCancel', 'btnConfirmOk', 'btnCancelOperation'
         )
 
         foreach ($buttonName in $namedButtons) {
@@ -4867,6 +4887,19 @@ Describe 'DisableDefender GUI safety wiring' {
     It 'blocks unsafe window close while a phase is busy and does not abruptly stop the worker' {
         $script:GuiSource | Should -Match '(?s)\$window\.Add_Closing\(\{.*?\$script:UIState\.Busy.*?\$closingArgs\.Cancel\s*=\s*\$true'
         $script:GuiSource | Should -Not -Match '\$script:AsyncPS\.Stop\('
+        $script:GuiSource | Should -Match 'Request-OperationCancellation'
+        $script:GuiSource | Should -Match 'CancellationCallback'
+        $script:GuiSource | Should -Match 'Complete-AsyncWorker'
+        $script:GuiSource | Should -Match 'EndInvoke'
+    }
+
+    It 'exposes cooperative cancellation and disposes dispatcher timers' {
+        $script:GuiSource | Should -Match 'x:Name="btnCancelOperation"'
+        $script:GuiSource | Should -Match '\$script:UIState\.CancellationRequested\s*=\s*\$true'
+        $script:GuiSource | Should -Match 'finishing current phase'
+        $script:GuiSource | Should -Match '\$drainTimer\.Dispose\(\)'
+        $script:GuiSource | Should -Match '\$statusTimer\.Dispose\(\)'
+        $script:GuiSource | Should -Match '\$timer\.Dispose\(\)'
     }
 
     It 'uses the shared verified operation result for completion state' {

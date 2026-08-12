@@ -132,13 +132,14 @@ function Invoke-RestoreDefender {
         [ValidateSet('Newest','All','Active')]
         [string]$ManifestSelection = 'Newest',
         [switch]$RepairWithoutManifest,
-        [scriptblock]$LogCallback
+        [scriptblock]$LogCallback,
+        [scriptblock]$CancellationCallback
     )
 
     $shouldProcess = $PSCmdlet.ShouldProcess('Microsoft Defender', 'Restore')
     if (-not $shouldProcess -and -not $WhatIfPreference) { return }
 
-    Set-RunOptions -Silent:$Silent -AllowRemoting:$AllowRemoting -LogPath $LogPath -LogCallback $LogCallback
+    Set-RunOptions -Silent:$Silent -AllowRemoting:$AllowRemoting -LogPath $LogPath -LogCallback $LogCallback -CancellationCallback $CancellationCallback
     Confirm-LocalSession -Mode Restore
 
     $previousReplayMode = [bool]$script:RestoreManifestReplayMode

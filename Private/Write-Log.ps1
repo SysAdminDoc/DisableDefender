@@ -58,7 +58,8 @@ function Set-RunOptions {
         [switch]$AllowRemoting,
         [switch]$Silent,
         [string]$LogPath,
-        [scriptblock]$LogCallback
+        [scriptblock]$LogCallback,
+        [scriptblock]$CancellationCallback
     )
 
     $script:ForceMode = [bool]$Force
@@ -68,6 +69,7 @@ function Set-RunOptions {
     $script:SilentMode = [bool]$Silent
     $script:LogPathOverride = if ([string]::IsNullOrWhiteSpace($LogPath)) { $null } else { $LogPath }
     $script:LogCallback = $LogCallback
+    $script:CancellationCallback = $CancellationCallback
     $script:RuntimeDirectoryVerified = $false
     $script:AclBackupRunId = $null
     $script:AclBackupDocument = $null

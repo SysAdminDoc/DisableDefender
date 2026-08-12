@@ -42,7 +42,8 @@ function Invoke-DisableDefender {
         [string[]]$Only,
         [ValidateSet('Policies','MpPreference','Tasks','Services')]
         [string[]]$Skip,
-        [scriptblock]$LogCallback
+        [scriptblock]$LogCallback,
+        [scriptblock]$CancellationCallback
     )
 
     $phases = @(
@@ -56,7 +57,7 @@ function Invoke-DisableDefender {
     $shouldProcess = $PSCmdlet.ShouldProcess('Microsoft Defender', 'Disable')
     if (-not $shouldProcess -and -not $WhatIfPreference) { return }
 
-    Set-RunOptions -Force:$Force -NoRestorePoint:$NoRestorePoint -IncludeMDE:$IncludeMDE -AllowRemoting:$AllowRemoting -Silent:$Silent -LogPath $LogPath -LogCallback $LogCallback
+    Set-RunOptions -Force:$Force -NoRestorePoint:$NoRestorePoint -IncludeMDE:$IncludeMDE -AllowRemoting:$AllowRemoting -Silent:$Silent -LogPath $LogPath -LogCallback $LogCallback -CancellationCallback $CancellationCallback
     Confirm-LocalSession -Mode Disable
 
     Start-RestoreManifest -Mode Disable

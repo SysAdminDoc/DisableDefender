@@ -77,7 +77,12 @@ $script:UIState = [hashtable]::Synchronized(@{
     LastAction = ''
     LastResult = $null
     StatusSnapshot = $null
+    CancellationRequested = $false
+    CancellationState = 'Idle'
+    WorkerState = 'Idle'
+    RunId = $null
 })
+$script:ToastTimers = New-Object System.Collections.ArrayList
 
 # Override Write-Log in the main scope so Get-DefenderStatus calls from UI thread queue too.
 function Write-Log {
@@ -845,8 +850,13 @@ function Write-Log {
                                  AutomationProperties.Name="Operation progress"/>
                     <TextBlock Grid.Column="1" x:Name="statusText" Text="Idle" Foreground="{StaticResource Subtext0}" FontSize="11.5"
                                VerticalAlignment="Center" Margin="12,0,0,0" AutomationProperties.LiveSetting="Polite"/>
-                    <TextBlock Grid.Column="2" x:Name="footerText" Text="LOCAL ONLY  &#x2022;  FIREWALL BOUNDARY ENFORCED"
-                               Foreground="{StaticResource Subtext0}" FontSize="10.5" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                    <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                        <Button x:Name="btnCancelOperation" Style="{StaticResource BaseButton}" Content="Cancel operation"
+                                Padding="10,5" Margin="0,0,12,0" Visibility="Collapsed"
+                                AutomationProperties.Name="Cancel current operation"/>
+                        <TextBlock x:Name="footerText" Text="LOCAL ONLY  &#x2022;  FIREWALL BOUNDARY ENFORCED"
+                                   Foreground="{StaticResource Subtext0}" FontSize="10.5" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                    </StackPanel>
                 </Grid>
             </Border>
 
@@ -1283,11 +1293,15 @@ function Show-Toast {
     $tmr = New-Object System.Windows.Threading.DispatcherTimer
     $tmr.Interval = [TimeSpan]::FromSeconds(4)
     $tmr.Add_Tick({
+        $timer = $this
         $fadeOut = New-Object System.Windows.Media.Animation.DoubleAnimation 1, 0, ([System.Windows.Duration][TimeSpan]::FromMilliseconds(300))
         $fadeOut.add_Completed({ $ui.toast.Visibility = 'Collapsed' }.GetNewClosure())
         $ui.toast.BeginAnimation([System.Windows.UIElement]::OpacityProperty, $fadeOut)
-        $this.Stop()
+        $timer.Stop()
+        try { $timer.Dispose() } catch {}
+        [void]$script:ToastTimers.Remove($timer)
     })
+    [void]$script:ToastTimers.Add($tmr)
     $tmr.Start()
 }
 
@@ -1394,6 +1408,11 @@ function Add-LogEntry {
 function Set-Busy {
     param([bool]$IsBusy, [string]$Label = 'Idle')
     $script:UIState.Busy = $IsBusy
+    if (-not $IsBusy) {
+        $script:UIState.CancellationRequested = $false
+        $script:UIState.CancellationState = 'Idle'
+        $script:UIState.WorkerState = 'Idle'
+    }
     $ui.statusText.Text = $Label
     $ui.statusText.Foreground = if ($IsBusy) { $window.Resources['Blue'] } else { $window.Resources['Subtext0'] }
     $ui.progressBar.IsIndeterminate = $IsBusy
@@ -1402,6 +1421,8 @@ function Set-Busy {
     $ui.btnRestore.IsEnabled = -not $IsBusy
     $ui.btnRepair.IsEnabled = -not $IsBusy
     $ui.btnRefresh.IsEnabled = -not $IsBusy
+    $ui.btnCancelOperation.Visibility = if ($IsBusy) { 'Visible' } else { 'Collapsed' }
+    $ui.btnCancelOperation.IsEnabled = $IsBusy -and -not $script:UIState.CancellationRequested
 }
 
 # ---------------------------------------------------------------------------
@@ -1522,6 +1543,73 @@ function Update-StatusTiles {
 $script:Runspace = $null
 $script:AsyncResult = $null
 $script:AsyncPS = $null
+$script:AsyncStarted = $null
+
+function New-GuiWorkerFailureResult {
+    param(
+        [Parameter(Mandatory)][string]$ActionMode,
+        [Parameter(Mandatory)][string]$Message,
+        [bool]$Cancelled = $false
+    )
+
+    return [PSCustomObject][ordered]@{
+        Ok         = $false
+        Succeeded  = $false
+        Cancelled  = $Cancelled
+        Mode       = $ActionMode
+        RunId      = $script:UIState.RunId
+        Attempted  = 0
+        Changed    = 0
+        Verified   = 0
+        Errors     = @($Message)
+        Evidence   = @()
+        Phases     = @()
+        Completed  = (Get-Date).ToString('o')
+    }
+}
+
+function Request-OperationCancellation {
+    if (-not $script:UIState.Busy) { return }
+    if ($script:UIState.CancellationRequested) { return }
+
+    $script:UIState.CancellationRequested = $true
+    $script:UIState.CancellationState = 'Requested'
+    $script:UIState.WorkerState = 'FinishingCurrentPhase'
+    $ui.btnCancelOperation.IsEnabled = $false
+    $ui.statusText.Text = 'Cancellation requested; finishing current phase...'
+    Show-Toast 'Cancellation requested. The current phase will finish safely before the worker exits.' warn
+    Write-Log 'GUI cancellation requested; waiting for the current non-cancellable phase boundary.' WARN
+}
+
+function Complete-AsyncWorker {
+    if ($null -eq $script:AsyncPS) { return $null }
+    if ($null -ne $script:AsyncResult -and -not $script:AsyncResult.IsCompleted) {
+        return $null
+    }
+
+    $asyncPowerShell = $script:AsyncPS
+    $asyncResult = $script:AsyncResult
+    $endError = $null
+    $script:UIState.WorkerState = 'Draining'
+    try {
+        if ($null -ne $asyncResult) {
+            $asyncPowerShell.EndInvoke($asyncResult) | Out-Null
+        }
+    } catch {
+        $endError = $_
+    } finally {
+        try { $asyncPowerShell.Dispose() } catch {}
+        if ($null -ne $script:Runspace) {
+            try { $script:Runspace.Close() } catch {}
+            try { $script:Runspace.Dispose() } catch {}
+        }
+        $script:AsyncResult = $null
+        $script:AsyncPS = $null
+        $script:Runspace = $null
+        $script:AsyncStarted = $null
+    }
+    return $endError
+}
 
 function Start-ModeAsync {
     param(
@@ -1530,6 +1618,10 @@ function Start-ModeAsync {
         [switch]$RepairWithoutManifest
     )
     if ($script:UIState.Busy) { return }
+    $script:UIState.RunId = [guid]::NewGuid().ToString()
+    $script:UIState.CancellationRequested = $false
+    $script:UIState.CancellationState = 'Running'
+    $script:UIState.WorkerState = 'Starting'
     Set-Busy -IsBusy $true -Label "Running $ActionMode..."
     Show-Toast "Starting $ActionMode..." info
 
@@ -1557,12 +1649,14 @@ function Start-ModeAsync {
         }
 
         try {
+            $UIState.WorkerState = 'Running'
+            $cancellationCallback = { [bool]$UIState.CancellationRequested }
             $operationOutput = @(switch ($ActionMode) {
-                'Disable' { Invoke-DisableDefender -Force:$ForceOverride -LogPath $LogPath -LogCallback $logCallback -Confirm:$false }
-                'Remove'  { Invoke-RemoveDefender -Force:$ForceOverride -LogPath $LogPath -LogCallback $logCallback -Confirm:$false }
+                'Disable' { Invoke-DisableDefender -Force:$ForceOverride -LogPath $LogPath -LogCallback $logCallback -CancellationCallback $cancellationCallback -Confirm:$false }
+                'Remove'  { Invoke-RemoveDefender -Force:$ForceOverride -LogPath $LogPath -LogCallback $logCallback -CancellationCallback $cancellationCallback -Confirm:$false }
                 'Restore' {
                     Invoke-RestoreDefender -RepairWithoutManifest:$RepairWithoutManifest `
-                        -LogPath $LogPath -LogCallback $logCallback -Confirm:$false
+                        -LogPath $LogPath -LogCallback $logCallback -CancellationCallback $cancellationCallback -Confirm:$false
                 }
             })
             $operationResult = @($operationOutput | Where-Object {
@@ -1573,15 +1667,31 @@ function Start-ModeAsync {
                 throw "$ActionMode did not return a successful verified operation result."
             }
             $UIState.LastResult = $operationResult[0]
+            $UIState.WorkerState = 'Completed'
         } catch {
-            & $logCallback -Message "FATAL: $_" -Level ERROR
-            $UIState.LastResult = [PSCustomObject]@{
-                Succeeded = $false
-                Attempted = 0
-                Changed   = 0
-                Verified  = 0
-                Errors    = @($_.Exception.Message)
+            $cancelled = [bool]$UIState.CancellationRequested -or
+                $_.Exception -is [System.OperationCanceledException]
+            $message = if ($cancelled) {
+                'Operation cancelled at a safe phase boundary; no phase was interrupted.'
+            } else {
+                "FATAL: $($_.Exception.Message)"
             }
+            & $logCallback -Message $message -Level $(if ($cancelled) { 'WARN' } else { 'ERROR' })
+            $UIState.LastResult = [PSCustomObject][ordered]@{
+                Ok         = $false
+                Succeeded  = $false
+                Cancelled  = $cancelled
+                Mode       = $ActionMode
+                RunId      = $UIState.RunId
+                Attempted  = 0
+                Changed    = 0
+                Verified   = 0
+                Errors     = @($message)
+                Evidence   = @()
+                Phases     = @()
+                Completed  = (Get-Date).ToString('o')
+            }
+            $UIState.WorkerState = if ($cancelled) { 'Cancelled' } else { 'Failed' }
         }
     }
 
@@ -1591,6 +1701,7 @@ function Start-ModeAsync {
     $script:AsyncPS = $ps
     $script:Runspace = $rs
     $script:AsyncResult = $ps.BeginInvoke()
+    $script:AsyncStarted = Get-Date
     $script:UIState.LastAction = $ActionMode
     $script:UIState.LastResult = $null
 }
@@ -1608,13 +1719,13 @@ $drainTimer.Add_Tick({
     }
     # Check async completion
     if ($script:AsyncResult -and $script:AsyncResult.IsCompleted) {
-        try { $script:AsyncPS.EndInvoke($script:AsyncResult) } catch { Write-Log "Worker error: $_" ERROR }
-        $script:AsyncPS.Dispose()
-        $script:Runspace.Close()
-        $script:Runspace.Dispose()
-        $script:AsyncResult = $null
-        $script:AsyncPS = $null
-        $script:Runspace = $null
+        $workerError = Complete-AsyncWorker
+        if ($null -ne $workerError -and $null -eq $script:UIState.LastResult) {
+            $script:UIState.LastResult = New-GuiWorkerFailureResult `
+                -ActionMode $script:UIState.LastAction `
+                -Message "Worker drain failed: $($workerError.Exception.Message)" `
+                -Cancelled:$script:UIState.CancellationRequested
+        }
 
         $result = $script:UIState.LastResult
         $action = $script:UIState.LastAction
@@ -1622,6 +1733,8 @@ $drainTimer.Add_Tick({
         if ($null -ne $result -and $result.Succeeded) {
             Show-Toast ("{0} complete - {1} verified, {2} changed." -f `
                 $action, $result.Verified, $result.Changed) ok
+        } elseif ($null -ne $result -and $result.Cancelled) {
+            Show-Toast "$action cancelled safely at a phase boundary." warn
         } else {
             $errorText = if ($null -ne $result -and @($result.Errors).Count -gt 0) {
                 @($result.Errors) -join '; '
@@ -1706,6 +1819,8 @@ $ui.btnConfirmOk.Add_Click({
     }
 })
 
+$ui.btnCancelOperation.Add_Click({ Request-OperationCancellation })
+
 $ui.btnOpenSecurity.Add_Click({
     Start-Process 'windowsdefender:' -ErrorAction SilentlyContinue
 })
@@ -1784,24 +1899,27 @@ while ($script:UIState.LogQueue.Count -gt 0) {
 # ---------------------------------------------------------------------------
 $window.Add_Closing({
     param($source, $closingArgs)
-    if ($script:UIState.Busy) {
+    $workerActive = $script:UIState.Busy -or
+        ($script:AsyncResult -and -not $script:AsyncResult.IsCompleted)
+    if ($workerActive) {
         $closingArgs.Cancel = $true
-        Show-Toast 'An operation is still running. Close is available after the current phase finishes.' warn
+        Show-Toast 'An operation is still running. Request cancellation and close after the safe phase boundary completes.' warn
     }
 })
 
 $window.Add_Closed({
     $drainTimer.Stop()
     $statusTimer.Stop()
-    if ($script:AsyncPS) {
-        try {
-            if ($script:AsyncResult -and $script:AsyncResult.IsCompleted) {
-                $script:AsyncPS.EndInvoke($script:AsyncResult) | Out-Null
-            }
-        } catch {}
-        try { $script:AsyncPS.Dispose() } catch {}
+    try { $drainTimer.Dispose() } catch {}
+    try { $statusTimer.Dispose() } catch {}
+    if ($script:AsyncPS -and $script:AsyncResult -and $script:AsyncResult.IsCompleted) {
+        Complete-AsyncWorker | Out-Null
     }
-    if ($script:Runspace) { try { $script:Runspace.Dispose() } catch {} }
+    foreach ($timer in @($script:ToastTimers)) {
+        try { $timer.Stop() } catch {}
+        try { $timer.Dispose() } catch {}
+    }
+    $script:ToastTimers.Clear()
 })
 
 $null = $window.ShowDialog()
