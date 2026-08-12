@@ -491,7 +491,7 @@ try {
     $metadata = [PSCustomObject][ordered]@{
         SchemaVersion      = [int]$releaseConfig.ReleaseMetadataSchemaVersion
         Version            = $Version
-        BuiltAt            = (Get-Date).ToString('o')
+        BuiltAt            = $archiveTimestamp.ToString('o')
         ZipPath            = $finalZip
         HashManifestPath   = Join-Path $fullOutput $hashName
         Sha256             = $hash

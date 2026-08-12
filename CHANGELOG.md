@@ -14,7 +14,7 @@
 - Added `Get-DefenderSafeModeStatus` for live BCD/task evidence, persisted cross-boot stages, child/task results, verified effect counts, errors, and recovery guidance; the GUI component dashboard surfaces the same transaction state.
 
 ### Fixed
-- Release ZIP entries now use a fixed timestamp for byte-reproducible builds; the strict gate rejects missing tools, dirty release inputs, stale/wrong archives, bad hashes or metadata, content drift, unexpected signing, and clean-checkout hash mismatches.
+- Release ZIP entries and metadata now use a fixed timestamp for byte-reproducible builds; the strict gate rejects missing tools, dirty release inputs, stale/wrong archives, bad hashes or metadata, content drift, unexpected signing, and clean-checkout hash mismatches.
 - Phase state, surface baselines, snapshots, and support-bundle JSON now flush to same-directory temporary files, publish by atomic replacement, read-verify their own schema, and retain the previous artifact when publication fails; mutation-critical readers reject unknown future versions before use.
 - Registry ACL takeover now flushes a versioned, allowlisted per-run JSON journal before each owner or DACL mutation, atomically replaces and read-verifies journal bytes, binds exact Restore to selected manifest RunIds, unwinds repeated runs newest-first, retains every active journal after partial failure, archives only fully verified replay, and still accepts the constrained legacy CLIXML format.
 - Restore manifests, replay state, and registry ACL backups are now treated as privileged input: bounded versioned schemas and target allowlists reject the whole artifact before mutation, while one owner/DACL/reparse/file-identity-validated, no-write-shared lease supplies the exact replayed bytes.

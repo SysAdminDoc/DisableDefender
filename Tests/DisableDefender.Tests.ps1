@@ -142,6 +142,7 @@ Describe 'Local release build' {
     It 'normalizes release text line endings for detached checkout reproducibility' {
         $builderSource = Get-Content -LiteralPath $script:ReleaseBuilder -Raw
         $builderSource | Should -Match 'ConvertTo-ReleaseNormalizedText'
+        $builderSource | Should -Match 'BuiltAt\s*=\s*\$archiveTimestamp\.ToString'
         $builderSource | Should -Match '0x0D'
         $builderSource | Should -Match '0x0A'
         $gateSource = Get-Content -LiteralPath (
