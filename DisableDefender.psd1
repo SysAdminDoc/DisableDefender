@@ -25,10 +25,12 @@
         'Invoke-RestoreDefender'
         'Invoke-SafeModeRemove'
         'New-OfflineRemoveBundle'
+        'Export-DefenderPreset'
         'Export-DefenderSupportBundle'
         'Export-DefenderHtmlReport'
         'Save-DefenderSnapshot'
         'Compare-DefenderSnapshots',
+        'Import-DefenderPreset'
         'Set-DefenderPresentationCulture'
     )
 

@@ -21,6 +21,7 @@ Describe 'Module manifest' {
     It 'exports only public commands' {
         $expected = @(
             'Compare-DefenderSnapshots'
+            'Export-DefenderPreset'
             'Export-DefenderHtmlReport'
             'Export-DefenderSupportBundle'
             'Get-DefenderComponentStatus'
@@ -31,6 +32,7 @@ Describe 'Module manifest' {
             'Get-DefenderPresentationString'
             'Get-DefenderSafeModeStatus'
             'Get-DefenderStatus'
+            'Import-DefenderPreset'
             'Invoke-DisableDefender'
             'Invoke-RemoveDefender'
             'Invoke-RestoreDefender'
@@ -296,6 +298,7 @@ InModuleScope DisableDefender {
         It 'declares one independent current version for every durable format' {
             $expected = @(
                 'ActionResult',
+                'DefenderPreset',
                 'DefenderSnapshot',
                 'ErrorEnvelope',
                 'OperationResult',
@@ -481,6 +484,93 @@ InModuleScope DisableDefender {
             @(Get-ChildItem -LiteralPath $TestDrive `
                 -Filter '.atomic-phase-state.json.*.tmp').Count |
                 Should -Be 0
+        }
+    }
+
+    Describe 'Portable Defender presets' {
+        It 'exports a strict versioned cloud-sample-submission preset' {
+            Mock Write-Log {}
+            $path = Join-Path $TestDrive 'cloud-sample.json'
+
+            $result = Export-DefenderPreset -OutputPath $path
+            $document = Get-Content -Raw -LiteralPath $path | ConvertFrom-Json
+
+            $result.Written | Should -Be $true
+            $result.Preset | Should -Be 'CloudSampleSubmission'
+            $document.SchemaVersion | Should -Be 1
+            $document.Format | Should -Be 'DisableDefender.Preset'
+            $document.Preset | Should -Be 'CloudSampleSubmission'
+            $document.Preferences.MAPSReporting | Should -Be 'Advanced'
+            $document.Preferences.SubmitSamplesConsent | Should -Be 'SendSafeSamples'
+            $document.Preferences.DisableRealtimeMonitoring | Should -Be $true
+            @($document.Exclusions.ExclusionPath) | Should -Contain 'C:\'
+            { Assert-DefenderArtifactSchemaVersion -Name DefenderPreset `
+                    -InputObject $document } | Should -Not -Throw
+        }
+
+        It 'imports supported values and verifies every mutation' {
+            Mock Write-Log {}
+            Mock Get-MpRuntimePreferenceCatalog {
+                @(
+                    [PSCustomObject]@{ Name = 'DisableRealtimeMonitoring'; DisableValue = $true; RestoreValue = $false }
+                    [PSCustomObject]@{ Name = 'MAPSReporting'; DisableValue = 'Disabled'; RestoreValue = 'Advanced' }
+                    [PSCustomObject]@{ Name = 'SubmitSamplesConsent'; DisableValue = 'NeverSend'; RestoreValue = 'SendSafeSamples' }
+                )
+            }
+            Mock Get-MpRuntimeExclusionCatalog {
+                @([PSCustomObject]@{ Parameter = 'ExclusionPath'; Values = @('C:\') })
+            }
+            $script:PresetCurrent = [PSCustomObject][ordered]@{
+                DisableRealtimeMonitoring = $false
+                MAPSReporting             = 'Disabled'
+                SubmitSamplesConsent      = 'NeverSend'
+                ExclusionPath              = @()
+            }
+            Mock Get-MpPreference { $script:PresetCurrent }
+            Mock Set-MpPreference {
+                if ($null -ne $DisableRealtimeMonitoring) {
+                    $script:PresetCurrent.DisableRealtimeMonitoring = $DisableRealtimeMonitoring
+                }
+                if ($null -ne $MAPSReporting) {
+                    $script:PresetCurrent.MAPSReporting = $MAPSReporting
+                }
+                if ($null -ne $SubmitSamplesConsent) {
+                    $script:PresetCurrent.SubmitSamplesConsent = $SubmitSamplesConsent
+                }
+            }
+            Mock Add-MpPreference {
+                $script:PresetCurrent.ExclusionPath = @(
+                    $script:PresetCurrent.ExclusionPath + @($ExclusionPath))
+            }
+
+            $path = Join-Path $TestDrive 'cloud-sample-import.json'
+            Export-DefenderPreset -OutputPath $path | Out-Null
+            $result = Import-DefenderPreset -Path $path
+
+            $result.Ok | Should -Be $true
+            $result.Succeeded | Should -Be $true
+            $result.Result.Attempted | Should -Be 4
+            $result.Result.Changed | Should -Be 4
+            $result.Result.Verified | Should -Be 4
+            Should -Invoke Set-MpPreference -Times 3 -Exactly
+            Should -Invoke Add-MpPreference -Times 1 -Exactly
+            $script:PresetCurrent.MAPSReporting | Should -Be 'Advanced'
+            $script:PresetCurrent.SubmitSamplesConsent | Should -Be 'SendSafeSamples'
+            $script:PresetCurrent.ExclusionPath | Should -Contain 'C:\'
+        }
+
+        It 'rejects unsupported preference values before mutation' {
+            Mock Write-Log {}
+            $path = Join-Path $TestDrive 'cloud-sample-invalid.json'
+            Export-DefenderPreset -OutputPath $path | Out-Null
+            $document = Get-Content -Raw -LiteralPath $path | ConvertFrom-Json
+            $document.Preferences | Add-Member -MemberType NoteProperty `
+                -Name UnsupportedSetting -Value $true
+            $document | ConvertTo-Json -Depth 12 |
+                Set-Content -LiteralPath $path -Encoding UTF8
+
+            { Import-DefenderPreset -Path $path } |
+                Should -Throw -ExpectedMessage '*unsupported Preferences value*'
         }
     }
 

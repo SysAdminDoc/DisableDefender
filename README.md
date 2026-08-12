@@ -43,6 +43,7 @@ GUI accessibility/layout verification is part of the test suite: `Invoke-Pester 
 - **Multi-strategy `Set-ServiceStart`**: direct write → ACL takeover → SYSTEM task, with target-state verification after every strategy
 - **Full policy coverage** (privacy.sexy-enriched): `DisableAntiSpyware`, real-time, behavior, IOAV, IPS, IPC, spynet, MAPS, NIS, IPS-throttle, MpEngine PUA + file-hash, signatures, scan, SmartScreen, MRT, passive-mode for MDE, UX suppression, legacy `Microsoft Antimalware`
 - **Runtime prefs**: cataloged `Set-MpPreference` sweep with restore defaults, health expectations, and global path/extension exclusions
+- **Portable cloud-sample preset**: `Export-DefenderPreset` and `Import-DefenderPreset` exchange a strict, versioned JSON definition for the supported Defender AV/MAPS choices; unsupported broad privacy settings are rejected
 - **Scheduled tasks**: all four Defender tasks + ExploitGuard refresh disabled
 - **Service takedown**: 16 Defender services by default, including `MDCoreSvc`, `MDDlpSvc`, `MsSecFlt`, `MsSecCore`, `SgrmAgent`/`Broker`, `webthreatdefsvc`; MDE `Sense` requires explicit `-IncludeMDE`
 - **Appx removal**: SecHealthUI deprovision with `NonRemovableAppPolicy` override
@@ -162,6 +163,10 @@ Export-DefenderSupportBundle -HealthTarget Remove -IncludeSensitiveDiagnostics
 # Generate single-file HTML report
 Export-DefenderHtmlReport
 Export-DefenderHtmlReport -OutputPath C:\Reports\defender.html -HealthTarget Remove
+
+# Export/import the narrow cloud-sample-submission preset
+Export-DefenderPreset -OutputPath C:\Presets\cloud-sample.json
+Import-DefenderPreset -Path C:\Presets\cloud-sample.json
 
 # Automated Safe Mode Remove (reboot -> Remove -> reboot back)
 Invoke-SafeModeRemove

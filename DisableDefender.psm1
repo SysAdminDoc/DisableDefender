@@ -24,6 +24,7 @@ $moduleRoot = $PSScriptRoot
 . "$moduleRoot\Private\Set-RegValue.ps1"
 . "$moduleRoot\Private\Set-DefenderPolicy.ps1"
 . "$moduleRoot\Private\Set-MpRuntimePrefs.ps1"
+. "$moduleRoot\Private\DefenderPreset.ps1"
 . "$moduleRoot\Private\Disable-DefenderTasks.ps1"
 . "$moduleRoot\Private\Set-ServiceStart.ps1"
 . "$moduleRoot\Private\SafeBoot.ps1"
@@ -45,9 +46,11 @@ $moduleRoot = $PSScriptRoot
 . "$moduleRoot\Public\Invoke-RestoreDefender.ps1"
 . "$moduleRoot\Public\Invoke-SafeModeRemove.ps1"
 . "$moduleRoot\Public\New-OfflineRemoveBundle.ps1"
+. "$moduleRoot\Public\Export-DefenderPreset.ps1"
 . "$moduleRoot\Public\Export-DefenderSupportBundle.ps1"
 . "$moduleRoot\Public\Export-DefenderHtmlReport.ps1"
 . "$moduleRoot\Public\Compare-DefenderSnapshots.ps1"
+. "$moduleRoot\Public\Import-DefenderPreset.ps1"
 
 Export-ModuleMember -Function @(
     'Get-DefenderStatus',
@@ -64,9 +67,11 @@ Export-ModuleMember -Function @(
     'Invoke-RestoreDefender',
     'Invoke-SafeModeRemove',
     'New-OfflineRemoveBundle',
+    'Export-DefenderPreset',
     'Export-DefenderSupportBundle',
     'Export-DefenderHtmlReport',
     'Save-DefenderSnapshot',
     'Compare-DefenderSnapshots',
+    'Import-DefenderPreset',
     'Set-DefenderPresentationCulture'
 )
