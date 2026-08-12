@@ -4331,6 +4331,30 @@ InModuleScope DisableDefender {
 
 InModuleScope DisableDefender {
     Describe 'Compare-DefenderSnapshots' {
+        It 'records the requested health target in a snapshot' {
+            Mock Get-CimInstance {
+                [PSCustomObject]@{ Caption = 'Windows'; Version = '10.0'; BuildNumber = '26100' }
+            }
+            Mock Get-DefenderHealth {
+                [ordered]@{
+                    Target = 'Remove'
+                    Summary = [ordered]@{ OK = 1; Drift = 0; Unknown = 0; Total = 1 }
+                    Items = @([PSCustomObject]@{
+                        Category = 'Service'; Name = 'WinDefend'; Expected = 'Disabled'; Actual = 'Disabled'; Status = 'OK'
+                    })
+                }
+            }
+            Mock Get-DefenderStatus { [ordered]@{ AntivirusEnabled = $false } }
+
+            $path = Join-Path $TestDrive 'remove-snapshot.json'
+            $result = Save-DefenderSnapshot -OutputPath $path -HealthTarget Remove
+            $document = Get-Content -Raw -LiteralPath $path | ConvertFrom-Json
+
+            $result.HealthTarget | Should -Be 'Remove'
+            $document.HealthTarget | Should -Be 'Remove'
+            $document.Health.Target | Should -Be 'Remove'
+        }
+
         It 'detects changes between two snapshots' {
             $baseline = [ordered]@{
                 SchemaVersion = 1
@@ -4863,7 +4887,11 @@ Describe 'DisableDefender GUI safety wiring' {
             'btnMin', 'btnMax', 'btnClose',
             'btnDisable', 'btnRemove', 'btnRestore', 'btnRepair', 'btnRefresh',
             'btnCopyLog', 'btnExportLog', 'btnClearLog',
-            'btnConfirmCancel', 'btnConfirmOk', 'btnCancelOperation'
+            'btnConfirmCancel', 'btnConfirmOk', 'btnCancelOperation',
+            'btnRecoveryHub', 'btnRecoveryClose', 'btnRecoveryRefresh', 'btnRecoveryCancel',
+            'btnRecoveryResume', 'btnRecoveryRollback', 'btnRecoveryChooseBaseline',
+            'btnRecoverySnapshot', 'btnRecoveryCompare', 'btnRecoveryExportReport',
+            'btnRecoveryExportSupport', 'btnRecoveryDone', 'cmbRecoveryTarget'
         )
 
         foreach ($buttonName in $namedButtons) {
@@ -4919,6 +4947,19 @@ Describe 'DisableDefender GUI safety wiring' {
         $script:GuiSource | Should -Match '\$firewallStatus\s*=\s*Get-DefenderFirewallStatus'
         $script:GuiSource | Should -Not -Match 'function Get-GuiFirewallIssues'
         $script:GuiSource | Should -Match '\$ui\.valFW\.Text = if \(\$fwOn\) \{ ''ON'' \} else \{ ''TRIPPED'' \}'
+    }
+
+    It 'provides target-aware cancellable recovery evidence and local exports' {
+        $script:GuiSource | Should -Match 'Start-RecoveryWorkerAsync\s+-Kind Refresh'
+        $script:GuiSource | Should -Match 'Get-DefenderHealth\s+-Target \$Target'
+        $script:GuiSource | Should -Match 'Get-DefenderSafeModeStatus'
+        $script:GuiSource | Should -Match 'RecoveryCancellationRequested'
+        $script:GuiSource | Should -Match 'Save-DefenderSnapshot\s+-OutputPath \$OutputPath\s+-HealthTarget \$Target'
+        $script:GuiSource | Should -Match 'Compare-DefenderSnapshots\s+-BaselinePath \$BaselinePath\s+-HealthTarget \$Target'
+        $script:GuiSource | Should -Match 'Export-DefenderSupportBundle\s+-OutputDirectory \$OutputDirectory\s+-HealthTarget \$Target'
+        $script:GuiSource | Should -Match 'no success was reported'
+        $script:GuiSource | Should -Match 'btnRecoveryResume'
+        $script:GuiSource | Should -Match 'btnRecoveryRollback'
     }
 }
 

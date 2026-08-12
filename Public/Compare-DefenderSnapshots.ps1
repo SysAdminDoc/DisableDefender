@@ -5,6 +5,8 @@ function Save-DefenderSnapshot {
     .PARAMETER OutputPath
         Path for the JSON snapshot file. Defaults to a timestamped file in
         the runtime directory.
+    .PARAMETER HealthTarget
+        Expected target captured by the snapshot. Defaults to Disable.
     .EXAMPLE
         Save-DefenderSnapshot
     .EXAMPLE
@@ -12,7 +14,9 @@ function Save-DefenderSnapshot {
     #>
     [CmdletBinding()]
     param(
-        [string]$OutputPath
+        [string]$OutputPath,
+        [ValidateSet('Disable','Remove','Restore')]
+        [string]$HealthTarget = 'Disable'
     )
 
     if ([string]::IsNullOrWhiteSpace($OutputPath)) {
@@ -24,6 +28,7 @@ function Save-DefenderSnapshot {
         SchemaVersion = Get-DefenderArtifactSchemaVersion -Name DefenderSnapshot
         Timestamp     = (Get-Date).ToString('o')
         Version       = $script:Version
+        HealthTarget  = $HealthTarget
     }
 
     try {
@@ -38,7 +43,7 @@ function Save-DefenderSnapshot {
     }
 
     try {
-        $health = Get-DefenderHealth -Target Disable
+        $health = Get-DefenderHealth -Target $HealthTarget
         $snapshot.Health = [ordered]@{
             Target  = $health.Target
             Summary = $health.Summary
@@ -71,6 +76,7 @@ function Save-DefenderSnapshot {
     return [PSCustomObject]@{
         SnapshotPath = $OutputPath
         Timestamp    = $snapshot.Timestamp
+        HealthTarget = $HealthTarget
         ItemCount    = $snapshot.HealthItems.Count
     }
 }
@@ -95,6 +101,8 @@ function Compare-DefenderSnapshots {
         Path to the later snapshot JSON file. If omitted, takes a live snapshot.
     .PARAMETER Json
         Emit JSON output instead of console table.
+    .PARAMETER HealthTarget
+        Target used when CurrentPath is omitted and a live snapshot is taken.
     .EXAMPLE
         Compare-DefenderSnapshots -BaselinePath C:\snapshot-before.json
     .EXAMPLE
@@ -105,6 +113,8 @@ function Compare-DefenderSnapshots {
         [Parameter(Mandatory)]
         [string]$BaselinePath,
         [string]$CurrentPath,
+        [ValidateSet('Disable','Remove','Restore')]
+        [string]$HealthTarget = 'Disable',
         [switch]$Json
     )
 
@@ -122,7 +132,7 @@ function Compare-DefenderSnapshots {
     } else {
         $tempPath = Join-Path $env:TEMP "dd-snapshot-compare-$([guid]::NewGuid().ToString('N')).json"
         try {
-            Save-DefenderSnapshot -OutputPath $tempPath | Out-Null
+            Save-DefenderSnapshot -OutputPath $tempPath -HealthTarget $HealthTarget | Out-Null
             $current = Read-DefenderSnapshotArtifact -Path $tempPath
         } finally {
             Remove-Item -LiteralPath $tempPath -Force -ErrorAction SilentlyContinue
@@ -188,6 +198,8 @@ function Compare-DefenderSnapshots {
         CurrentTimestamp  = $current.Timestamp
         BaselineVersion  = $baseline.Version
         CurrentVersion   = $current.Version
+        BaselineTarget   = if ($baseline.PSObject.Properties.Name -contains 'HealthTarget') { $baseline.HealthTarget } else { 'Disable' }
+        CurrentTarget     = if ($current.PSObject.Properties.Name -contains 'HealthTarget') { $current.HealthTarget } else { 'Disable' }
         TotalBaseline    = $baseline.HealthItems.Count
         TotalCurrent     = $current.HealthItems.Count
         ChangedCount     = $diffs.Count

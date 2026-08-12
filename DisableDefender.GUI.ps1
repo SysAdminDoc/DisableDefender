@@ -50,6 +50,7 @@ Add-Type -AssemblyName PresentationFramework
 Add-Type -AssemblyName PresentationCore
 Add-Type -AssemblyName WindowsBase
 Add-Type -AssemblyName System.Xaml
+Add-Type -AssemblyName System.Windows.Forms
 
 # ---------------------------------------------------------------------------
 # Core module
@@ -81,6 +82,13 @@ $script:UIState = [hashtable]::Synchronized(@{
     CancellationState = 'Idle'
     WorkerState = 'Idle'
     RunId = $null
+    RecoveryBusy = $false
+    RecoveryCancellationRequested = $false
+    RecoveryWorkerState = 'Idle'
+    RecoveryResult = $null
+    RecoveryRunId = $null
+    RecoveryCanResume = $false
+    RecoveryCanRollback = $false
 })
 $script:ToastTimers = New-Object System.Collections.ArrayList
 
@@ -599,6 +607,7 @@ function Write-Log {
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="Auto"/>
                             <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
                         </Grid.ColumnDefinitions>
                         <Border Grid.Column="0" Width="42" Height="42" CornerRadius="8" Background="#172338"
                                 BorderBrush="{StaticResource Surface0}" BorderThickness="1" Margin="0,0,13,0">
@@ -610,6 +619,9 @@ function Write-Log {
                             <TextBlock Text="Monitor Defender state, verify safety boundaries, and recover with confidence."
                                        Foreground="{StaticResource Subtext0}" FontSize="11.5" Margin="0,3,0,0"/>
                         </StackPanel>
+                        <Button x:Name="btnRecoveryHub" Grid.Column="2" Style="{StaticResource BaseButton}" Content="Recovery hub"
+                                Padding="12,7" Margin="12,0,0,0" AutomationProperties.Name="Open recovery and diagnostics hub"
+                                ToolTip="Inspect target-aware health, phase recovery, snapshots, and local exports"/>
                     </Grid>
 
                     <!-- Status tiles grid -->
@@ -869,6 +881,161 @@ function Write-Log {
                     <TextBlock x:Name="toastText" Text="" Foreground="{StaticResource Text}" FontSize="13" Margin="12,0,0,0" VerticalAlignment="Center" TextWrapping="Wrap"/>
                 </StackPanel>
             </Border>
+
+            <!-- ============ RECOVERY AND DIAGNOSTICS HUB ============ -->
+            <Grid x:Name="recoveryOverlay" Grid.Row="0" Grid.RowSpan="5" Background="#E0070D17" Visibility="Collapsed"
+                  KeyboardNavigation.TabNavigation="Cycle">
+                <Border Background="{StaticResource Mantle}" BorderBrush="{StaticResource Surface1}" BorderThickness="1" CornerRadius="10"
+                        Padding="24" MaxWidth="1120" MaxHeight="690" HorizontalAlignment="Center" VerticalAlignment="Center"
+                        AutomationProperties.Name="Recovery and diagnostics hub">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                            <RowDefinition Height="Auto"/>
+                        </Grid.RowDefinitions>
+
+                        <Grid Grid.Row="0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Grid.Column="0">
+                                <TextBlock Text="RECOVERY &amp; DIAGNOSTICS" Foreground="{StaticResource Blue}" FontSize="10.5" FontWeight="SemiBold"/>
+                                <TextBlock Text="Verify the selected target before resuming, rolling back, or exporting evidence."
+                                           Foreground="{StaticResource Text}" FontSize="18" FontWeight="SemiBold" Margin="0,5,0,0"/>
+                                <TextBlock Text="All queries and exports stay local. A cancellation request stops at a safe query boundary."
+                                           Foreground="{StaticResource Subtext0}" FontSize="11" Margin="0,3,0,0"/>
+                            </StackPanel>
+                            <Button x:Name="btnRecoveryClose" Grid.Column="1" Style="{StaticResource ChromeButton}" Content="&#xE8BB;"
+                                    FontFamily="Segoe MDL2 Assets" Foreground="{StaticResource Subtext1}" ToolTip="Close recovery hub"
+                                    AutomationProperties.Name="Close recovery and diagnostics hub"/>
+                        </Grid>
+
+                        <Grid Grid.Row="1" Margin="0,18,0,14">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="150"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0" Text="Health target" Foreground="{StaticResource Subtext0}" FontSize="11.5"
+                                       VerticalAlignment="Center" Margin="0,0,10,0"/>
+                            <ComboBox x:Name="cmbRecoveryTarget" Grid.Column="1" SelectedValuePath="Tag" SelectedValue="Disable"
+                                      AutomationProperties.Name="Recovery health target" ToolTip="Compare live state against this target">
+                                <ComboBoxItem Tag="Disable" Content="Disable"/>
+                                <ComboBoxItem Tag="Remove" Content="Remove"/>
+                                <ComboBoxItem Tag="Restore" Content="Restore"/>
+                            </ComboBox>
+                            <Button x:Name="btnRecoveryRefresh" Grid.Column="2" Style="{StaticResource BaseButton}" Content="Refresh evidence"
+                                    Padding="12,6" Margin="10,0,6,0" AutomationProperties.Name="Refresh recovery evidence"/>
+                            <Button x:Name="btnRecoveryCancel" Grid.Column="3" Style="{StaticResource BaseButton}" Content="Cancel query"
+                                    Padding="12,6" IsEnabled="False" AutomationProperties.Name="Cancel recovery query"/>
+                            <TextBlock x:Name="recoveryStatusText" Grid.Column="4" Text="Ready" Foreground="{StaticResource Subtext0}"
+                                       FontSize="11" VerticalAlignment="Center" HorizontalAlignment="Right" TextTrimming="CharacterEllipsis"
+                                       AutomationProperties.LiveSetting="Polite"/>
+                        </Grid>
+
+                        <Grid Grid.Row="2">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="3*"/>
+                                <ColumnDefinition Width="12"/>
+                                <ColumnDefinition Width="2*"/>
+                            </Grid.ColumnDefinitions>
+
+                            <StackPanel Grid.Column="0">
+                                <Border Background="{StaticResource Base}" BorderBrush="{StaticResource Surface0}" BorderThickness="1"
+                                        CornerRadius="8" Padding="14" AutomationProperties.Name="Live recovery evidence">
+                                    <StackPanel>
+                                        <TextBlock Text="LIVE TARGET EVIDENCE" Foreground="{StaticResource Text}" FontSize="12.5" FontWeight="SemiBold"/>
+                                        <TextBlock x:Name="recoveryTargetText" Text="Target: Disable" Foreground="{StaticResource Subtext0}" FontSize="10.5" Margin="0,3,0,0"/>
+                                        <TextBlock x:Name="recoveryHealthText" Text="Health evidence has not been queried." Foreground="{StaticResource Yellow}" FontSize="14" FontWeight="SemiBold" Margin="0,12,0,0" TextWrapping="Wrap"/>
+                                        <TextBlock Text="Exact drift (first 12)" Foreground="{StaticResource Subtext0}" FontSize="10.5" Margin="0,12,0,4"/>
+                                        <ScrollViewer MaxHeight="174" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                                            <TextBlock x:Name="recoveryDriftText" Text="Refresh evidence to inspect expected versus actual values."
+                                                       Foreground="{StaticResource Text}" FontSize="10.5" FontFamily="Consolas" TextWrapping="Wrap"/>
+                                        </ScrollViewer>
+                                        <TextBlock x:Name="recoveryLastResultText" Text="Last verified result: none in this session."
+                                                   Foreground="{StaticResource Subtext0}" FontSize="10.5" Margin="0,12,0,0" TextWrapping="Wrap"/>
+                                    </StackPanel>
+                                </Border>
+                                <Border Background="{StaticResource Base}" BorderBrush="{StaticResource Surface0}" BorderThickness="1"
+                                        CornerRadius="8" Padding="14" Margin="0,12,0,0" AutomationProperties.Name="Phase recovery state">
+                                    <StackPanel>
+                                        <TextBlock Text="PHASE RECOVERY" Foreground="{StaticResource Text}" FontSize="12.5" FontWeight="SemiBold"/>
+                                        <TextBlock x:Name="recoveryPhaseText" Text="No persisted phase state found." Foreground="{StaticResource Subtext1}" FontSize="11" Margin="0,6,0,0" TextWrapping="Wrap"/>
+                                        <TextBlock x:Name="recoverySafeModeText" Text="Safe Mode transaction: not queried." Foreground="{StaticResource Subtext0}" FontSize="10.5" Margin="0,7,0,0" TextWrapping="Wrap"/>
+                                        <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
+                                            <Button x:Name="btnRecoveryResume" Style="{StaticResource BaseButton}" Content="Resume phase"
+                                                    Padding="12,6" Margin="0,0,7,0" IsEnabled="False" AutomationProperties.Name="Resume interrupted phase"/>
+                                            <Button x:Name="btnRecoveryRollback" Style="{StaticResource DangerAction}" Content="Rollback with Restore"
+                                                    Padding="12,6" IsEnabled="False" AutomationProperties.Name="Rollback interrupted phase with Restore"/>
+                                        </StackPanel>
+                                    </StackPanel>
+                                </Border>
+                            </StackPanel>
+
+                            <StackPanel Grid.Column="2">
+                                <Border Background="{StaticResource Base}" BorderBrush="{StaticResource Surface0}" BorderThickness="1"
+                                        CornerRadius="8" Padding="14" AutomationProperties.Name="Recovery snapshots and diff">
+                                    <StackPanel>
+                                        <TextBlock Text="SNAPSHOTS &amp; DIFF" Foreground="{StaticResource Text}" FontSize="12.5" FontWeight="SemiBold"/>
+                                        <TextBlock Text="Choose a baseline, save a target-aware snapshot, or compare against live state."
+                                                   Foreground="{StaticResource Subtext0}" FontSize="10.5" Margin="0,3,0,9" TextWrapping="Wrap"/>
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
+                                            <TextBox x:Name="txtRecoveryBaselinePath" Grid.Column="0" Height="27" VerticalContentAlignment="Center"
+                                                     ToolTip="Path to a DefenderSnapshot JSON baseline" AutomationProperties.Name="Snapshot baseline path"/>
+                                            <Button x:Name="btnRecoveryChooseBaseline" Grid.Column="1" Style="{StaticResource BaseButton}" Content="Browse"
+                                                    Padding="10,5" Margin="7,0,0,0" AutomationProperties.Name="Browse for snapshot baseline"/>
+                                        </Grid>
+                                        <StackPanel Orientation="Horizontal" Margin="0,9,0,0">
+                                            <Button x:Name="btnRecoverySnapshot" Style="{StaticResource BaseButton}" Content="Save snapshot"
+                                                    Padding="10,5" Margin="0,0,7,0" AutomationProperties.Name="Save target-aware Defender snapshot"/>
+                                            <Button x:Name="btnRecoveryCompare" Style="{StaticResource BaseButton}" Content="Compare to live"
+                                                    Padding="10,5" AutomationProperties.Name="Compare snapshot to live Defender state"/>
+                                        </StackPanel>
+                                        <TextBlock x:Name="recoverySnapshotText" Text="No snapshot saved in this session." Foreground="{StaticResource Subtext0}"
+                                                   FontSize="10" Margin="0,9,0,0" TextWrapping="Wrap"/>
+                                        <TextBlock x:Name="recoveryDiffSummaryText" Text="No comparison has been run." Foreground="{StaticResource Text}"
+                                                   FontSize="10.5" FontWeight="SemiBold" Margin="0,10,0,4" TextWrapping="Wrap"/>
+                                        <ScrollViewer MaxHeight="125" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                                            <TextBlock x:Name="recoveryDiffText" Text="Choose a baseline and compare to inspect changes."
+                                                       Foreground="{StaticResource Subtext1}" FontSize="10" FontFamily="Consolas" TextWrapping="Wrap"/>
+                                        </ScrollViewer>
+                                    </StackPanel>
+                                </Border>
+                                <Border Background="{StaticResource Base}" BorderBrush="{StaticResource Surface0}" BorderThickness="1"
+                                        CornerRadius="8" Padding="14" Margin="0,12,0,0" AutomationProperties.Name="Local recovery exports">
+                                    <StackPanel>
+                                        <TextBlock Text="LOCAL EXPORTS" Foreground="{StaticResource Text}" FontSize="12.5" FontWeight="SemiBold"/>
+                                        <TextBlock Text="Exports use the selected target and never upload data."
+                                                   Foreground="{StaticResource Subtext0}" FontSize="10.5" Margin="0,3,0,9"/>
+                                        <StackPanel Orientation="Horizontal">
+                                            <Button x:Name="btnRecoveryExportReport" Style="{StaticResource BaseButton}" Content="HTML report"
+                                                    Padding="10,5" Margin="0,0,7,0" AutomationProperties.Name="Export local HTML recovery report"/>
+                                            <Button x:Name="btnRecoveryExportSupport" Style="{StaticResource BaseButton}" Content="Support bundle"
+                                                    Padding="10,5" AutomationProperties.Name="Export local redacted support bundle"/>
+                                        </StackPanel>
+                                    </StackPanel>
+                                </Border>
+                            </StackPanel>
+                        </Grid>
+
+                        <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0">
+                            <TextBlock Text="Sense is not included unless the selected command explicitly opts in."
+                                       Foreground="{StaticResource Subtext0}" FontSize="10.5" VerticalAlignment="Center" Margin="0,0,18,0"/>
+                            <Button x:Name="btnRecoveryDone" Style="{StaticResource BaseButton}" Content="Done" Padding="18,8"
+                                    AutomationProperties.Name="Close recovery hub"/>
+                        </StackPanel>
+                    </Grid>
+                </Border>
+            </Grid>
 
             <!-- ============ CONFIRMATION OVERLAY ============ -->
             <Grid x:Name="confirmOverlay" Grid.Row="0" Grid.RowSpan="5" Background="#E0070D17" Visibility="Collapsed"
@@ -1426,6 +1593,405 @@ function Set-Busy {
 }
 
 # ---------------------------------------------------------------------------
+# Recovery and diagnostics hub
+# ---------------------------------------------------------------------------
+$script:RecoveryRunspace = $null
+$script:RecoveryAsyncResult = $null
+$script:RecoveryAsyncPS = $null
+$script:RecoveryAsyncStarted = $null
+$script:RecoveryKind = $null
+$script:RecoveryTarget = 'Disable'
+
+function Get-RecoveryTargetSelection {
+    $target = [string]$ui.cmbRecoveryTarget.SelectedValue
+    if ($target -notin @('Disable', 'Remove', 'Restore')) {
+        $target = 'Disable'
+    }
+    return $target
+}
+
+function Set-RecoveryBusy {
+    param([bool]$IsBusy, [string]$Label = 'Ready')
+
+    $script:UIState.RecoveryBusy = $IsBusy
+    $ui.recoveryStatusText.Text = $Label
+    $ui.recoveryStatusText.Foreground = if ($IsBusy) { $window.Resources['Blue'] } else { $window.Resources['Subtext0'] }
+    $ui.cmbRecoveryTarget.IsEnabled = -not $IsBusy
+    $ui.btnRecoveryRefresh.IsEnabled = -not $IsBusy
+    $ui.btnRecoveryCancel.IsEnabled = $IsBusy -and -not $script:UIState.RecoveryCancellationRequested
+    $ui.btnRecoverySnapshot.IsEnabled = -not $IsBusy
+    $ui.btnRecoveryCompare.IsEnabled = -not $IsBusy
+    $ui.btnRecoveryChooseBaseline.IsEnabled = -not $IsBusy
+    $ui.btnRecoveryExportReport.IsEnabled = -not $IsBusy
+    $ui.btnRecoveryExportSupport.IsEnabled = -not $IsBusy
+    $ui.btnRecoveryClose.IsEnabled = -not $IsBusy
+    $ui.btnRecoveryDone.IsEnabled = -not $IsBusy
+    $ui.btnRecoveryResume.IsEnabled = (-not $IsBusy) -and [bool]$script:UIState.RecoveryCanResume
+    $ui.btnRecoveryRollback.IsEnabled = (-not $IsBusy) -and [bool]$script:UIState.RecoveryCanRollback
+}
+
+function New-RecoveryFailureResult {
+    param(
+        [Parameter(Mandatory)][string]$Kind,
+        [Parameter(Mandatory)][string]$Target,
+        [Parameter(Mandatory)][string]$Message,
+        [bool]$Cancelled = $false
+    )
+
+    return [PSCustomObject][ordered]@{
+        Ok         = $false
+        Succeeded  = $false
+        Cancelled  = $Cancelled
+        Kind       = $Kind
+        Target     = $Target
+        Error      = $Message
+        Completed  = (Get-Date).ToString('o')
+    }
+}
+
+function Request-RecoveryCancellation {
+    if (-not $script:UIState.RecoveryBusy) { return }
+    if ($script:UIState.RecoveryCancellationRequested) { return }
+
+    $script:UIState.RecoveryCancellationRequested = $true
+    $script:UIState.RecoveryWorkerState = 'FinishingCurrentQuery'
+    $ui.btnRecoveryCancel.IsEnabled = $false
+    $ui.recoveryStatusText.Text = 'Cancellation requested; finishing current query boundary...'
+    Show-Toast 'Recovery query cancellation requested.' warn
+}
+
+function Complete-RecoveryWorker {
+    if ($null -eq $script:RecoveryAsyncPS) { return $null }
+    if ($null -ne $script:RecoveryAsyncResult -and -not $script:RecoveryAsyncResult.IsCompleted) {
+        return $null
+    }
+
+    $asyncPowerShell = $script:RecoveryAsyncPS
+    $asyncResult = $script:RecoveryAsyncResult
+    $endError = $null
+    $script:UIState.RecoveryWorkerState = 'Draining'
+    try {
+        if ($null -ne $asyncResult) {
+            $asyncPowerShell.EndInvoke($asyncResult) | Out-Null
+        }
+    } catch {
+        $endError = $_
+    } finally {
+        try { $asyncPowerShell.Dispose() } catch {}
+        if ($null -ne $script:RecoveryRunspace) {
+            try { $script:RecoveryRunspace.Close() } catch {}
+            try { $script:RecoveryRunspace.Dispose() } catch {}
+        }
+        $script:RecoveryAsyncResult = $null
+        $script:RecoveryAsyncPS = $null
+        $script:RecoveryRunspace = $null
+        $script:RecoveryAsyncStarted = $null
+    }
+    return $endError
+}
+
+function Start-RecoveryWorkerAsync {
+    param(
+        [ValidateSet('Refresh','Snapshot','Compare','Report','Support')]
+        [string]$Kind = 'Refresh',
+        [ValidateSet('Disable','Remove','Restore')]
+        [string]$Target = 'Disable',
+        [string]$BaselinePath,
+        [string]$CurrentPath,
+        [string]$OutputPath,
+        [string]$OutputDirectory
+    )
+
+    if ($script:UIState.RecoveryBusy) { return }
+    if ($script:UIState.Busy) {
+        Show-Toast 'Wait for the current operation to finish before querying recovery evidence.' warn
+        return
+    }
+
+    $script:UIState.RecoveryRunId = [guid]::NewGuid().ToString()
+    $script:UIState.RecoveryCancellationRequested = $false
+    $script:UIState.RecoveryWorkerState = 'Starting'
+    $script:UIState.RecoveryResult = $null
+    $script:RecoveryKind = $Kind
+    $script:RecoveryTarget = $Target
+    Set-RecoveryBusy -IsBusy $true -Label "Running $Kind..."
+
+    $rs = [runspacefactory]::CreateRunspace()
+    $rs.ApartmentState = 'STA'
+    $rs.ThreadOptions = 'ReuseThread'
+    $rs.Open()
+    $rs.SessionStateProxy.SetVariable('UIState', $script:UIState)
+    $rs.SessionStateProxy.SetVariable('ModulePath', $modulePath)
+    $rs.SessionStateProxy.SetVariable('Kind', $Kind)
+    $rs.SessionStateProxy.SetVariable('Target', $Target)
+    $rs.SessionStateProxy.SetVariable('BaselinePath', $BaselinePath)
+    $rs.SessionStateProxy.SetVariable('CurrentPath', $CurrentPath)
+    $rs.SessionStateProxy.SetVariable('OutputPath', $OutputPath)
+    $rs.SessionStateProxy.SetVariable('OutputDirectory', $OutputDirectory)
+    $rs.SessionStateProxy.SetVariable('PhaseStatePath', (Join-Path $script:AppDir 'phase-state.json'))
+
+    $worker = {
+        Import-Module -Name $ModulePath -Force -ErrorAction Stop
+
+        function Assert-RecoveryBoundary {
+            if ([bool]$UIState.RecoveryCancellationRequested) {
+                throw [System.OperationCanceledException]::new('Recovery query cancelled at a safe boundary.')
+            }
+        }
+
+        function Read-RecoveryPhaseState {
+            if (-not (Test-Path -LiteralPath $PhaseStatePath)) { return $null }
+            try {
+                return (Get-Content -Raw -LiteralPath $PhaseStatePath -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop)
+            } catch {
+                throw "Persisted phase state could not be read: $($_.Exception.Message)"
+            }
+        }
+
+        try {
+            $UIState.RecoveryWorkerState = 'Running'
+            Assert-RecoveryBoundary
+            $result = $null
+            switch ($Kind) {
+                'Refresh' {
+                    $health = Get-DefenderHealth -Target $Target
+                    Assert-RecoveryBoundary
+                    $safeMode = Get-DefenderSafeModeStatus
+                    Assert-RecoveryBoundary
+                    $phase = Read-RecoveryPhaseState
+                    Assert-RecoveryBoundary
+                    $lastResult = $UIState.LastResult
+                    if ($null -eq $lastResult -and $phase -and $phase.Result) {
+                        $lastResult = $phase.Result
+                    }
+                    $result = [ordered]@{
+                        Ok = $true
+                        Succeeded = $true
+                        Cancelled = $false
+                        Kind = $Kind
+                        Target = $Target
+                        Health = $health
+                        SafeMode = $safeMode
+                        Phase = $phase
+                        LastResult = $lastResult
+                        Completed = (Get-Date).ToString('o')
+                    }
+                }
+                'Snapshot' {
+                    $snapshot = Save-DefenderSnapshot -OutputPath $OutputPath -HealthTarget $Target
+                    Assert-RecoveryBoundary
+                    $result = [ordered]@{
+                        Ok = $true
+                        Succeeded = $true
+                        Cancelled = $false
+                        Kind = $Kind
+                        Target = $Target
+                        Snapshot = $snapshot
+                        Completed = (Get-Date).ToString('o')
+                    }
+                }
+                'Compare' {
+                    Assert-RecoveryBoundary
+                    if ([string]::IsNullOrWhiteSpace($CurrentPath)) {
+                        $diff = Compare-DefenderSnapshots -BaselinePath $BaselinePath -HealthTarget $Target
+                    } else {
+                        $diff = Compare-DefenderSnapshots -BaselinePath $BaselinePath -CurrentPath $CurrentPath -HealthTarget $Target
+                    }
+                    Assert-RecoveryBoundary
+                    $result = [ordered]@{
+                        Ok = $true
+                        Succeeded = $true
+                        Cancelled = $false
+                        Kind = $Kind
+                        Target = $Target
+                        Diff = $diff
+                        Completed = (Get-Date).ToString('o')
+                    }
+                }
+                'Report' {
+                    $report = Export-DefenderHtmlReport -OutputPath $OutputPath -HealthTarget $Target
+                    Assert-RecoveryBoundary
+                    $result = [ordered]@{
+                        Ok = $true
+                        Succeeded = $true
+                        Cancelled = $false
+                        Kind = $Kind
+                        Target = $Target
+                        Report = $report
+                        Completed = (Get-Date).ToString('o')
+                    }
+                }
+                'Support' {
+                    $bundle = Export-DefenderSupportBundle -OutputDirectory $OutputDirectory -HealthTarget $Target
+                    Assert-RecoveryBoundary
+                    $result = [ordered]@{
+                        Ok = $true
+                        Succeeded = $true
+                        Cancelled = $false
+                        Kind = $Kind
+                        Target = $Target
+                        SupportBundle = $bundle
+                        Completed = (Get-Date).ToString('o')
+                    }
+                }
+            }
+            if ($null -eq $result) { throw "Recovery worker returned no result for $Kind." }
+            $UIState.RecoveryResult = [PSCustomObject]$result
+            $UIState.RecoveryWorkerState = 'Completed'
+        } catch {
+            $cancelled = [bool]$UIState.RecoveryCancellationRequested -or
+                $_.Exception -is [System.OperationCanceledException]
+            $message = if ($cancelled) {
+                'Recovery query cancelled at a safe boundary; no success was reported.'
+            } else {
+                $_.Exception.Message
+            }
+            $UIState.RecoveryResult = [PSCustomObject][ordered]@{
+                Ok = $false
+                Succeeded = $false
+                Cancelled = $cancelled
+                Kind = $Kind
+                Target = $Target
+                Error = $message
+                Completed = (Get-Date).ToString('o')
+            }
+            $UIState.RecoveryWorkerState = if ($cancelled) { 'Cancelled' } else { 'Failed' }
+        }
+    }
+
+    $ps = [powershell]::Create()
+    $ps.Runspace = $rs
+    [void]$ps.AddScript($worker)
+    $script:RecoveryAsyncPS = $ps
+    $script:RecoveryRunspace = $rs
+    $script:RecoveryAsyncResult = $ps.BeginInvoke()
+    $script:RecoveryAsyncStarted = Get-Date
+}
+
+function Set-RecoveryDiffView {
+    param([Parameter(Mandatory)]$Diff)
+
+    $ui.recoveryDiffSummaryText.Text = "Changed: $($Diff.ChangedCount) | Baseline: $($Diff.BaselineTimestamp) | Live: $($Diff.CurrentTimestamp)"
+    $ui.recoveryDiffSummaryText.Foreground = if ([int]$Diff.ChangedCount -gt 0) {
+        $window.Resources['Yellow']
+    } else {
+        $window.Resources['Green']
+    }
+    $lines = New-Object System.Collections.Generic.List[string]
+    foreach ($item in @($Diff.Diffs | Select-Object -First 20)) {
+        [void]$lines.Add(("[{0}] {1} / {2}" -f $item.Change, $item.Category, $item.Name))
+        [void]$lines.Add(("  {0} -> {1}" -f $item.Before, $item.After))
+    }
+    if ($lines.Count -eq 0) {
+        $ui.recoveryDiffText.Text = 'No changes detected between the selected baseline and current state.'
+    } else {
+        if ([int]$Diff.ChangedCount -gt 20) {
+            [void]$lines.Add("... $([int]$Diff.ChangedCount - 20) more change(s)")
+        }
+        $ui.recoveryDiffText.Text = $lines -join "`r`n"
+    }
+}
+
+function Update-RecoveryHubView {
+    param($Data)
+
+    if ($null -eq $Data) { return }
+    if (-not [bool]$Data.Ok) {
+        $ui.recoveryStatusText.Text = if ($Data.Cancelled) { 'Cancelled' } else { 'Failed' }
+        $ui.recoveryStatusText.Foreground = if ($Data.Cancelled) { $window.Resources['Yellow'] } else { $window.Resources['Red'] }
+        return
+    }
+
+    $kind = [string]$Data.Kind
+    switch ($kind) {
+        'Refresh' {
+            $target = [string]$Data.Target
+            $health = $Data.Health
+            $summary = $health.Summary
+            $ui.recoveryTargetText.Text = "Target: $target | Live evidence: $($health.Generated)"
+            $ui.recoveryHealthText.Text = "OK $($summary.OK)  |  Drift $($summary.Drift)  |  Unknown $($summary.Unknown)  |  Total $($summary.Total)"
+            $ui.recoveryHealthText.Foreground = if ([int]$summary.Drift -gt 0) {
+                $window.Resources['Red']
+            } elseif ([int]$summary.Unknown -gt 0) {
+                $window.Resources['Yellow']
+            } else {
+                $window.Resources['Green']
+            }
+
+            $driftItems = @($health.Items | Where-Object { $_.Status -ne 'OK' } | Select-Object -First 12)
+            $driftLines = New-Object System.Collections.Generic.List[string]
+            foreach ($item in $driftItems) {
+                [void]$driftLines.Add(("[{0}] {1}" -f $item.Status, $item.Name))
+                [void]$driftLines.Add(("  expected: {0}`r`n  actual:   {1}" -f $item.Expected, $item.Actual))
+            }
+            if ($driftLines.Count -eq 0) {
+                $ui.recoveryDriftText.Text = 'No drift or unknown values detected for this target.'
+            } else {
+                if (($summary.Drift + $summary.Unknown) -gt $driftItems.Count) {
+                    [void]$driftLines.Add("... $([int]$summary.Drift + [int]$summary.Unknown - $driftItems.Count) more item(s)")
+                }
+                $ui.recoveryDriftText.Text = $driftLines -join "`r`n"
+            }
+
+            $phase = $Data.Phase
+            $canRecover = $false
+            if ($null -eq $phase) {
+                $ui.recoveryPhaseText.Text = 'No persisted phase state found.'
+            } elseif ($phase.ReadError) {
+                $ui.recoveryPhaseText.Text = "Phase state unreadable: $($phase.ReadError)"
+            } else {
+                $runningPhase = @($phase.Phases | Where-Object { $_.Status -eq 'Running' } | Select-Object -Last 1)
+                $phaseName = if ($runningPhase.Count -gt 0) { $runningPhase[0].Name } elseif ($phase.FailedPhase) { $phase.FailedPhase } else { 'none' }
+                $ui.recoveryPhaseText.Text = "Mode $($phase.Mode) | Status $($phase.Status) | Phase $phaseName | Updated $($phase.Updated)"
+                $canRecover = [string]$phase.Status -in @('Running', 'Failed', 'Cancelled') -and
+                    [string]$phase.Mode -in @('Disable', 'Remove', 'Restore')
+            }
+            $script:UIState.RecoveryCanResume = $canRecover
+            $script:UIState.RecoveryCanRollback = $canRecover
+            $ui.btnRecoveryResume.IsEnabled = $canRecover
+            $ui.btnRecoveryRollback.IsEnabled = $canRecover
+
+            $safeMode = $Data.SafeMode
+            if ($safeMode) {
+                $ui.recoverySafeModeText.Text = "Safe Mode: $($safeMode.Stage) | Verified $($safeMode.VerifiedEffects)/$($safeMode.RequiredEffects) | Recommendation: $($safeMode.RecoveryRecommendation)"
+            } else {
+                $ui.recoverySafeModeText.Text = 'Safe Mode transaction status unavailable.'
+            }
+
+            $last = $Data.LastResult
+            if ($last -and ($last.PSObject.Properties.Name -contains 'Succeeded')) {
+                $lastStatus = if ($last.Succeeded) { 'verified' } elseif ($last.Cancelled) { 'cancelled' } else { 'failed' }
+                $ui.recoveryLastResultText.Text = "Last verified result: $($last.Mode) $lastStatus | changed $($last.Changed) | verified $($last.Verified) | completed $($last.Completed)"
+            } else {
+                $ui.recoveryLastResultText.Text = 'Last verified result: none available.'
+            }
+            $ui.recoveryStatusText.Text = "Evidence refreshed $($Data.Completed)"
+            $ui.recoveryStatusText.Foreground = $window.Resources['Green']
+        }
+        'Snapshot' {
+            $path = [string]$Data.Snapshot.SnapshotPath
+            $ui.txtRecoveryBaselinePath.Text = $path
+            $ui.recoverySnapshotText.Text = "Saved $($Data.Target) snapshot: $path"
+            $ui.recoveryStatusText.Text = 'Snapshot saved locally.'
+            $ui.recoveryStatusText.Foreground = $window.Resources['Green']
+        }
+        'Compare' {
+            Set-RecoveryDiffView -Diff $Data.Diff
+            $ui.recoveryStatusText.Text = "Compared baseline to live $($Data.Target) evidence."
+            $ui.recoveryStatusText.Foreground = $window.Resources['Green']
+        }
+        'Report' {
+            $ui.recoveryStatusText.Text = "HTML report saved: $($Data.Report.ReportPath)"
+            $ui.recoveryStatusText.Foreground = $window.Resources['Green']
+        }
+        'Support' {
+            $ui.recoveryStatusText.Text = "Support bundle saved: $($Data.SupportBundle.BundlePath)"
+            $ui.recoveryStatusText.Foreground = $window.Resources['Green']
+        }
+    }
+}
+
+# ---------------------------------------------------------------------------
 # Status polling (runs on UI thread; lightweight enough)
 # ---------------------------------------------------------------------------
 function Update-StatusTiles {
@@ -1744,6 +2310,44 @@ $drainTimer.Add_Tick({
             Show-Toast "$action failed. $errorText" error
         }
         Update-StatusTiles
+        if ($ui.recoveryOverlay.Visibility -eq 'Visible' -and -not $script:UIState.RecoveryBusy) {
+            Start-RecoveryWorkerAsync -Kind Refresh -Target (Get-RecoveryTargetSelection)
+        }
+    }
+    # Drain the read-only recovery/diagnostics worker.
+    if ($script:RecoveryAsyncResult -and $script:RecoveryAsyncResult.IsCompleted) {
+        $kind = $script:RecoveryKind
+        $workerError = Complete-RecoveryWorker
+        $result = $script:UIState.RecoveryResult
+        if ($null -ne $workerError -and $null -eq $result) {
+            $result = New-RecoveryFailureResult -Kind $kind -Target $script:RecoveryTarget `
+                -Message "Recovery worker drain failed: $($workerError.Exception.Message)" `
+                -Cancelled:$script:UIState.RecoveryCancellationRequested
+            $script:UIState.RecoveryResult = $result
+        }
+        Set-RecoveryBusy -IsBusy $false -Label 'Ready'
+        if ($null -eq $result) {
+            $result = New-RecoveryFailureResult -Kind $kind -Target $script:RecoveryTarget `
+                -Message 'Recovery worker returned no result.'
+            $script:UIState.RecoveryResult = $result
+        }
+        if ($result.Ok) {
+            Update-RecoveryHubView -Data $result
+            if ($kind -eq 'Refresh') {
+                Show-Toast 'Recovery evidence refreshed.' ok
+            } else {
+                Show-Toast "Recovery $($kind.ToLowerInvariant()) completed locally." ok
+            }
+        } elseif ($result.Cancelled) {
+            $ui.recoveryStatusText.Text = 'Cancelled at a safe query boundary; no success was reported.'
+            $ui.recoveryStatusText.Foreground = $window.Resources['Yellow']
+            Show-Toast 'Recovery query cancelled safely.' warn
+        } else {
+            $ui.recoveryStatusText.Text = "Recovery $($kind.ToLowerInvariant()) failed: $($result.Error)"
+            $ui.recoveryStatusText.Foreground = $window.Resources['Red']
+            Show-Toast "Recovery $($kind.ToLowerInvariant()) failed." error
+        }
+        $script:RecoveryKind = $null
     }
 })
 $drainTimer.Start()
@@ -1777,6 +2381,31 @@ function Invoke-WindowStateToggle {
     $window.WindowState = if ($window.WindowState -eq 'Maximized') { 'Normal' } else { 'Maximized' }
 }
 
+function Open-RecoveryHub {
+    $ui.recoveryOverlay.Visibility = 'Visible'
+    if (-not $script:UIState.RecoveryBusy -and -not $script:UIState.Busy) {
+        Start-RecoveryWorkerAsync -Kind Refresh -Target (Get-RecoveryTargetSelection)
+    }
+}
+
+function Close-RecoveryHub {
+    if ($script:UIState.RecoveryBusy) {
+        Show-Toast 'Cancel the recovery query and wait for its safe boundary before closing the hub.' warn
+        return
+    }
+    $ui.recoveryOverlay.Visibility = 'Collapsed'
+}
+
+function Get-RecoveryPhaseForAction {
+    $data = $script:UIState.RecoveryResult
+    if ($null -eq $data -or -not $data.Ok -or $data.Kind -ne 'Refresh' -or $null -eq $data.Phase) {
+        return $null
+    }
+    if ([string]$data.Phase.Status -notin @('Running', 'Failed', 'Cancelled')) { return $null }
+    if ([string]$data.Phase.Mode -notin @('Disable', 'Remove', 'Restore')) { return $null }
+    return $data.Phase
+}
+
 $ui.titleBar.Add_MouseLeftButtonDown({
     param($s, $e)
     if ($e.ClickCount -eq 2) {
@@ -1790,6 +2419,89 @@ $ui.btnMin.Add_Click({ $window.WindowState = 'Minimized' })
 $ui.btnMax.Add_Click({ Invoke-WindowStateToggle })
 $ui.btnClose.Add_Click({ $window.Close() })
 $window.Add_StateChanged({ Update-MaximizeButtonState })
+$ui.btnRecoveryHub.Add_Click({ Open-RecoveryHub })
+$ui.btnRecoveryClose.Add_Click({ Close-RecoveryHub })
+$ui.btnRecoveryDone.Add_Click({ Close-RecoveryHub })
+$ui.btnRecoveryCancel.Add_Click({ Request-RecoveryCancellation })
+$ui.btnRecoveryRefresh.Add_Click({
+    Start-RecoveryWorkerAsync -Kind Refresh -Target (Get-RecoveryTargetSelection)
+})
+$ui.cmbRecoveryTarget.Add_SelectionChanged({
+    if ($ui.recoveryOverlay.Visibility -eq 'Visible' -and -not $script:UIState.RecoveryBusy) {
+        Start-RecoveryWorkerAsync -Kind Refresh -Target (Get-RecoveryTargetSelection)
+    }
+})
+$ui.btnRecoveryChooseBaseline.Add_Click({
+    $dlg = New-Object Microsoft.Win32.OpenFileDialog
+    $dlg.Filter = 'Defender snapshots|*.json|All files|*.*'
+    $dlg.Title = 'Select a Defender snapshot baseline'
+    if ($dlg.ShowDialog($window)) {
+        $ui.txtRecoveryBaselinePath.Text = $dlg.FileName
+        $ui.recoveryStatusText.Text = 'Snapshot baseline selected.'
+    }
+})
+$ui.btnRecoverySnapshot.Add_Click({
+    $target = Get-RecoveryTargetSelection
+    $dlg = New-Object Microsoft.Win32.SaveFileDialog
+    $dlg.Filter = 'Defender snapshots|*.json|All files|*.*'
+    $dlg.FileName = "DisableDefender-$($target.ToLowerInvariant())-snapshot-$(Get-Date -Format 'yyyyMMdd-HHmmss').json"
+    $dlg.Title = 'Save a target-aware Defender snapshot'
+    if ($dlg.ShowDialog($window)) {
+        Start-RecoveryWorkerAsync -Kind Snapshot -Target $target -OutputPath $dlg.FileName
+    }
+})
+$ui.btnRecoveryCompare.Add_Click({
+    $baselinePath = [string]$ui.txtRecoveryBaselinePath.Text
+    if ([string]::IsNullOrWhiteSpace($baselinePath)) {
+        Show-Toast 'Choose a snapshot baseline before comparing.' warn
+        $ui.btnRecoveryChooseBaseline.Focus() | Out-Null
+    } elseif (-not (Test-Path -LiteralPath $baselinePath)) {
+        Show-Toast 'The selected snapshot baseline does not exist.' error
+    } else {
+        Start-RecoveryWorkerAsync -Kind Compare -Target (Get-RecoveryTargetSelection) -BaselinePath $baselinePath
+    }
+})
+$ui.btnRecoveryExportReport.Add_Click({
+    $target = Get-RecoveryTargetSelection
+    $dlg = New-Object Microsoft.Win32.SaveFileDialog
+    $dlg.Filter = 'HTML reports|*.html|All files|*.*'
+    $dlg.FileName = "DisableDefender-$($target.ToLowerInvariant())-report-$(Get-Date -Format 'yyyyMMdd-HHmmss').html"
+    $dlg.Title = 'Export a local Defender HTML report'
+    if ($dlg.ShowDialog($window)) {
+        Start-RecoveryWorkerAsync -Kind Report -Target $target -OutputPath $dlg.FileName
+    }
+})
+$ui.btnRecoveryExportSupport.Add_Click({
+    $folder = New-Object System.Windows.Forms.FolderBrowserDialog
+    $folder.Description = 'Select a local folder for the redacted DisableDefender support bundle'
+    $folder.ShowNewFolderButton = $true
+    if ($folder.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
+        Start-RecoveryWorkerAsync -Kind Support -Target (Get-RecoveryTargetSelection) -OutputDirectory $folder.SelectedPath
+    }
+})
+$ui.btnRecoveryResume.Add_Click({
+    $phase = Get-RecoveryPhaseForAction
+    if ($phase) {
+        $script:RecoveryPendingMode = [string]$phase.Mode
+        $ui.recoveryOverlay.Visibility = 'Collapsed'
+        Show-Confirm -Title "Resume $($script:RecoveryPendingMode) phase plan?" `
+            -Body "The persisted phase state is $($phase.Status) at $($phase.FailedPhase). Rerun the idempotent $($script:RecoveryPendingMode) plan to resume verified work. Safety gates and the Firewall boundary still apply." `
+            -Kind Warning -ConfirmLabel 'Resume phase plan' -OnProceed {
+                Start-ModeAsync -ActionMode $script:RecoveryPendingMode
+            }
+    }
+})
+$ui.btnRecoveryRollback.Add_Click({
+    $phase = Get-RecoveryPhaseForAction
+    if ($phase) {
+        $ui.recoveryOverlay.Visibility = 'Collapsed'
+        Show-Confirm -Title 'Rollback the interrupted operation?' `
+            -Body "Restore will replay the recorded baseline for the interrupted $($phase.Mode) operation and verify it before archiving the manifest. If no valid undo manifest exists, the action stops without changing the machine." `
+            -Kind Recovery -ConfirmLabel 'Rollback with Restore' -OnProceed {
+                Start-ModeAsync -ActionMode 'Restore'
+            }
+    }
+})
 
 # Confirmation modal buttons - registered once
 $ui.btnConfirmCancel.Add_Click({ $ui.confirmOverlay.Visibility = 'Collapsed'; $script:ConfirmAction = $null })
@@ -1798,6 +2510,9 @@ $window.Add_KeyDown({
     if ($e.Key -eq 'Escape' -and $ui.confirmOverlay.Visibility -eq 'Visible') {
         $ui.confirmOverlay.Visibility = 'Collapsed'
         $script:ConfirmAction = $null
+        $e.Handled = $true
+    } elseif ($e.Key -eq 'Escape' -and $ui.recoveryOverlay.Visibility -eq 'Visible') {
+        Close-RecoveryHub
         $e.Handled = $true
     } elseif ($e.Key -eq 'F5' -and $ui.confirmOverlay.Visibility -ne 'Visible' -and -not $script:UIState.Busy) {
         Update-StatusTiles
@@ -1900,10 +2615,16 @@ while ($script:UIState.LogQueue.Count -gt 0) {
 $window.Add_Closing({
     param($source, $closingArgs)
     $workerActive = $script:UIState.Busy -or
-        ($script:AsyncResult -and -not $script:AsyncResult.IsCompleted)
+        ($script:AsyncResult -and -not $script:AsyncResult.IsCompleted) -or
+        $script:UIState.RecoveryBusy -or
+        ($script:RecoveryAsyncResult -and -not $script:RecoveryAsyncResult.IsCompleted)
     if ($workerActive) {
         $closingArgs.Cancel = $true
-        Show-Toast 'An operation is still running. Request cancellation and close after the safe phase boundary completes.' warn
+        if ($script:UIState.RecoveryBusy -and -not $script:UIState.Busy) {
+            Show-Toast 'A recovery query is still running. Cancel it and close after its safe query boundary completes.' warn
+        } else {
+            Show-Toast 'An operation is still running. Request cancellation and close after the safe phase boundary completes.' warn
+        }
     }
 })
 
@@ -1914,6 +2635,9 @@ $window.Add_Closed({
     try { $statusTimer.Dispose() } catch {}
     if ($script:AsyncPS -and $script:AsyncResult -and $script:AsyncResult.IsCompleted) {
         Complete-AsyncWorker | Out-Null
+    }
+    if ($script:RecoveryAsyncPS -and $script:RecoveryAsyncResult -and $script:RecoveryAsyncResult.IsCompleted) {
+        Complete-RecoveryWorker | Out-Null
     }
     foreach ($timer in @($script:ToastTimers)) {
         try { $timer.Stop() } catch {}

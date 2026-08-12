@@ -28,6 +28,7 @@ or double-click `DisableDefender.GUI.bat`.
 
 Dashboard tiles show: Antivirus engine, Real-time protection, Tamper Protection (with warning banner + direct link to Windows Security), Firewall, Defender service count, MAPS telemetry, and a per-component lockdown grid for Defender services/drivers with PPL or LaunchProtected state for MsMpEng, WdFilter, WdBoot, and WdNisDrv. A live policy edit stream tags direct writes, ACL overrides, and SYSTEM-task fallback methods as they happen. The always-on firewall integrity banner polls mpssvc, BFE, and firewall profiles, then flashes red if any guard trips. Disable/Remove confirmations expose a default-off `-Force` override checkbox instead of bypassing safety gates automatically. Overall indicator summarizes to PROTECTED / DISABLED / BLOCKED. Live log pane streams every operation with level colors (INFO / OK / WARN / ERROR / DEBUG). Copy, Export, Clear buttons. Toast notifications on completion.
 Disable confirmation includes a current-vs-target drift preview before execution.
+The Recovery hub provides a cancellable, target-aware evidence view for live Health drift, the last verified operation result, persisted phase resume/rollback choices, Safe Mode recovery state, snapshots/diff, and local HTML/support exports. Support bundles remain redacted and local-only; the default health targets preserve MDE Sense.
 
 ---
 
@@ -61,6 +62,7 @@ Disable confirmation includes a current-vs-target drift preview before execution
 - **Local release builder**: creates an unsigned clean zip, SHA256 file, and release metadata JSON inside an identity-tracked staging directory
 - **Safe Mode transaction**: `Invoke-SafeModeRemove` persists and verifies the worker and independent BCD watchdog before changing boot state, records child/task/effect evidence across boots, and finalizes or rolls back deterministically
 - **Support bundle export**: `Export-DefenderSupportBundle` creates a unique local diagnostic zip with an explicit or phase-derived health target, a versioned privacy allowlist, redacted diagnostics, and no automatic upload
+- **GUI recovery hub**: target-aware cancellable Health evidence, persisted phase resume/rollback controls, target-aware snapshots/diff, and local report/support export
 - **Offline remove bundle** (`PrepareOffline`): generates a self-contained `Invoke-OfflineDefenderRemove.ps1` that targets an offline Windows volume from WinRE or a secondary OS, bypassing live Tamper Protection by editing dormant registry hives directly; refuses to run against the live system root
 - **Module layout**: `DisableDefender.psd1` / `DisableDefender.psm1` with public commands and private helpers for function-level tests
 - **GUI auto-elevate, cooperative phase-boundary cancellation, safe runspace/timer cleanup, silent CLI mode, transcript logging, Safe Mode aware**
@@ -165,6 +167,8 @@ Invoke-SafeModeRemove -RecoveryAction Rollback
 
 # Save a state snapshot, then compare later
 Save-DefenderSnapshot -OutputPath C:\Snapshots\before.json
+# Capture a snapshot against a different expected target
+Save-DefenderSnapshot -OutputPath C:\Snapshots\remove-before.json -HealthTarget Remove
 # ... weeks pass, a feature update lands ...
 Compare-DefenderSnapshots -BaselinePath C:\Snapshots\before.json
 Compare-DefenderSnapshots -BaselinePath before.json -CurrentPath after.json -Json
