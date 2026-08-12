@@ -143,7 +143,7 @@ Describe 'Local release build' {
         $builderSource = Get-Content -LiteralPath $script:ReleaseBuilder -Raw
         $builderSource | Should -Match 'ConvertTo-ReleaseNormalizedText'
         $builderSource | Should -Match 'BuiltAt\s*=\s*\$archiveTimestamp\.ToString'
-        $builderSource | Should -Match "\$file\.Name -cne 'LICENSE'"
+        $builderSource | Should -Match 'file\.Name -cne ''LICENSE'''
         $builderSource | Should -Match '0x0D'
         $builderSource | Should -Match '0x0A'
         $gateSource = Get-Content -LiteralPath (
