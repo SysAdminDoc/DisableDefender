@@ -1,6 +1,6 @@
 #Requires -Version 5.1
 <#
-    DisableDefender GUI v0.0.40
+    DisableDefender GUI v0.0.41
     Safety-first WPF control center for the DisableDefender module
 
     Features:
@@ -500,7 +500,7 @@ function Write-Log {
                             </Grid>
                         </Viewbox>
                         <TextBlock Text="DisableDefender" Foreground="{StaticResource Text}" FontSize="15" FontWeight="SemiBold" VerticalAlignment="Center"/>
-                        <TextBlock x:Name="versionText" Text="v0.0.40" Foreground="{StaticResource Overlay0}" FontSize="11" Margin="10,2,0,0" VerticalAlignment="Center"/>
+                        <TextBlock x:Name="versionText" Text="v0.0.41" Foreground="{StaticResource Overlay0}" FontSize="11" Margin="10,2,0,0" VerticalAlignment="Center"/>
                     </StackPanel>
                     <StackPanel Grid.Column="2" Orientation="Horizontal">
                         <Button x:Name="btnMin" Style="{StaticResource ChromeButton}" Content="&#xE921;" FontFamily="Segoe MDL2 Assets"

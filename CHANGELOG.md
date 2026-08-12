@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## v0.0.41 - 2026-08-12
+
 ### Added
 - Added a versioned release-gate policy that pins Pester/PSScriptAnalyzer, ratchets test and command coverage, validates every source/archive version and artifact schema fixture, and reproduces the exact unsigned ZIP from a clean detached checkout.
 - Added one persisted-artifact compatibility registry plus golden current/legacy/future fixtures for restore, recovery, snapshot, logging, support, error, and release formats.
