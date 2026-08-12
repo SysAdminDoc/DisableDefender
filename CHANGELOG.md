@@ -13,6 +13,7 @@
 - Added an explicit `-RepairWithoutManifest` fixed-default repair path in the CLI, module command, and GUI.
 - Added `Get-DefenderSafeModeStatus` for live BCD/task evidence, persisted cross-boot stages, child/task results, verified effect counts, errors, and recovery guidance; the GUI component dashboard surfaces the same transaction state.
 - Added explicit support-bundle health targeting, unique reparse-checked staging, local preview, a versioned privacy allowlist, redacted runtime diagnostics, and opt-in transcript/tripwire collection with no automatic upload.
+- Added rollback-capable offline servicing artifacts: every generated offline mutation and hive mount is journaled, baselines are persisted before writes, unload is retried and verified, residual mounts fail nonzero, and `-RecoveryAction Rollback` replays the captured baseline.
 
 ### Fixed
 - Release ZIP entries and metadata now use a fixed timestamp for byte-reproducible builds; the strict gate rejects missing tools, dirty release inputs, stale/wrong archives, bad hashes or metadata, content drift, unexpected signing, and clean-checkout hash mismatches.

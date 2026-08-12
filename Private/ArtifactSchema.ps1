@@ -49,6 +49,21 @@ $script:DefenderArtifactSchemas = [ordered]@{
         SupportedVersions = @(1)
         LegacyFormats     = @()
     }
+    OfflineRemoveTransaction = [PSCustomObject]@{
+        CurrentVersion    = 1
+        SupportedVersions = @(1)
+        LegacyFormats     = @()
+    }
+    OfflineRemoveBaseline = [PSCustomObject]@{
+        CurrentVersion    = 1
+        SupportedVersions = @(1)
+        LegacyFormats     = @()
+    }
+    OfflineRemoveResult = [PSCustomObject]@{
+        CurrentVersion    = 1
+        SupportedVersions = @(1)
+        LegacyFormats     = @()
+    }
     ErrorEnvelope = [PSCustomObject]@{
         CurrentVersion    = 1
         SupportedVersions = @(1)

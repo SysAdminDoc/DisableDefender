@@ -266,6 +266,9 @@ InModuleScope DisableDefender {
                 'DefenderSnapshot',
                 'ErrorEnvelope',
                 'OperationResult',
+                'OfflineRemoveBaseline',
+                'OfflineRemoveResult',
+                'OfflineRemoveTransaction',
                 'PhaseState',
                 'RegistryAclJournal',
                 'ReleaseMetadata',
@@ -3841,6 +3844,32 @@ InModuleScope DisableDefender {
             $content | Should -Match 'Task Scheduler'
             $content | Should -Match 'Appx'
             $content | Should -Match 'DISM'
+        }
+
+        It 'embeds the rollback-capable transaction and artifact contract' {
+            $result = New-OfflineRemoveBundle -OutputDirectory $script:BundleDir
+            $content = Get-Content -LiteralPath $result.ScriptPath -Raw
+
+            $result.TransactionPathPattern | Should -Match 'transaction\.json$'
+            $result.BaselinePathPattern | Should -Match 'baseline\.json$'
+            $result.ResultPathPattern | Should -Match 'result\.json$'
+            $content | Should -Match 'RecoveryAction'
+            $content | Should -Match 'BaselinePath'
+            $content | Should -Match 'Invoke-OfflineRollback'
+            $content | Should -Match 'Write-OfflineJsonArtifact'
+            $content | Should -Match 'Add-OfflineMutationJournal'
+            $content | Should -Match 'CanRollback'
+            $content | Should -Match 'ResidualMounts'
+        }
+
+        It 'journals unload retries and fails nonzero on residual mounts' {
+            $result = New-OfflineRemoveBundle -OutputDirectory $script:BundleDir
+            $content = Get-Content -LiteralPath $result.ScriptPath -Raw
+
+            $content | Should -Match 'UnloadAttempt'
+            $content | Should -Match 'for \(\$attempt = 1; \$attempt -le 5;'
+            $content | Should -Match 'Residual offline registry mounts'
+            $content | Should -Match 'exit 2'
         }
 
         It 'never injects Force into the live completion command' {

@@ -191,7 +191,14 @@ Copy the generated `Invoke-OfflineDefenderRemove.ps1` to a USB drive, boot into 
 .\Invoke-OfflineDefenderRemove.ps1 -TargetVolume D:\
 ```
 
-The script loads the offline volume's SOFTWARE and SYSTEM registry hives, applies all Defender policy keys, disables services, removes SafeBoot entries, and disables WMI Autologger telemetry. It refuses to run against the live system drive. After booting the target into Safe Mode, run `-Mode Health` and `-Mode Remove -Only MpPreference,Tasks,Appx,DISM` to complete the remaining live-only steps. Pass `-Force` to `New-OfflineRemoveBundle` only when the generated completion command must preserve an intentional managed/domain or normal-boot override.
+The script loads the offline volume's SOFTWARE and SYSTEM registry hives, applies all Defender policy keys, disables services, removes SafeBoot entries, and disables WMI Autologger telemetry. It refuses to run against the live system drive. Each run writes versioned `offline-remove.<id>.transaction.json`, `.baseline.json`, and `.result.json` artifacts beside the script; every mount and mutation is journaled, registry handles are released before unload, unload is retried and verified, and residual mounts fail with a nonzero exit. If an apply run fails after a baseline was captured, replay it with:
+
+```powershell
+.\Invoke-OfflineDefenderRemove.ps1 -TargetVolume D:\ `
+  -RecoveryAction Rollback -BaselinePath .\offline-remove.<transaction-id>.baseline.json
+```
+
+After booting the target into Safe Mode, run `-Mode Health` and `-Mode Remove -Only MpPreference,Tasks,Appx,DISM` to complete the remaining live-only steps. Pass `-Force` to `New-OfflineRemoveBundle` only when the generated completion command must preserve an intentional managed/domain or normal-boot override.
 
 ### Parameters
 | Flag | Description |
