@@ -18,6 +18,7 @@
 - Added a GUI Recovery hub with target-aware cancellable evidence, persisted phase resume/rollback controls, Safe Mode status, target-aware snapshot/diff, and local HTML/support exports; snapshots now accept `-HealthTarget`.
 - Hardened GUI accessibility with automation-name coverage for every named interactive control, visible keyboard focus in custom chrome/inputs, a startup minimum-layout contract, and a Windows high-contrast palette path; version-matched minimum-size dashboard and Recovery hub renders were inspected locally.
 - Added localizable presentation resources for CLI text and key GUI controls, with deterministic `en-US` fallback, French extraction, pseudo-locale clipping checks, RTL metadata, and stable structured-log `message_id` fields.
+- Added a local Windows tray completion notification with localized Open/Exit actions, green/yellow/red success-cancel-failure status icons, balloon severity mapping, and deterministic disposal on GUI shutdown.
 
 ### Fixed
 - Release ZIP entries and metadata now use a fixed timestamp for byte-reproducible builds; the strict gate rejects missing tools, dirty release inputs, stale/wrong archives, bad hashes or metadata, content drift, unexpected signing, and clean-checkout hash mismatches.

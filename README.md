@@ -66,6 +66,7 @@ GUI accessibility/layout verification is part of the test suite: `Invoke-Pester 
 - **Support bundle export**: `Export-DefenderSupportBundle` creates a unique local diagnostic zip with an explicit or phase-derived health target, a versioned privacy allowlist, redacted diagnostics, and no automatic upload
 - **GUI recovery hub**: target-aware cancellable Health evidence, persisted phase resume/rollback controls, target-aware snapshots/diff, and local report/support export
 - **Localized presentation**: the CLI and key GUI controls resolve through an `en-US` catalog with deterministic fallback; `-Culture` and `DISABLEDEFENDER_CULTURE` support French extraction, pseudo-localization (`qps-ploc`), and RTL layout smoke testing while JSON/result keys remain stable
+- **Completion notifications**: the GUI keeps a local tray icon and sends success, safe-cancellation, or failure balloons with green, yellow, or red status treatment; the tray menu can restore focus or exit cleanly
 - **Offline remove bundle** (`PrepareOffline`): generates a self-contained `Invoke-OfflineDefenderRemove.ps1` that targets an offline Windows volume from WinRE or a secondary OS, bypassing live Tamper Protection by editing dormant registry hives directly; refuses to run against the live system root
 - **Module layout**: `DisableDefender.psd1` / `DisableDefender.psm1` with public commands and private helpers for function-level tests
 - **GUI auto-elevate, cooperative phase-boundary cancellation, safe runspace/timer cleanup, silent CLI mode, transcript logging, Safe Mode aware**

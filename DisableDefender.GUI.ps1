@@ -50,7 +50,12 @@ Add-Type -AssemblyName PresentationFramework
 Add-Type -AssemblyName PresentationCore
 Add-Type -AssemblyName WindowsBase
 Add-Type -AssemblyName System.Xaml
+Add-Type -AssemblyName System.Drawing -ErrorAction SilentlyContinue
 Add-Type -AssemblyName System.Windows.Forms
+Add-Type -Namespace DisableDefenderGui -Name IconCtl -MemberDefinition @'
+[System.Runtime.InteropServices.DllImport("user32.dll")]
+public static extern bool DestroyIcon(System.IntPtr hIcon);
+'@ -ErrorAction SilentlyContinue
 
 # ---------------------------------------------------------------------------
 # Core module
@@ -97,6 +102,9 @@ $script:UIState = [hashtable]::Synchronized(@{
     RecoveryCanRollback = $false
 })
 $script:ToastTimers = New-Object System.Collections.ArrayList
+$script:TrayIcon = $null
+$script:TrayContextMenu = $null
+$script:TrayStatusIcons = New-Object System.Collections.ArrayList
 
 # Override Write-Log in the main scope so Get-DefenderStatus calls from UI thread queue too.
 function Write-Log {
@@ -1254,6 +1262,102 @@ function Set-GuiPresentationResources {
     $ui.recoveryExportsDescription.Text = Get-GuiText -Id 'gui.recovery.exports.description'
     $ui.recoverySenseNote.Text = Get-GuiText -Id 'gui.recovery.sense'
     $ui.recoveryStatusText.Text = Get-GuiText -Id 'gui.recovery.ready'
+}
+
+function New-GuiTrayStatusIcon {
+    param(
+        [ValidateSet('Info','Success','Cancelled','Failed')][string]$Status = 'Info'
+    )
+
+    $color = switch ($Status) {
+        'Success'   { [System.Drawing.Color]::FromArgb(255, 86, 217, 123) }
+        'Cancelled' { [System.Drawing.Color]::FromArgb(255, 255, 200, 87) }
+        'Failed'    { [System.Drawing.Color]::FromArgb(255, 255, 112, 136) }
+        default     { [System.Drawing.Color]::FromArgb(255, 110, 168, 254) }
+    }
+    $bitmap = New-Object System.Drawing.Bitmap 16, 16
+    $graphics = $null
+    $brush = $null
+    $pen = $null
+    $nativeIcon = $null
+    $hIcon = [IntPtr]::Zero
+    try {
+        $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
+        $graphics.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
+        $graphics.Clear([System.Drawing.Color]::Transparent)
+        $brush = [System.Drawing.SolidBrush]::new($color)
+        $pen = [System.Drawing.Pen]::new([System.Drawing.Color]::White, 1)
+        $graphics.FillEllipse($brush, 1, 1, 14, 14)
+        $graphics.DrawEllipse($pen, 1, 1, 14, 14)
+        $hIcon = $bitmap.GetHicon()
+        $nativeIcon = [System.Drawing.Icon]::FromHandle($hIcon)
+        return [System.Drawing.Icon]$nativeIcon.Clone()
+    } catch {
+        return $null
+    } finally {
+        if ($nativeIcon) { $nativeIcon.Dispose() }
+        if ($hIcon -ne [IntPtr]::Zero) {
+            try { [DisableDefenderGui.IconCtl]::DestroyIcon($hIcon) | Out-Null } catch {}
+        }
+        if ($pen) { $pen.Dispose() }
+        if ($brush) { $brush.Dispose() }
+        if ($graphics) { $graphics.Dispose() }
+        $bitmap.Dispose()
+    }
+}
+
+function Set-GuiTrayStatus {
+    param(
+        [ValidateSet('Info','Success','Cancelled','Failed')][string]$Status = 'Info'
+    )
+    if ($null -eq $script:TrayIcon) { return }
+    $icon = New-GuiTrayStatusIcon -Status $Status
+    if ($icon) {
+        [void]$script:TrayStatusIcons.Add($icon)
+        $script:TrayIcon.Icon = $icon
+    }
+    $script:TrayIcon.BalloonTipIcon = switch ($Status) {
+        'Success'   { [System.Windows.Forms.ToolTipIcon]::Info }
+        'Cancelled' { [System.Windows.Forms.ToolTipIcon]::Warning }
+        'Failed'    { [System.Windows.Forms.ToolTipIcon]::Error }
+        default     { [System.Windows.Forms.ToolTipIcon]::Info }
+    }
+}
+
+function Show-GuiCompletionNotification {
+    param(
+        [Parameter(Mandatory)][string]$Message,
+        [ValidateSet('Success','Cancelled','Failed')][string]$Status
+    )
+    if ($null -eq $script:TrayIcon) { return }
+    Set-GuiTrayStatus -Status $Status
+    $script:TrayIcon.BalloonTipTitle = Get-GuiText -Id 'app.name'
+    $script:TrayIcon.BalloonTipText = $Message
+    try { $script:TrayIcon.ShowBalloonTip(5000) } catch {}
+}
+
+function Initialize-GuiTrayIcon {
+    try {
+        $script:TrayIcon = New-Object System.Windows.Forms.NotifyIcon
+        $script:TrayIcon.Text = 'DisableDefender'
+        $script:TrayIcon.Visible = $true
+
+        $script:TrayContextMenu = New-Object System.Windows.Forms.ContextMenuStrip
+        $openItem = $script:TrayContextMenu.Items.Add((Get-GuiText -Id 'gui.tray.open'))
+        $exitItem = $script:TrayContextMenu.Items.Add((Get-GuiText -Id 'gui.tray.exit'))
+        $openAction = {
+            if ($window.WindowState -eq 'Minimized') { $window.WindowState = 'Normal' }
+            $window.Activate() | Out-Null
+        }.GetNewClosure()
+        $openItem.Add_Click($openAction)
+        $script:TrayIcon.Add_DoubleClick($openAction)
+        $exitItem.Add_Click({ $window.Close() }.GetNewClosure())
+        $script:TrayIcon.ContextMenuStrip = $script:TrayContextMenu
+        Set-GuiTrayStatus -Status Info
+    } catch {
+        $script:TrayIcon = $null
+        $script:TrayContextMenu = $null
+    }
 }
 
 function Set-GuiHighContrastTheme {
@@ -2564,17 +2668,23 @@ $drainTimer.Add_Tick({
         $action = $script:UIState.LastAction
         Set-Busy -IsBusy $false -Label 'Idle'
         if ($null -ne $result -and $result.Succeeded) {
-            Show-Toast ("{0} complete - {1} verified, {2} changed." -f `
-                $action, $result.Verified, $result.Changed) ok
+            $completionMessage = Get-GuiText -Id 'gui.tray.success' -ArgumentList @(
+                $action, $result.Verified, $result.Changed)
+            Show-Toast $completionMessage ok
+            Show-GuiCompletionNotification -Message $completionMessage -Status Success
         } elseif ($null -ne $result -and $result.Cancelled) {
-            Show-Toast "$action cancelled safely at a phase boundary." warn
+            $completionMessage = Get-GuiText -Id 'gui.tray.cancelled' -ArgumentList @($action)
+            Show-Toast $completionMessage warn
+            Show-GuiCompletionNotification -Message $completionMessage -Status Cancelled
         } else {
             $errorText = if ($null -ne $result -and @($result.Errors).Count -gt 0) {
                 @($result.Errors) -join '; '
             } else {
-                'No verified operation result was returned.'
+                Get-GuiText -Id 'gui.recovery.noresult'
             }
-            Show-Toast "$action failed. $errorText" error
+            $completionMessage = Get-GuiText -Id 'gui.tray.failed' -ArgumentList @($action, $errorText)
+            Show-Toast $completionMessage error
+            Show-GuiCompletionNotification -Message $completionMessage -Status Failed
         }
         Update-StatusTiles
         if ($ui.recoveryOverlay.Visibility -eq 'Visible' -and -not $script:UIState.RecoveryBusy) {
@@ -2867,6 +2977,7 @@ $ui.btnClearLog.Add_Click({
 # Initial render
 # ---------------------------------------------------------------------------
 Set-GuiPresentationResources
+Initialize-GuiTrayIcon
 $ui.versionText.Text = "v$script:Version"
 $script:GuiAccessibilityReport = Test-GuiAccessibilityContract
 $script:GuiHighContrast = Set-GuiHighContrastTheme
@@ -2914,6 +3025,19 @@ $window.Add_Closed({
         try { $timer.Dispose() } catch {}
     }
     $script:ToastTimers.Clear()
+    if ($script:TrayIcon) {
+        $script:TrayIcon.Visible = $false
+        try { $script:TrayIcon.Dispose() } catch {}
+        $script:TrayIcon = $null
+    }
+    if ($script:TrayContextMenu) {
+        try { $script:TrayContextMenu.Dispose() } catch {}
+        $script:TrayContextMenu = $null
+    }
+    foreach ($icon in @($script:TrayStatusIcons)) {
+        try { $icon.Dispose() } catch {}
+    }
+    $script:TrayStatusIcons.Clear()
 })
 
 $null = $window.ShowDialog()

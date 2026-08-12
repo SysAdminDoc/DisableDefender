@@ -4982,6 +4982,19 @@ Describe 'DisableDefender GUI safety wiring' {
         $script:GuiSource | Should -Match 'ConvertTo-Json\s+-Compress'
     }
 
+    It 'maps operation completion to colored tray notifications and disposes them' {
+        $script:GuiSource | Should -Match 'function Initialize-GuiTrayIcon'
+        $script:GuiSource | Should -Match 'System\.Windows\.Forms\.NotifyIcon'
+        $script:GuiSource | Should -Match 'function Show-GuiCompletionNotification'
+        $script:GuiSource | Should -Match 'ToolTipIcon\]::Info'
+        $script:GuiSource | Should -Match 'ToolTipIcon\]::Warning'
+        $script:GuiSource | Should -Match 'ToolTipIcon\]::Error'
+        $script:GuiSource | Should -Match 'TrayStatusIcons\.Clear\(\)'
+        $script:GuiSource | Should -Match 'Show-GuiCompletionNotification\s+-Message \$completionMessage\s+-Status Success'
+        $script:GuiSource | Should -Match 'Show-GuiCompletionNotification\s+-Message \$completionMessage\s+-Status Cancelled'
+        $script:GuiSource | Should -Match 'Show-GuiCompletionNotification\s+-Message \$completionMessage\s+-Status Failed'
+    }
+
     It 'blocks unsafe window close while a phase is busy and does not abruptly stop the worker' {
         $script:GuiSource | Should -Match '(?s)\$window\.Add_Closing\(\{.*?\$script:UIState\.Busy.*?\$closingArgs\.Cancel\s*=\s*\$true'
         $script:GuiSource | Should -Not -Match '\$script:AsyncPS\.Stop\('
