@@ -30,6 +30,7 @@
 - Restore now replays and verifies the exact recorded registry, preference, task, service, SafeBoot, context-menu, Security Health, and DISM baseline before archiving the manifest; unreadable registry pre-state aborts before mutation.
 - Repeated-run restore collapses final expectations to the oldest selected baseline, while exact Restore refuses partial phase filters and never falls through to fixed defaults.
 - Safe Mode removal now verifies both exact SYSTEM startup-task definitions before BCD mutation, proves the watchdog is an independent `bcdedit.exe` action, read-verifies every BCD transition, persists child JSON/effect evidence and task exit results, reboots only after verified removal, and deterministically resumes, finalizes, or rolls back interrupted stages.
+- Runtime-directory ACL inspection and repair now use an explicit `Get-Acl`/`Set-Acl` cross-edition adapter, with a checked Windows PowerShell fallback; module import and read-only Status/Health inspection no longer create or harden `%ProgramData%\DisableDefender`.
 
 ## v0.0.40 - 2026-06-30
 

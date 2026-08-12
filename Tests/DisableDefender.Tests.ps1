@@ -13,6 +13,11 @@ Describe 'Module manifest' {
         { Test-ModuleManifest -Path $script:ModuleManifest -ErrorAction Stop } | Should -Not -Throw
     }
 
+    It 'declares the supported Windows PowerShell editions' {
+        $manifest = Test-ModuleManifest -Path $script:ModuleManifest
+        @($manifest.CompatiblePSEditions) | Should -Be @('Desktop', 'Core')
+    }
+
     It 'exports only public commands' {
         $expected = @(
             'Compare-DefenderSnapshots'
@@ -33,6 +38,26 @@ Describe 'Module manifest' {
         ) | Sort-Object
         $actual = (Get-Command -Module DisableDefender -CommandType Function).Name | Sort-Object
         $actual | Should -Be $expected
+    }
+
+    It 'keeps import and read-only inspection side-effect free' {
+        $previousProgramData = $env:ProgramData
+        $probe = Join-Path $TestDrive 'readonly-import-runtime'
+        try {
+            Remove-Module -Name DisableDefender -Force -ErrorAction SilentlyContinue
+            $env:ProgramData = $probe
+            Import-Module -Name $script:ModuleManifest -Force -ErrorAction Stop
+
+            Get-Command -Module DisableDefender -CommandType Function | Out-Null
+            Get-DefenderStatus | Out-Null
+            Get-DefenderHealth -ErrorAction Stop | Out-Null
+
+            Test-Path -LiteralPath $probe | Should -BeFalse
+        } finally {
+            $env:ProgramData = $previousProgramData
+            Remove-Module -Name DisableDefender -Force -ErrorAction SilentlyContinue
+            Import-Module -Name $script:ModuleManifest -Force -ErrorAction Stop
+        }
     }
 }
 
@@ -457,6 +482,15 @@ InModuleScope DisableDefender {
             $result.Created | Should -Be $false
             $result.Repaired | Should -Be $false
             Should -Invoke Set-DefenderRuntimeDirectoryAcl -Times 0 -Exactly
+        }
+
+        It 'uses the cross-edition ACL adapter on a real directory' {
+            $dir = Join-Path $TestDrive 'runtime-adapter'
+            New-Item -ItemType Directory -Path $dir | Out-Null
+
+            $acl = Get-DefenderRuntimeDirectoryAcl -Path $dir
+
+            $acl | Should -BeOfType System.Security.AccessControl.DirectorySecurity
         }
 
         It 'refuses a runtime directory that is a reparse point' {

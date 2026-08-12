@@ -452,6 +452,17 @@ if ($null -ne $manifest) {
     } catch {
         Write-Check 'Source version consistency' 'Fail' $_.Exception.Message
     }
+
+    try {
+        $editions = @($manifest.CompatiblePSEditions | ForEach-Object { [string]$_ })
+        $expectedEditions = @('Desktop', 'Core')
+        if (@(Compare-Object $expectedEditions $editions).Count -gt 0) {
+            throw "CompatiblePSEditions must be Desktop and Core; found $($editions -join ', ')."
+        }
+        Write-Check 'PowerShell edition compatibility' 'Pass' ($editions -join ', ')
+    } catch {
+        Write-Check 'PowerShell edition compatibility' 'Fail' $_.Exception.Message
+    }
 }
 
 if ($null -ne $module) {

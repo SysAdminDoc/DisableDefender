@@ -68,7 +68,7 @@ Disable confirmation includes a current-vs-target drift preview before execution
 ## Requirements
 
 - Windows 10 (1809+) or Windows 11 (any build, including 24H2/25H2)
-- PowerShell 5.1+ (PowerShell 7 works too)
+- Windows PowerShell 5.1 or PowerShell 7.4/7.6 on Windows (`Desktop` and `Core` editions are supported; PowerShell 7 uses the cross-edition `Get-Acl`/`Set-Acl` adapter for runtime-directory hardening)
 - Administrator rights (GUI auto-elevates; CLI must run from an elevated PowerShell session)
 - **Tamper Protection OFF** — you must toggle this manually first:
   *Settings > Windows Security > Virus & threat protection > Manage settings > Tamper Protection*

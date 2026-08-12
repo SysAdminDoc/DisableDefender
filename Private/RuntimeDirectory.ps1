@@ -333,8 +333,26 @@ function Get-DefenderRuntimeDirectoryWeakWriteRules {
 function Get-DefenderRuntimeDirectoryAcl {
     param([Parameter(Mandatory)][string]$Path)
 
+    # DirectoryInfo.GetAccessControl() and SetAccessControl() are exposed by
+    # Windows PowerShell's desktop CLR surface but are not available on
+    # PowerShell 7.  The security cmdlets are the supported cross-edition
+    # adapter; retain the desktop fallback for constrained Windows PowerShell
+    # hosts where the module is loaded without Microsoft.PowerShell.Security.
+    $getAcl = Get-Command Get-Acl -ErrorAction SilentlyContinue
+    if ($null -ne $getAcl) {
+        return Get-Acl -LiteralPath $Path -ErrorAction Stop
+    }
+
+    if ([string]$PSVersionTable.PSEdition -ne 'Desktop') {
+        throw 'Runtime directory ACL inspection requires Get-Acl on PowerShell Core.'
+    }
+
     $directory = New-Object System.IO.DirectoryInfo($Path)
-    return $directory.GetAccessControl()
+    $method = $directory.GetType().GetMethod('GetAccessControl', [Type[]]@())
+    if ($null -eq $method) {
+        throw 'The Windows PowerShell runtime does not expose DirectoryInfo.GetAccessControl().'
+    }
+    return $method.Invoke($directory, @())
 }
 
 function Set-DefenderRuntimeDirectoryAcl {
@@ -360,8 +378,24 @@ function Set-DefenderRuntimeDirectoryAcl {
         $acl.AddAccessRule($rule)
     }
 
+    $setAcl = Get-Command Set-Acl -ErrorAction SilentlyContinue
+    if ($null -ne $setAcl) {
+        Set-Acl -LiteralPath $Path -AclObject $acl -ErrorAction Stop
+        return
+    }
+
+    if ([string]$PSVersionTable.PSEdition -ne 'Desktop') {
+        throw 'Runtime directory ACL repair requires Set-Acl on PowerShell Core.'
+    }
+
     $directory = New-Object System.IO.DirectoryInfo($Path)
-    $directory.SetAccessControl($acl)
+    $method = $directory.GetType().GetMethod(
+        'SetAccessControl',
+        [Type[]]@([System.Security.AccessControl.DirectorySecurity]))
+    if ($null -eq $method) {
+        throw 'The Windows PowerShell runtime does not expose DirectoryInfo.SetAccessControl().'
+    }
+    [void]$method.Invoke($directory, @($acl))
 }
 
 function Test-DefenderStrictPathDescendant {

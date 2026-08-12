@@ -26,26 +26,12 @@ Actionable work only. Historical and completed roadmap material is archived in C
   Acceptance: A fresh detached checkout produces the exact unsigned ZIP; source/module/GUI/docs/archive versions match; an artifact hash manifest is emitted; missing Pester/PSScriptAnalyzer, wrong or stale archives, schema failures, or coverage below a ratcheted threshold fail the gate; the supported Pester major is pinned and tested.
   Complexity: M
 
-- [ ] P1 — Restore declared PowerShell 7 compatibility
-  Why: PowerShell 7.6.3 cannot import the module because runtime ACL code calls Windows PowerShell-only `DirectoryInfo` methods.
-  Evidence: `Private/RuntimeDirectory.ps1`, README runtime claim, Microsoft Windows PowerShell compatibility differences, `Get-Acl` documentation.
-  Touches: runtime-directory/ACL helpers, module manifest, native/cmdlet compatibility adapters, tests, README.
-  Acceptance: Import, read-only commands, and supported mutations pass on Windows PowerShell 5.1 and PowerShell 7.4/7.6; incompatible Windows-only cmdlets use an explicit checked 5.1 adapter where required; `CompatiblePSEditions` and README state the tested boundary.
-  Complexity: M
-
 - [ ] P1 — Unify LTSC Appx removal and health matching
   Why: Removal accepts wildcard package variants and two markers while Health checks one exact identity and one marker, producing false success or drift.
   Evidence: `Private/Remove-DefenderPlatformPackages.ps1`, `Public/Get-DefenderHealth.ps1`, `Tests/DisableDefender.Tests.ps1`.
   Touches: a shared package/marker catalog, remover, Health, tests.
   Acceptance: Removal and Health consume the same versioned catalog; fixtures cover both known package identities, both markers, already-absent and partial states; verified removal cannot immediately report contradictory health.
   Complexity: S
-
-- [ ] P1 — Make read-only module use side-effect free
-  Why: Import and inspection initialize and harden `%ProgramData%\DisableDefender`, so non-admin read-only use mutates the machine before a requested operation.
-  Evidence: `DisableDefender.psm1`, `Private/RuntimeDirectory.ps1`, CLI startup flow.
-  Touches: module/CLI bootstrap, runtime-directory initialization, Status/Health/help paths, tests.
-  Acceptance: Import, help, command discovery, Status, and other declared read-only paths create no files, directories, ACLs, tasks, or registry changes; the first mutating operation performs and reports runtime preflight; non-admin tests verify both behaviors.
-  Complexity: M
 
 - [ ] P1 — Add a local disposable-VM and fault-injection acceptance matrix
   Why: Mocks cannot prove reboot, Safe Mode, DISM, offline hive, service/task, update-drift, Firewall, x64, or ARM64 recovery invariants.

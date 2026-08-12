@@ -7,7 +7,8 @@
     Copyright         = '(c) SysAdminDoc. All rights reserved.'
     Description       = 'Disable, remove, and restore Microsoft Defender Antivirus on Windows 10/11 while explicitly preserving the Windows Firewall.'
 
-    PowerShellVersion = '5.1'
+    PowerShellVersion    = '5.1'
+    CompatiblePSEditions  = @('Desktop', 'Core')
 
     FunctionsToExport = @(
         'Get-DefenderStatus'
