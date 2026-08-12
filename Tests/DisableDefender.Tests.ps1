@@ -522,27 +522,29 @@ InModuleScope DisableDefender {
             Mock Get-MpRuntimeExclusionCatalog {
                 @([PSCustomObject]@{ Parameter = 'ExclusionPath'; Values = @('C:\') })
             }
-            $script:PresetCurrent = [PSCustomObject][ordered]@{
-                DisableRealtimeMonitoring = $false
-                MAPSReporting             = 'Disabled'
-                SubmitSamplesConsent      = 'NeverSend'
-                ExclusionPath              = @()
+            $presetState = @{
+                Current = [PSCustomObject][ordered]@{
+                    DisableRealtimeMonitoring = $false
+                    MAPSReporting             = 'Disabled'
+                    SubmitSamplesConsent      = 'NeverSend'
+                    ExclusionPath              = @()
+                }
             }
-            Mock Get-MpPreference { $script:PresetCurrent }
+            Mock Get-MpPreference { $presetState.Current }
             Mock Set-MpPreference {
                 if ($null -ne $DisableRealtimeMonitoring) {
-                    $script:PresetCurrent.DisableRealtimeMonitoring = $DisableRealtimeMonitoring
+                    $presetState.Current.DisableRealtimeMonitoring = $DisableRealtimeMonitoring
                 }
                 if ($null -ne $MAPSReporting) {
-                    $script:PresetCurrent.MAPSReporting = $MAPSReporting
+                    $presetState.Current.MAPSReporting = $MAPSReporting
                 }
                 if ($null -ne $SubmitSamplesConsent) {
-                    $script:PresetCurrent.SubmitSamplesConsent = $SubmitSamplesConsent
+                    $presetState.Current.SubmitSamplesConsent = $SubmitSamplesConsent
                 }
             }
             Mock Add-MpPreference {
-                $script:PresetCurrent.ExclusionPath = @(
-                    $script:PresetCurrent.ExclusionPath + @($ExclusionPath))
+                $presetState.Current.ExclusionPath = @(
+                    $presetState.Current.ExclusionPath + @($ExclusionPath))
             }
 
             $path = Join-Path $TestDrive 'cloud-sample-import.json'
@@ -556,9 +558,9 @@ InModuleScope DisableDefender {
             $result.Result.Verified | Should -Be 4
             Should -Invoke Set-MpPreference -Times 3 -Exactly
             Should -Invoke Add-MpPreference -Times 1 -Exactly
-            $script:PresetCurrent.MAPSReporting | Should -Be 'Advanced'
-            $script:PresetCurrent.SubmitSamplesConsent | Should -Be 'SendSafeSamples'
-            $script:PresetCurrent.ExclusionPath | Should -Contain 'C:\'
+            $presetState.Current.MAPSReporting | Should -Be 'Advanced'
+            $presetState.Current.SubmitSamplesConsent | Should -Be 'SendSafeSamples'
+            $presetState.Current.ExclusionPath | Should -Contain 'C:\'
         }
 
         It 'rejects unsupported preference values before mutation' {
