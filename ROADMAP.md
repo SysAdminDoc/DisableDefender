@@ -19,13 +19,6 @@ Actionable work only. Historical and completed roadmap material is archived in C
 
 - [ ] "Disable everything except cloud sample submission" preset for users who want cloud reputation lookups but no local scanning.
 
-- [ ] P1 — Build and gate releases from a clean checkout
-  Why: The documented release depends on an untracked builder and the 2026-07-29 gate accepts stale ZIPs, missing test tools, and unratcheted coverage.
-  Evidence: `tools/New-DisableDefenderRelease.ps1`, `tools/Test-ReleaseReadiness.ps1`, `Tests/DisableDefender.Tests.ps1`, Pester 5.9.0/6.0.0 releases, PSScriptAnalyzer 1.25.0.
-  Touches: release scripts, manifest/version checks, test fixtures, README/changelog/release checklist.
-  Acceptance: A fresh detached checkout produces the exact unsigned ZIP; source/module/GUI/docs/archive versions match; an artifact hash manifest is emitted; missing Pester/PSScriptAnalyzer, wrong or stale archives, schema failures, or coverage below a ratcheted threshold fail the gate; the supported Pester major is pinned and tested.
-  Complexity: M
-
 - [ ] P1 — Unify LTSC Appx removal and health matching
   Why: Removal accepts wildcard package variants and two markers while Health checks one exact identity and one marker, producing false success or drift.
   Evidence: `Private/Remove-DefenderPlatformPackages.ps1`, `Public/Get-DefenderHealth.ps1`, `Tests/DisableDefender.Tests.ps1`.
