@@ -111,7 +111,7 @@ function Get-ReleaseVersionMap {
             -Label 'README badge'
         CHANGELOG = Get-ReleaseTextVersion `
             -Path (Join-Path $RepositoryRoot 'CHANGELOG.md') `
-            -Pattern '(?m)^## v(?<Version>[0-9.]+) - [0-9]{4}-[0-9]{2}-[0-9]{2}$' `
+            -Pattern '(?m)^## v(?<Version>[0-9.]+) - [0-9]{4}-[0-9]{2}-[0-9]{2}\r?$' `
             -Label 'CHANGELOG'
     }
     $releaseNotes = [string]$Manifest.PrivateData.PSData.ReleaseNotes

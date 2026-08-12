@@ -139,6 +139,16 @@ Describe 'Local release build' {
             Should -BeGreaterOrEqual 66.5
     }
 
+    It 'normalizes release text line endings for detached checkout reproducibility' {
+        $builderSource = Get-Content -LiteralPath $script:ReleaseBuilder -Raw
+        $builderSource | Should -Match 'ConvertTo-ReleaseNormalizedText'
+        $builderSource | Should -Match '0x0D'
+        $builderSource | Should -Match '0x0A'
+        $gateSource = Get-Content -LiteralPath (
+            Join-Path $PSScriptRoot '..\tools\Test-ReleaseReadiness.ps1') -Raw
+        $gateSource | Should -Match '\\r\?\$'
+    }
+
     It 'refuses the repository root, protected source descendants, and prefix siblings' {
         $prefixSibling = "$($script:ReleaseRepoRoot)-release-escape"
 

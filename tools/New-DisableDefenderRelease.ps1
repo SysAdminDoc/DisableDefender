@@ -273,6 +273,32 @@ function Publish-ReleaseArtifact {
     [IO.File]::Move($Source, $Destination)
 }
 
+function ConvertTo-ReleaseNormalizedText {
+    param([Parameter(Mandatory)][string]$Root)
+
+    $textExtensions = @('.bat', '.json', '.md', '.ps1', '.psd1', '.psm1')
+    foreach ($file in @(Get-ChildItem -LiteralPath $Root -Recurse -File -Force)) {
+        if ($textExtensions -notcontains $file.Extension.ToLowerInvariant()) {
+            continue
+        }
+
+        $bytes = [IO.File]::ReadAllBytes($file.FullName)
+        $normalized = New-Object 'System.Collections.Generic.List[byte]'
+        for ($index = 0; $index -lt $bytes.Length; $index++) {
+            if ($bytes[$index] -eq 0x0D -and
+                $index + 1 -lt $bytes.Length -and
+                $bytes[$index + 1] -eq 0x0A) {
+                continue
+            }
+            [void]$normalized.Add($bytes[$index])
+        }
+
+        if ($normalized.Count -ne $bytes.Length) {
+            [IO.File]::WriteAllBytes($file.FullName, $normalized.ToArray())
+        }
+    }
+}
+
 function Get-ReleaseSourceProvenance {
     param(
         [Parameter(Mandatory)][string]$RepositoryRoot,
@@ -425,6 +451,13 @@ try {
         }
         Copy-Item -LiteralPath $source -Destination $packageRoot -Recurse -Force
     }
+    foreach ($archiveItem in @(
+        Get-Item -LiteralPath $packageRoot -Force
+        Get-ChildItem -LiteralPath $packageRoot -Recurse -Force
+    )) {
+        $archiveItem.LastWriteTimeUtc = $archiveTimestamp.UtcDateTime
+    }
+    ConvertTo-ReleaseNormalizedText -Root $packageRoot
     foreach ($archiveItem in @(
         Get-Item -LiteralPath $packageRoot -Force
         Get-ChildItem -LiteralPath $packageRoot -Recurse -Force
