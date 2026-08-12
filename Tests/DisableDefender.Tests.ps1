@@ -279,6 +279,7 @@ InModuleScope DisableDefender {
                 'SupportBundleComponents',
                 'SupportBundleEvents',
                 'SupportBundleHealth',
+                'SupportBundlePrivacy',
                 'SupportBundleSummary',
                 'SurfaceBaseline'
             ) | Sort-Object
@@ -4515,6 +4516,147 @@ InModuleScope DisableDefender {
             } finally {
                 $zip.Dispose()
             }
+        }
+
+        It 'uses an explicit health target and records its source' {
+            Mock Get-DefenderHealth {
+                param([string]$Target)
+                [ordered]@{
+                    Target = $Target
+                    Summary = [ordered]@{ OK = 0; Drift = 0; Unknown = 0; Total = 0 }
+                    Items = @()
+                }
+            }
+            Mock Get-DefenderComponentStatus { @() }
+
+            $result = Export-DefenderSupportBundle `
+                -OutputDirectory $TestDrive -HealthTarget Remove
+
+            $result.HealthTarget | Should -Be 'Remove'
+            $result.HealthTargetSource | Should -Be 'Explicit'
+            Should -Invoke Get-DefenderHealth -Times 1 -Exactly `
+                -ParameterFilter { $Target -eq 'Remove' }
+
+            Add-Type -AssemblyName System.IO.Compression.FileSystem
+            $zip = [System.IO.Compression.ZipFile]::OpenRead($result.ZipPath)
+            try {
+                $entry = $zip.GetEntry('summary.json')
+                $reader = New-Object System.IO.StreamReader($entry.Open())
+                try { $summary = $reader.ReadToEnd() | ConvertFrom-Json } finally { $reader.Dispose() }
+                $summary.HealthTarget | Should -Be 'Remove'
+                $summary.HealthTargetSource | Should -Be 'Explicit'
+            } finally {
+                $zip.Dispose()
+            }
+        }
+
+        It 'derives the health target from the latest phase state when omitted' {
+            $previousAppDir = $script:AppDir
+            $runtimeDir = Join-Path $TestDrive 'support-runtime'
+            New-Item -ItemType Directory -Path $runtimeDir | Out-Null
+            Set-Content -LiteralPath (Join-Path $runtimeDir 'phase-state.json') `
+                -Value '{"SchemaVersion":1,"Mode":"Restore"}' -Encoding UTF8
+            try {
+                $script:AppDir = $runtimeDir
+                Mock Get-DefenderHealth {
+                    param([string]$Target)
+                    [ordered]@{
+                        Target = $Target
+                        Summary = [ordered]@{ OK = 0; Drift = 0; Unknown = 0; Total = 0 }
+                        Items = @()
+                    }
+                }
+                Mock Get-DefenderComponentStatus { @() }
+
+                $result = Export-DefenderSupportBundle -OutputDirectory $TestDrive
+
+                $result.HealthTarget | Should -Be 'Restore'
+                $result.HealthTargetSource | Should -Be 'PhaseState'
+                Should -Invoke Get-DefenderHealth -Times 1 -Exactly `
+                    -ParameterFilter { $Target -eq 'Restore' }
+            } finally {
+                $script:AppDir = $previousAppDir
+            }
+        }
+
+        It 'returns a local privacy preview without creating output' {
+            $previewDirectory = Join-Path $TestDrive 'support-preview'
+
+            $preview = Export-DefenderSupportBundle `
+                -OutputDirectory $previewDirectory -HealthTarget Remove `
+                -IncludeEventLog -Preview
+
+            $preview.Preview | Should -Be $true
+            $preview.HealthTarget | Should -Be 'Remove'
+            $preview.PrivacySchemaVersion | Should -Be 1
+            $preview.UploadPolicy | Should -Match 'Never'
+            $preview.ExcludedPatterns | Should -Contain 'transcript.log'
+            $preview.ExcludedPatterns | Should -Contain 'tripwire.jsonl'
+            Test-Path -LiteralPath $previewDirectory | Should -Be $false
+        }
+
+        It 'redacts runtime diagnostics and requires opt-in for sensitive files' {
+            $previousAppDir = $script:AppDir
+            $runtimeDir = Join-Path $TestDrive 'privacy-runtime'
+            New-Item -ItemType Directory -Path $runtimeDir | Out-Null
+            Set-Content -LiteralPath (Join-Path $runtimeDir 'DisableDefender.log') `
+                -Value 'UserName=alice Domain=CORP C:\Users\alice\secret.txt token=abc123' -Encoding UTF8
+            Set-Content -LiteralPath (Join-Path $runtimeDir 'transcript.log') `
+                -Value 'computername=HOST C:\Users\alice\transcript.txt' -Encoding UTF8
+            Set-Content -LiteralPath (Join-Path $runtimeDir 'tripwire.jsonl') `
+                -Value '{"SchemaVersion":1,"UserName":"alice","Path":"C:\\Users\\alice\\tripwire.txt"}' -Encoding UTF8
+            Set-Content -LiteralPath (Join-Path $runtimeDir 'restore-manifest.jsonl') `
+                -Value 'must not be included' -Encoding UTF8
+            Set-Content -LiteralPath (Join-Path $runtimeDir 'acl-backup-secret.json') `
+                -Value 'must not be included' -Encoding UTF8
+            try {
+                $script:AppDir = $runtimeDir
+                Mock Get-DefenderHealth { [ordered]@{ Target = 'Disable'; Summary = [ordered]@{ OK = 0; Drift = 0; Unknown = 0; Total = 0 }; Items = @() } }
+                Mock Get-DefenderComponentStatus { @() }
+
+                $result = Export-DefenderSupportBundle -OutputDirectory $TestDrive `
+                    -HealthTarget Disable -IncludeSensitiveDiagnostics
+
+                Add-Type -AssemblyName System.IO.Compression.FileSystem
+                $zip = [System.IO.Compression.ZipFile]::OpenRead($result.ZipPath)
+                try {
+                    $entries = @($zip.Entries | ForEach-Object { $_.Name })
+                    $entries | Should -Contain 'DisableDefender.log'
+                    $entries | Should -Contain 'transcript.log'
+                    $entries | Should -Contain 'tripwire.jsonl'
+                    $entries | Should -Not -Contain 'restore-manifest.jsonl'
+                    @($entries | Where-Object { $_ -like 'acl-backup*' }).Count | Should -Be 0
+
+                    $logEntry = $zip.GetEntry('DisableDefender.log')
+                    $logReader = New-Object System.IO.StreamReader($logEntry.Open())
+                    try { $logText = $logReader.ReadToEnd() } finally { $logReader.Dispose() }
+                    $logText | Should -Not -Match 'alice|CORP|secret\.txt|abc123'
+
+                    $privacyEntry = $zip.GetEntry('privacy.json')
+                    $privacyReader = New-Object System.IO.StreamReader($privacyEntry.Open())
+                    try { $privacyDocument = $privacyReader.ReadToEnd() | ConvertFrom-Json } finally { $privacyReader.Dispose() }
+                    $privacyDocument.SchemaVersion | Should -Be 1
+                    $privacyDocument.IncludeSensitiveDiagnostics | Should -Be $true
+                    $privacyDocument.RedactionsApplied | Should -BeGreaterThan 0
+                } finally {
+                    $zip.Dispose()
+                }
+            } finally {
+                $script:AppDir = $previousAppDir
+            }
+        }
+
+        It 'uses unique output names for repeated exports' {
+            Mock Get-DefenderHealth { [ordered]@{ Target = 'Disable'; Summary = [ordered]@{ OK = 0; Drift = 0; Unknown = 0; Total = 0 }; Items = @() } }
+            Mock Get-DefenderComponentStatus { @() }
+
+            $first = Export-DefenderSupportBundle -OutputDirectory $TestDrive -HealthTarget Disable
+            $second = Export-DefenderSupportBundle -OutputDirectory $TestDrive -HealthTarget Disable
+
+            $first.BundleId | Should -Not -Be $second.BundleId
+            $first.ZipPath | Should -Not -Be $second.ZipPath
+            Test-Path -LiteralPath $first.ZipPath | Should -Be $true
+            Test-Path -LiteralPath $second.ZipPath | Should -Be $true
         }
     }
 }

@@ -19,6 +19,7 @@
     { "Name": "SupportBundleHealth", "SchemaVersion": 1 },
     { "Name": "SupportBundleComponents", "SchemaVersion": 1 },
     { "Name": "SupportBundleEvents", "SchemaVersion": 1 },
+    { "Name": "SupportBundlePrivacy", "SchemaVersion": 1 },
     { "Name": "ReleaseMetadata", "SchemaVersion": 1 }
   ],
   "Legacy": [

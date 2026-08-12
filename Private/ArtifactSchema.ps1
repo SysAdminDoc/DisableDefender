@@ -94,6 +94,11 @@ $script:DefenderArtifactSchemas = [ordered]@{
         SupportedVersions = @(1)
         LegacyFormats     = @('UnversionedJson')
     }
+    SupportBundlePrivacy = [PSCustomObject]@{
+        CurrentVersion    = 1
+        SupportedVersions = @(1)
+        LegacyFormats     = @()
+    }
     ReleaseMetadata = [PSCustomObject]@{
         CurrentVersion    = 1
         SupportedVersions = @(1)

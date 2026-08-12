@@ -60,7 +60,7 @@ Disable confirmation includes a current-vs-target drift preview before execution
 - **Feature-update drift detection**: Disable/Remove record a Defender surface baseline; Health flags changed Windows builds plus unknown Defender-like services, tasks, and packages and prints a reapply plan that preserves firewall and MDE Sense by default
 - **Local release builder**: creates an unsigned clean zip, SHA256 file, and release metadata JSON inside an identity-tracked staging directory
 - **Safe Mode transaction**: `Invoke-SafeModeRemove` persists and verifies the worker and independent BCD watchdog before changing boot state, records child/task/effect evidence across boots, and finalizes or rolls back deterministically
-- **Support bundle export**: `Export-DefenderSupportBundle` collects logs, phase-state, tripwires, component status, health summary, Windows build info, and optional redacted Defender event-log excerpts into a diagnostic zip without secrets
+- **Support bundle export**: `Export-DefenderSupportBundle` creates a unique local diagnostic zip with an explicit or phase-derived health target, a versioned privacy allowlist, redacted diagnostics, and no automatic upload
 - **Offline remove bundle** (`PrepareOffline`): generates a self-contained `Invoke-OfflineDefenderRemove.ps1` that targets an offline Windows volume from WinRE or a secondary OS, bypassing live Tamper Protection by editing dormant registry hives directly; refuses to run against the live system root
 - **Module layout**: `DisableDefender.psd1` / `DisableDefender.psm1` with public commands and private helpers for function-level tests
 - **GUI auto-elevate, silent CLI mode, transcript logging, Safe Mode aware**
@@ -138,8 +138,12 @@ Invoke-RestoreDefender -ManifestSelection All
 Invoke-RestoreDefender -RepairWithoutManifest
 
 # Export diagnostic bundle
-Export-DefenderSupportBundle -OutputDirectory C:\Support
-Export-DefenderSupportBundle -IncludeEventLog
+Export-DefenderSupportBundle -OutputDirectory C:\Support -HealthTarget Remove
+Export-DefenderSupportBundle -HealthTarget Remove -IncludeEventLog
+# Preview the target, local files, redaction policy, and output without collecting data
+Export-DefenderSupportBundle -HealthTarget Remove -Preview
+# Opt in to redacted transcript/tripwire diagnostics
+Export-DefenderSupportBundle -HealthTarget Remove -IncludeSensitiveDiagnostics
 
 # Generate single-file HTML report
 Export-DefenderHtmlReport
@@ -165,6 +169,8 @@ Save-DefenderSnapshot -OutputPath C:\Snapshots\before.json
 Compare-DefenderSnapshots -BaselinePath C:\Snapshots\before.json
 Compare-DefenderSnapshots -BaselinePath before.json -CurrentPath after.json -Json
 ```
+
+Support bundles are local-only. `-HealthTarget` accepts `Disable`, `Remove`, or `Restore`; when omitted, the latest valid `phase-state.json` mode is used and the fallback is recorded. `-Preview` shows the target source, allowlist, redaction policy, and output path pattern without creating a directory or zip. Transcript and tripwire files are excluded unless `-IncludeSensitiveDiagnostics` is explicitly supplied; all collected text is redacted and the bundle includes `privacy.json` with the schema and collection decisions.
 
 ### Offline Remove (WinRE / secondary OS)
 
