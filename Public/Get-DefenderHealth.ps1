@@ -180,15 +180,33 @@ function Add-AppxHealthItems {
     )
 
     $expected = if ($Target -eq 'Remove') { 'Absent' } else { 'Present' }
+    $catalog = Get-DefenderSecHealthUICatalog
+    $state = Get-DefenderSecHealthUIState
     $actual = $null
-    try {
-        $installed = @(Get-AppxPackage -AllUsers -Name 'Microsoft.SecHealthUI' -ErrorAction SilentlyContinue)
-        $provisioned = @(Get-AppxProvisionedPackage -Online -ErrorAction SilentlyContinue | Where-Object { $_.DisplayName -eq 'Microsoft.SecHealthUI' })
-        $marker = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Appx\AppxAllUserStore\Deprovisioned\Microsoft.SecHealthUI_8wekyb3d8bbwe'
-        $deprovisioned = Test-Path -LiteralPath $marker
-        $actual = if (($installed.Count -gt 0 -or $provisioned.Count -gt 0) -and -not $deprovisioned) { 'Present' } else { 'Absent' }
-    } catch {}
-    [void]$Items.Add((New-DefenderHealthItem -Category 'Appx' -Name 'Microsoft.SecHealthUI' -Expected $expected -Actual $actual))
+    $detail = $null
+    if (-not $state.Readable) {
+        $detail = $state.Error
+    } elseif (-not $state.Supported) {
+        $actual = 'NotApplicable'
+        $detail = 'Appx cmdlets are unavailable on this system.'
+    } else {
+        $packagePresent = $state.InstalledPackages.Count -gt 0 -or
+            $state.ProvisionedPackages.Count -gt 0
+        $allMarkersPresent = $state.Markers.Count -eq @($catalog.DeprovisionMarkers).Count
+        $noMarkersPresent = $state.Markers.Count -eq 0
+        if ($Target -eq 'Remove') {
+            $actual = if (-not $packagePresent -and $allMarkersPresent) { 'Absent' }
+                elseif ($packagePresent) { 'Present' }
+                else { 'Partial' }
+        } else {
+            $actual = if ($packagePresent -and $noMarkersPresent) { 'Present' }
+                elseif ($packagePresent) { 'Partial' }
+                else { 'Absent' }
+        }
+        $detail = "Catalog v$($catalog.CatalogVersion); installed=$($state.InstalledPackages.Count); provisioned=$($state.ProvisionedPackages.Count); markers=$($state.Markers.Count)/$(@($catalog.DeprovisionMarkers).Count)"
+    }
+    [void]$Items.Add((New-DefenderHealthItem -Category 'Appx' -Name 'Microsoft.SecHealthUI' `
+        -Expected $expected -Actual $actual -Detail $detail))
 }
 
 function Add-SafeBootHealthItems {
@@ -242,7 +260,7 @@ function Add-SurfaceHealthItems {
     $baseline = Read-DefenderSurfaceBaseline
     $knownServices = @(Get-KnownDefenderServiceNames)
     $knownTasks = @($script:DefenderTasks)
-    $knownPackages = @('Microsoft.SecHealthUI')
+    $secHealthCatalog = Get-DefenderSecHealthUICatalog
     $issueCount = 0
 
     foreach ($service in @($snapshot.Services | Where-Object { $knownServices -notcontains $_ })) {
@@ -255,7 +273,11 @@ function Add-SurfaceHealthItems {
         [void]$Items.Add((New-DefenderHealthItem -Category 'Surface' -Name "Unknown task $task" -Expected 'Known' -Actual 'Unknown' -Detail 'Review this Defender-like scheduled task before reapplying Disable.'))
     }
 
-    foreach ($package in @($snapshot.Packages | Where-Object { $knownPackages -notcontains $_ })) {
+    foreach ($package in @($snapshot.Packages | Where-Object {
+        $packageName = [string]$_
+        @($secHealthCatalog.PackageNamePatterns |
+            Where-Object { $packageName -like [string]$_ }).Count -eq 0
+    })) {
         $issueCount++
         [void]$Items.Add((New-DefenderHealthItem -Category 'Surface' -Name "Unknown package $package" -Expected 'Known' -Actual 'Unknown' -Detail 'Review this Defender-like package before reapplying Disable.'))
     }

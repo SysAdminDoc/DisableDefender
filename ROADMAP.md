@@ -19,13 +19,6 @@ Actionable work only. Historical and completed roadmap material is archived in C
 
 - [ ] "Disable everything except cloud sample submission" preset for users who want cloud reputation lookups but no local scanning.
 
-- [ ] P1 — Unify LTSC Appx removal and health matching
-  Why: Removal accepts wildcard package variants and two markers while Health checks one exact identity and one marker, producing false success or drift.
-  Evidence: `Private/Remove-DefenderPlatformPackages.ps1`, `Public/Get-DefenderHealth.ps1`, `Tests/DisableDefender.Tests.ps1`.
-  Touches: a shared package/marker catalog, remover, Health, tests.
-  Acceptance: Removal and Health consume the same versioned catalog; fixtures cover both known package identities, both markers, already-absent and partial states; verified removal cannot immediately report contradictory health.
-  Complexity: S
-
 - [ ] P1 — Add a local disposable-VM and fault-injection acceptance matrix
   Why: Mocks cannot prove reboot, Safe Mode, DISM, offline hive, service/task, update-drift, Firewall, x64, or ARM64 recovery invariants.
   Evidence: 2026-07-29 Pester coverage, Microsoft Windows lifecycle/release-health pages, competitor recovery issues, repository local-only testing rule.

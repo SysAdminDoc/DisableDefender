@@ -32,6 +32,7 @@
 - Safe Mode removal now verifies both exact SYSTEM startup-task definitions before BCD mutation, proves the watchdog is an independent `bcdedit.exe` action, read-verifies every BCD transition, persists child JSON/effect evidence and task exit results, reboots only after verified removal, and deterministically resumes, finalizes, or rolls back interrupted stages.
 - Runtime-directory ACL inspection and repair now use an explicit `Get-Acl`/`Set-Acl` cross-edition adapter, with a checked Windows PowerShell fallback; module import and read-only Status/Health inspection no longer create or harden `%ProgramData%\DisableDefender`.
 - Release text is normalized during packaging and the strict gate accepts CRLF checkouts, so clean detached builds reproduce the same ZIP bytes regardless of `core.autocrlf`.
+- SecHealthUI removal and Health now share a versioned package/marker catalog, including LTSC identities, and Health distinguishes complete removal from partial marker state.
 
 ## v0.0.40 - 2026-06-30
 

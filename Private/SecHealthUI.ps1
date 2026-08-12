@@ -1,27 +1,61 @@
 # ---------------------------------------------------------------------------
 # Phase: Appx (SecHealthUI)
 # ---------------------------------------------------------------------------
-function Get-SecHealthUIDeprovisionPaths {
+function Get-DefenderSecHealthUICatalog {
     $markerRoot = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Appx\AppxAllUserStore\Deprovisioned'
-    return @(
-        (Join-Path $markerRoot 'Microsoft.SecHealthUI_8wekyb3d8bbwe'),
-        (Join-Path $markerRoot 'Microsoft.Windows.SecHealthUI_cw5n1h2txyewy')
+    return [PSCustomObject][ordered]@{
+        CatalogVersion       = 1
+        Component             = 'SecHealthUI'
+        PackageNamePatterns   = @(
+            'Microsoft.SecHealthUI*'
+            'Microsoft.Windows.SecHealthUI*'
+        )
+        DeprovisionMarkers   = @(
+            [PSCustomObject][ordered]@{
+                PackageIdentity = 'Microsoft.SecHealthUI'
+                Path            = Join-Path $markerRoot 'Microsoft.SecHealthUI_8wekyb3d8bbwe'
+            }
+            [PSCustomObject][ordered]@{
+                PackageIdentity = 'Microsoft.Windows.SecHealthUI'
+                Path            = Join-Path $markerRoot 'Microsoft.Windows.SecHealthUI_cw5n1h2txyewy'
+            }
+        )
+    }
+}
+
+function Get-SecHealthUIDeprovisionPaths {
+    $catalog = Get-DefenderSecHealthUICatalog
+    return @($catalog.DeprovisionMarkers | ForEach-Object { [string]$_.Path })
+}
+
+function Test-DefenderSecHealthUIPackage {
+    param(
+        [Parameter(Mandatory)]$Package,
+        [Parameter(Mandatory)]$Catalog
     )
+
+    foreach ($property in @('Name', 'PackageFullName', 'DisplayName', 'PackageName')) {
+        if ($Package.PSObject.Properties.Name -notcontains $property) { continue }
+        $value = [string]$Package.$property
+        foreach ($pattern in @($Catalog.PackageNamePatterns)) {
+            if ($value -like [string]$pattern) { return $true }
+        }
+    }
+    return $false
 }
 
 function Get-DefenderSecHealthUIState {
+    $catalog = Get-DefenderSecHealthUICatalog
     try {
-        $installedPackages = @(Get-AppxPackage -AllUsers -Name 'Microsoft.SecHealthUI' -ErrorAction Stop)
-        if ($installedPackages.Count -eq 0) {
-            $installedPackages = @(Get-AppxPackage -AllUsers -ErrorAction Stop |
-                Where-Object { $_.Name -like '*SecHealthUI*' })
-        }
+        $installedPackages = @(Get-AppxPackage -AllUsers -ErrorAction Stop |
+            Where-Object { Test-DefenderSecHealthUIPackage -Package $_ -Catalog $catalog })
         $provisionedPackages = @(Get-AppxProvisionedPackage -Online -ErrorAction Stop |
-            Where-Object { $_.DisplayName -like '*SecHealthUI*' })
+            Where-Object { Test-DefenderSecHealthUIPackage -Package $_ -Catalog $catalog })
         $markers = @((Get-SecHealthUIDeprovisionPaths) | Where-Object {
             Test-Path -LiteralPath $_ -ErrorAction Stop
         })
         return [PSCustomObject]@{
+            CatalogVersion      = $catalog.CatalogVersion
             Supported           = $true
             Readable            = $true
             InstalledPackages   = $installedPackages
@@ -32,6 +66,7 @@ function Get-DefenderSecHealthUIState {
     } catch {
         if ($_.Exception.Message -match 'not recognized|CommandNotFoundException|is not recognized') {
             return [PSCustomObject]@{
+                CatalogVersion      = $catalog.CatalogVersion
                 Supported           = $false
                 Readable            = $true
                 InstalledPackages   = @()
@@ -41,6 +76,7 @@ function Get-DefenderSecHealthUIState {
             }
         }
         return [PSCustomObject]@{
+            CatalogVersion      = $catalog.CatalogVersion
             Supported           = $true
             Readable            = $false
             InstalledPackages   = @()

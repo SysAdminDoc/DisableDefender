@@ -1647,6 +1647,80 @@ InModuleScope DisableDefender {
                 Should -Be 'Drift'
         }
 
+        It 'uses one versioned SecHealthUI catalog for both package identities and markers' {
+            $catalog = Get-DefenderSecHealthUICatalog
+
+            $catalog.CatalogVersion | Should -Be 1
+            $catalog.PackageNamePatterns | Should -Contain 'Microsoft.SecHealthUI*'
+            $catalog.PackageNamePatterns | Should -Contain 'Microsoft.Windows.SecHealthUI*'
+            @($catalog.DeprovisionMarkers).Count | Should -Be 2
+            @(Get-SecHealthUIDeprovisionPaths).Count | Should -Be 2
+            @(Get-SecHealthUIDeprovisionPaths) |
+                Should -Contain $catalog.DeprovisionMarkers[0].Path
+            @(Get-SecHealthUIDeprovisionPaths) |
+                Should -Contain $catalog.DeprovisionMarkers[1].Path
+        }
+
+        It 'reports both known package identities as present when markers are absent' {
+            Mock Get-AppxPackage {
+                @(
+                    [PSCustomObject]@{
+                        Name = 'Microsoft.SecHealthUI'
+                        PackageFullName = 'Microsoft.SecHealthUI_1.0.0.0_x64__8wekyb3d8bbwe'
+                    }
+                    [PSCustomObject]@{
+                        Name = 'Microsoft.Windows.SecHealthUI'
+                        PackageFullName = 'Microsoft.Windows.SecHealthUI_1.0.0.0_x64__cw5n1h2txyewy'
+                    }
+                )
+            }
+            Mock Get-AppxProvisionedPackage {
+                @(
+                    [PSCustomObject]@{
+                        DisplayName = 'Microsoft.SecHealthUI'
+                        PackageName = 'Microsoft.SecHealthUI_1.0.0.0_neutral__8wekyb3d8bbwe'
+                    }
+                    [PSCustomObject]@{
+                        DisplayName = 'Microsoft.Windows.SecHealthUI'
+                        PackageName = 'Microsoft.Windows.SecHealthUI_1.0.0.0_neutral__cw5n1h2txyewy'
+                    }
+                )
+            }
+            Mock Test-Path { $false }
+            $items = New-Object System.Collections.ArrayList
+
+            Add-AppxHealthItems -Items $items -Target Disable
+
+            $item = @($items | Where-Object { $_.Category -eq 'Appx' })[0]
+            $item.Actual | Should -Be 'Present'
+            $item.Status | Should -Be 'OK'
+            $item.Detail | Should -Match 'Catalog v1; installed=2; provisioned=2; markers=0/2'
+        }
+
+        It 'distinguishes an already-absent state from a partial marker state' {
+            Mock Get-AppxPackage { @() }
+            Mock Get-AppxProvisionedPackage { @() }
+            Mock Test-Path { $true }
+            $items = New-Object System.Collections.ArrayList
+
+            Add-AppxHealthItems -Items $items -Target Remove
+
+            $item = @($items | Where-Object { $_.Category -eq 'Appx' })[0]
+            $item.Actual | Should -Be 'Absent'
+            $item.Status | Should -Be 'OK'
+
+            Mock Test-Path {
+                [string]$LiteralPath -like '*Microsoft.SecHealthUI_8wekyb3d8bbwe'
+            }
+            $partialItems = New-Object System.Collections.ArrayList
+
+            Add-AppxHealthItems -Items $partialItems -Target Remove
+
+            $partial = @($partialItems | Where-Object { $_.Category -eq 'Appx' })[0]
+            $partial.Actual | Should -Be 'Partial'
+            $partial.Status | Should -Be 'Drift'
+        }
+
         It 'returns summary and drift items for the default target' {
             Mock Get-MpPreference {
                 [PSCustomObject]@{

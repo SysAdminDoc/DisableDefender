@@ -273,7 +273,7 @@ Smart App Control can block unknown, unsigned, or low-reputation apps. See Micro
 
 ### Remove (aggressive)
 Everything Disable does, plus:
-- Deprovisions the `Microsoft.SecHealthUI` Appx package (with `NonRemovableAppPolicy` override)
+- Deprovisions both known `SecHealthUI` Appx identities (`Microsoft.SecHealthUI` and `Microsoft.Windows.SecHealthUI`) with their matching marker paths (and `NonRemovableAppPolicy` override)
 - DISM-removes `Windows-Defender` / `SecurityClient` platform packages
 - **Best run from Safe Mode** for service registry key edits to stick
 
