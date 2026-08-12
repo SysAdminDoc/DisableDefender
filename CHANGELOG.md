@@ -16,6 +16,7 @@
 - Added rollback-capable offline servicing artifacts: every generated offline mutation and hive mount is journaled, baselines are persisted before writes, unload is retried and verified, residual mounts fail nonzero, and `-RecoveryAction Rollback` replays the captured baseline.
 - Added cooperative GUI cancellation at phase boundaries, a visible cancellation state, verified worker-result propagation, and deterministic runspace/dispatcher-timer draining and disposal.
 - Added a GUI Recovery hub with target-aware cancellable evidence, persisted phase resume/rollback controls, Safe Mode status, target-aware snapshot/diff, and local HTML/support exports; snapshots now accept `-HealthTarget`.
+- Hardened GUI accessibility with automation-name coverage for every named interactive control, visible keyboard focus in custom chrome/inputs, a startup minimum-layout contract, and a Windows high-contrast palette path; version-matched minimum-size dashboard and Recovery hub renders were inspected locally.
 
 ### Fixed
 - Release ZIP entries and metadata now use a fixed timestamp for byte-reproducible builds; the strict gate rejects missing tools, dirty release inputs, stale/wrong archives, bad hashes or metadata, content drift, unexpected signing, and clean-checkout hash mismatches.

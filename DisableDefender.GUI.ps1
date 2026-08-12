@@ -238,12 +238,17 @@ function Write-Log {
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
-                        <Border x:Name="bd" Background="{TemplateBinding Background}" CornerRadius="0">
+                        <Border x:Name="bd" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="0">
                             <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
                                 <Setter TargetName="bd" Property="Background" Value="#45475a"/>
+                            </Trigger>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="bd" Property="BorderBrush" Value="{StaticResource Lavender}"/>
+                                <Setter TargetName="bd" Property="BorderThickness" Value="2"/>
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -256,12 +261,17 @@ function Write-Log {
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
-                        <Border x:Name="bd" Background="{TemplateBinding Background}" CornerRadius="0">
+                        <Border x:Name="bd" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="0">
                             <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
                                 <Setter TargetName="bd" Property="Background" Value="#f38ba8"/>
+                            </Trigger>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="bd" Property="BorderBrush" Value="{StaticResource Red}"/>
+                                <Setter TargetName="bd" Property="BorderThickness" Value="2"/>
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -296,6 +306,78 @@ function Write-Log {
             <Setter Property="BorderThickness" Value="1"/>
             <Setter Property="Padding" Value="8"/>
             <Setter Property="CaretBrush" Value="{StaticResource Text}"/>
+            <Style.Triggers>
+                <Trigger Property="IsKeyboardFocused" Value="True">
+                    <Setter Property="BorderBrush" Value="{StaticResource Lavender}"/>
+                    <Setter Property="BorderThickness" Value="2"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
+        <!-- Target selector with an explicit keyboard-focus state. -->
+        <Style TargetType="ComboBox">
+            <Setter Property="Background" Value="{StaticResource Crust}"/>
+            <Setter Property="Foreground" Value="{StaticResource Text}"/>
+            <Setter Property="BorderBrush" Value="{StaticResource Surface0}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Padding" Value="8,4"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ComboBox">
+                        <Grid>
+                            <ToggleButton x:Name="DropDownToggle" Background="{TemplateBinding Background}"
+                                          BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}"
+                                          IsChecked="{Binding IsDropDownOpen, RelativeSource={RelativeSource TemplatedParent}}"
+                                          ClickMode="Press" Focusable="False">
+                                <ToggleButton.Template>
+                                    <ControlTemplate TargetType="ToggleButton">
+                                        <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                                                BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="5">
+                                            <Path Data="M 0 0 L 8 0 L 4 5 Z" Fill="{StaticResource Subtext1}"
+                                                  Width="8" Height="5" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,9,0"/>
+                                        </Border>
+                                    </ControlTemplate>
+                                </ToggleButton.Template>
+                            </ToggleButton>
+                            <ContentPresenter Margin="8,0,28,0" VerticalAlignment="Center" IsHitTestVisible="False"
+                                              Content="{TemplateBinding SelectionBoxItem}"
+                                              ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}"
+                                              TextElement.Foreground="{TemplateBinding Foreground}"/>
+                            <Popup x:Name="PART_Popup" Placement="Bottom" PlacementTarget="{Binding ElementName=DropDownToggle}"
+                                   IsOpen="{TemplateBinding IsDropDownOpen}" AllowsTransparency="True" StaysOpen="False" Focusable="False">
+                                <Border Background="{StaticResource Crust}" BorderBrush="{StaticResource Surface1}" BorderThickness="1"
+                                        Padding="2" MinWidth="150">
+                                    <ScrollViewer CanContentScroll="True" SnapsToDevicePixels="True">
+                                        <ItemsPresenter KeyboardNavigation.DirectionalNavigation="Contained"/>
+                                    </ScrollViewer>
+                                </Border>
+                            </Popup>
+                        </Grid>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+            <Style.Triggers>
+                <Trigger Property="IsKeyboardFocusWithin" Value="True">
+                    <Setter Property="BorderBrush" Value="{StaticResource Lavender}"/>
+                    <Setter Property="BorderThickness" Value="2"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style TargetType="ComboBoxItem">
+            <Setter Property="Foreground" Value="{StaticResource Text}"/>
+            <Setter Property="Background" Value="{StaticResource Crust}"/>
+            <Setter Property="Padding" Value="8,5"/>
+            <Style.Triggers>
+                <Trigger Property="IsHighlighted" Value="True">
+                    <Setter Property="Background" Value="{StaticResource Surface1}"/>
+                    <Setter Property="Foreground" Value="{StaticResource Text}"/>
+                </Trigger>
+                <Trigger Property="IsSelected" Value="True">
+                    <Setter Property="Background" Value="{StaticResource Surface0}"/>
+                    <Setter Property="Foreground" Value="{StaticResource Text}"/>
+                </Trigger>
+            </Style.Triggers>
         </Style>
 
         <!-- Accessible dark checkbox -->
@@ -358,7 +440,7 @@ function Write-Log {
         </Style>
     </Window.Resources>
 
-    <Border CornerRadius="0" Background="{StaticResource Base}" BorderBrush="{StaticResource Surface0}" BorderThickness="1">
+    <Border x:Name="appRoot" CornerRadius="0" Background="{StaticResource Base}" BorderBrush="{StaticResource Surface0}" BorderThickness="1">
         <Grid>
             <Grid.RowDefinitions>
                 <RowDefinition Height="52"/>    <!-- title bar -->
@@ -412,7 +494,8 @@ function Write-Log {
                         <TextBlock Text="Tamper Protection is blocking changes" FontWeight="SemiBold" Foreground="{StaticResource Red}" FontSize="13"/>
                         <TextBlock Text="Turn it off in Windows Security before continuing. DisableDefender will not attempt an unsupported bypass." Foreground="{StaticResource Subtext1}" FontSize="11" Margin="0,2,0,0"/>
                     </StackPanel>
-                    <Button x:Name="btnOpenSecurity" Grid.Column="1" Style="{StaticResource BaseButton}" Content="Open Windows Security" Padding="12,6" FontSize="12"/>
+                    <Button x:Name="btnOpenSecurity" Grid.Column="1" Style="{StaticResource BaseButton}" Content="Open Windows Security" Padding="12,6" FontSize="12"
+                            AutomationProperties.Name="Open Windows Security"/>
                 </Grid>
             </Border>
 
@@ -1091,6 +1174,110 @@ $ui = @{}
 $xaml.SelectNodes('//*[@*[local-name()="Name"]]') | ForEach-Object {
     $name = $_.Attributes['x:Name'].Value
     if ($name) { $ui[$name] = $window.FindName($name) }
+}
+
+function Set-GuiHighContrastTheme {
+    if (-not [System.Windows.SystemParameters]::HighContrast) { return $false }
+
+    $windowBrush = [System.Windows.SystemColors]::WindowBrush
+    $windowTextBrush = [System.Windows.SystemColors]::WindowTextBrush
+    $controlBrush = [System.Windows.SystemColors]::ControlBrush
+    $controlTextBrush = [System.Windows.SystemColors]::ControlTextBrush
+    $resourceRoles = @{
+        Base          = $windowBrush
+        Mantle        = $windowBrush
+        Crust         = $windowBrush
+        Surface0      = $windowTextBrush
+        Surface1      = $windowTextBrush
+        Surface2      = $windowTextBrush
+        Overlay0      = $windowTextBrush
+        Text          = $windowTextBrush
+        Subtext0      = $windowTextBrush
+        Subtext1      = $windowTextBrush
+        FirewallOkBg  = $windowBrush
+        FirewallBadBg = $windowBrush
+        Red           = $windowTextBrush
+        Maroon        = $windowTextBrush
+        Peach         = $windowTextBrush
+        Yellow        = $windowTextBrush
+        Green         = $windowTextBrush
+        Teal          = $windowTextBrush
+        Sky           = $windowTextBrush
+        Blue          = $windowTextBrush
+        Lavender      = $windowTextBrush
+        Mauve         = $windowTextBrush
+        Pink          = $windowTextBrush
+    }
+    foreach ($key in $resourceRoles.Keys) {
+        $source = $resourceRoles[$key]
+        $brush = $window.Resources[$key]
+        if ($brush -is [System.Windows.Media.SolidColorBrush]) {
+            try {
+                if (-not $brush.IsFrozen) {
+                    $brush.Color = $source.Color
+                } else {
+                    $window.Resources[$key] = [System.Windows.Media.SolidColorBrush]::new($source.Color)
+                }
+            } catch {
+                $window.Resources[$key] = [System.Windows.Media.SolidColorBrush]::new($source.Color)
+            }
+        }
+    }
+
+    $window.Background = $windowBrush
+    foreach ($element in @($ui.Values | Where-Object { $null -ne $_ })) {
+        if ($element -is [System.Windows.Controls.TextBlock]) {
+            $element.Foreground = $windowTextBrush
+        } elseif ($element -is [System.Windows.Controls.Primitives.ButtonBase]) {
+            $element.Background = $controlBrush
+            $element.Foreground = $controlTextBrush
+            $element.BorderBrush = $windowTextBrush
+        } elseif ($element -is [System.Windows.Controls.TextBox] -or
+            $element -is [System.Windows.Controls.ComboBox] -or
+            $element -is [System.Windows.Controls.RichTextBox]) {
+            $element.Background = $windowBrush
+            $element.Foreground = $windowTextBrush
+            $element.BorderBrush = $windowTextBrush
+        } elseif ($element -is [System.Windows.Controls.Border]) {
+            $element.Background = $windowBrush
+            $element.BorderBrush = $windowTextBrush
+        } elseif ($element -is [System.Windows.Shapes.Shape]) {
+            $element.Fill = $windowTextBrush
+        } elseif ($element -is [System.Windows.Controls.ProgressBar]) {
+            $element.Background = $controlBrush
+            $element.Foreground = $windowTextBrush
+        }
+    }
+    $ui.footerText.Text = 'HIGH CONTRAST  |  LOCAL ONLY  |  FIREWALL BOUNDARY ENFORCED'
+    return $true
+}
+
+function Test-GuiAccessibilityContract {
+    $interactive = @($xaml.SelectNodes('//*[local-name()="Button" or local-name()="ComboBox" or local-name()="CheckBox" or local-name()="TextBox"]'))
+    $missing = New-Object System.Collections.Generic.List[string]
+    foreach ($node in $interactive) {
+        $nameAttribute = $node.Attributes['x:Name']
+        if ($null -eq $nameAttribute) { continue }
+        $automationAttribute = $node.Attributes['AutomationProperties.Name']
+        if ($null -eq $automationAttribute -or [string]::IsNullOrWhiteSpace($automationAttribute.Value)) {
+            [void]$missing.Add($nameAttribute.Value)
+        }
+    }
+    if ($missing.Count -gt 0) {
+        throw "GUI accessibility contract missing AutomationProperties.Name: $($missing -join ', ')"
+    }
+    if ($window.MinWidth -lt 1100 -or $window.MinHeight -lt 700) {
+        throw "GUI minimum layout is below the supported 1100x700 contract."
+    }
+    if ($null -eq $xaml.Window.Attributes['KeyboardNavigation.TabNavigation']) {
+        throw 'GUI accessibility contract is missing a keyboard focus traversal policy.'
+    }
+    return [PSCustomObject]@{
+        NamedInteractiveControls = $interactive.Count
+        MinimumWidth = $window.MinWidth
+        MinimumHeight = $window.MinHeight
+        HighContrast = [bool][System.Windows.SystemParameters]::HighContrast
+    }
 }
 
 # ---------------------------------------------------------------------------
@@ -2600,6 +2787,8 @@ $ui.btnClearLog.Add_Click({
 # Initial render
 # ---------------------------------------------------------------------------
 $ui.versionText.Text = "v$script:Version"
+$script:GuiAccessibilityReport = Test-GuiAccessibilityContract
+$script:GuiHighContrast = Set-GuiHighContrastTheme
 Update-MaximizeButtonState
 Write-Log "=== $script:AppName GUI v$script:Version ready ==="
 Update-StatusTiles

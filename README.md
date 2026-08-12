@@ -30,6 +30,8 @@ Dashboard tiles show: Antivirus engine, Real-time protection, Tamper Protection 
 Disable confirmation includes a current-vs-target drift preview before execution.
 The Recovery hub provides a cancellable, target-aware evidence view for live Health drift, the last verified operation result, persisted phase resume/rollback choices, Safe Mode recovery state, snapshots/diff, and local HTML/support exports. Support bundles remain redacted and local-only; the default health targets preserve MDE Sense.
 
+GUI accessibility/layout verification is part of the test suite: `Invoke-Pester .\Tests\DisableDefender.Tests.ps1 -FullNameFilter '*DisableDefender GUI safety wiring*'` checks named interactive controls, focus/cancel semantics, high-contrast handling, and the 1100x700 minimum layout. A version-matched WPF render at that minimum size should be inspected for both the dashboard and the Recovery hub; the GUI startup contract fails fast when a named control or supported minimum changes without an accompanying check.
+
 ---
 
 ## Features

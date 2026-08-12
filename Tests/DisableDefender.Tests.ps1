@@ -4885,7 +4885,7 @@ Describe 'DisableDefender GUI safety wiring' {
     It 'gives custom chrome and action controls explicit accessible names' {
         $namedButtons = @(
             'btnMin', 'btnMax', 'btnClose',
-            'btnDisable', 'btnRemove', 'btnRestore', 'btnRepair', 'btnRefresh',
+            'btnDisable', 'btnRemove', 'btnRestore', 'btnRepair', 'btnRefresh', 'btnOpenSecurity',
             'btnCopyLog', 'btnExportLog', 'btnClearLog',
             'btnConfirmCancel', 'btnConfirmOk', 'btnCancelOperation',
             'btnRecoveryHub', 'btnRecoveryClose', 'btnRecoveryRefresh', 'btnRecoveryCancel',
@@ -4903,6 +4903,14 @@ Describe 'DisableDefender GUI safety wiring' {
         }
     }
 
+    It 'names every named interactive XAML control' {
+        $interactive = @($script:GuiXaml.SelectNodes('//*[local-name()="Button" or local-name()="ComboBox" or local-name()="CheckBox" or local-name()="TextBox"]'))
+        foreach ($node in $interactive) {
+            if ($null -eq $node.Attributes['x:Name']) { continue }
+            $node.Attributes['AutomationProperties.Name'].Value | Should -Not -BeNullOrEmpty
+        }
+    }
+
     It 'defines keyboard focus, default, cancel, refresh, and maximize semantics' {
         $script:GuiSource | Should -Match 'KeyboardNavigation\.TabNavigation="Cycle"'
         $script:GuiSource | Should -Match 'x:Name="btnConfirmCancel"[^>]*IsCancel="True"'
@@ -4910,6 +4918,17 @@ Describe 'DisableDefender GUI safety wiring' {
         $script:GuiSource | Should -Match '\$e\.Key -eq ''F5'''
         $script:GuiSource | Should -Match '\$ui\.btnMax\.Add_Click'
         $script:GuiSource | Should -Match '\$window\.Add_StateChanged'
+    }
+
+    It 'keeps keyboard focus visible and declares a high-contrast minimum-size contract' {
+        $script:GuiSource | Should -Match 'Trigger Property="IsKeyboardFocused" Value="True"'
+        $script:GuiSource | Should -Match 'SystemParameters\]::HighContrast'
+        $script:GuiSource | Should -Match 'function Set-GuiHighContrastTheme'
+        $script:GuiSource | Should -Match 'function Test-GuiAccessibilityContract'
+        $script:GuiSource | Should -Match 'GuiAccessibilityReport\s*=\s*Test-GuiAccessibilityContract'
+        $script:GuiXaml.Window.MinWidth | Should -Be '1100'
+        $script:GuiXaml.Window.MinHeight | Should -Be '700'
+        @($script:GuiXaml.SelectNodes('//*[local-name()="ScrollViewer"]')).Count | Should -BeGreaterThan 0
     }
 
     It 'blocks unsafe window close while a phase is busy and does not abruptly stop the worker' {
